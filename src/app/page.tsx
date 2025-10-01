@@ -1,103 +1,115 @@
-import Image from "next/image";
+'use client'
+
+import { useState } from 'react'
+import QRCode from '@/components/QRCode'
+import spainFlag from '@images/spain.png'
+import marbleImg from '@images/marble.png'
+import * as motion from 'motion/react-client'
+import { AnimatePresence } from 'motion/react'
+import UserDropdown from '@/components/UserDropdown'
+import WorldMark from '@/components/icons/WorldMark'
+import FailedIcon from '@/components/icons/FailedIcon'
+import SpinnerIcon from '@/components/icons/SpinnerIcon'
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+	const [didFail, setFailed] = useState(false)
+	const [isLoading, setLoading] = useState(false)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+	return (
+		<div className="flex flex-col min-h-screen py-6 px-4 md:px-10 bg-background text-primary">
+			<header className="flex items-center justify-between max-w-[1800px] mx-auto w-full">
+				<WorldMark className="h-6" />
+				<UserDropdown marble={marbleImg} passport={{ country: 'Spain', flag: spainFlag }} onLogOut={() => {}} />
+			</header>
+
+			<main className="flex-1 flex flex-col items-center justify-center max-w-lg mx-auto">
+				<div className="flex flex-col gap-4">
+					<h1 className="font-tiempos text-[45px] leading-12">Welcome, Unique Human</h1>
+					<p className="text-secondary font-light text-[17px]">
+						World ID is a privacy-preserving digital passport that lets you prove you're a real, unique
+						person—without revealing your identity.
+					</p>
+				</div>
+				<div className="h-px w-full bg-border mt-8 mb-14" />
+				<div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
+					<div className="flex flex-col gap-3">
+						<motion.p className="text-3xl leading-8">
+							{didFail ? 'Connection failed' : 'Connect your World ID'}
+						</motion.p>
+						<motion.p className="text-secondary font-light text-[17px] leading-5">
+							{didFail
+								? 'Something went wrong. Please try scanning again.'
+								: 'Scan the following QR code with your World ID app to connect and start using immediately.'}
+						</motion.p>
+						<AnimatePresence>
+							{didFail && (
+								<motion.button
+									exit={{ opacity: 0, y: 10 }}
+									whileHover={{ opacity: 0.8 }}
+									animate={{ opacity: 1, y: 0 }}
+									initial={{ opacity: 0, y: 10 }}
+									onClick={() => setFailed(false)}
+									className="mt-6 rounded-full bg-primary text-white py-3.5 px-6 font-semibold w-fit cursor-pointer"
+								>
+									Try again
+								</motion.button>
+							)}
+						</AnimatePresence>
+					</div>
+					<div className="relative" onClick={() => setFailed(true)}>
+						<motion.div
+							animate={{
+								opacity: isLoading || didFail ? 0.1 : 1,
+								filter: isLoading || didFail ? 'blur(2px)' : 'blur(0px)',
+							}}
+							className="size-60 flex items-center justify-center rounded-[20px] px-3 py-10 bg-white border border-border transition"
+						>
+							<QRCode size={210} data="https://world.org" />
+						</motion.div>
+						<AnimatePresence>
+							{(isLoading || didFail) && (
+								<motion.div
+									exit={{ opacity: 0 }}
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									className="absolute inset-0 flex items-center justify-center"
+								>
+									{isLoading && <SpinnerIcon className="size-10 animate-spin transition" />}
+									{didFail && <FailedIcon className="size-10 animate-spin transition" />}
+								</motion.div>
+							)}
+						</AnimatePresence>
+					</div>
+				</div>
+			</main>
+
+			<footer className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between font-light text-xs max-w-[1800px] mx-auto w-full">
+				<p>™ 2025 World</p>
+				<ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:gap-x-7 md:flex md:flex-wrap md:gap-x-5 xl:gap-x-8 col-span-8 col-start-1 sm:col-span-5 sm:col-start-5 md:col-span-12 md:col-start-3 md:ms-[-1.5em] lg:ms-0">
+					<a href="#">Cookie settings</a>
+					<a href="https://world.org/legal/cookie-policy" target="_blank">
+						Cookie policy
+					</a>
+					<a href="https://world.org/legal/privacy-notice" target="_blank">
+						Privacy notice
+					</a>
+					<a href="https://world.org/legal/trademark" target="_blank">
+						Trademark policy
+					</a>
+					<a href="https://www.toolsforhumanity.com/legal/law-enforcement-requests" target="_blank">
+						Data requests
+					</a>
+					<a href="https://world.org/legal/user-terms-and-conditions" target="_blank">
+						User terms
+					</a>
+					<a href="https://world.org/risks" target="_blank">
+						Risks
+					</a>
+					<a href="https://world.org/ca" target="_blank">
+						Community alerts
+					</a>
+				</ul>
+			</footer>
+		</div>
+	)
 }
