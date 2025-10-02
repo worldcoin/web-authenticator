@@ -1,6 +1,6 @@
 import { FC, SVGAttributes } from 'react'
 
-const FailedIcon: FC<SVGAttributes<SVGElement>> = () => (
+const FailedIcon: FC = () => (
 	<svg viewBox="0 0 40 40" width={40} height={40} xmlns="http://www.w3.org/2000/svg">
 		<g fill="none" fillRule="evenodd">
 			<rect fill="#848382" fillRule="nonzero" width="40" height="40" rx="20"></rect>
