@@ -6,7 +6,10 @@
 		"dev": "next dev --turbopack",
 		"build": "next build --turbopack",
 		"start": "next start",
-		"lint": "eslint"
+		"lint": "eslint",
+		"typecheck": "tsc --noEmit",
+		"format": "prettier --write .",
+		"format:check": "prettier --check ."
 	},
 	"dependencies": {
 		"@radix-ui/react-dropdown-menu": "^2.1.16",
