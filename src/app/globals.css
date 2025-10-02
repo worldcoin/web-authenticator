@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@theme inline {
+	--color-background: #f9f9f8;
+	--color-primary: #2d2c2c;
+	--color-secondary: #848382;
+	--color-border: #e1dfda;
+
+	--font-tiempos: var(--raw-font-tiempos), var(--font-serif);
+	--font-brand: var(--raw-font-twk-lausanne), var(--font-sans);
+}
