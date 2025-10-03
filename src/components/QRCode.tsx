@@ -1,10 +1,9 @@
 import { memo, useMemo } from 'react'
 import type { FC, ReactElement } from 'react'
-// @ts-ignore
+// @ts-expect-error - no types
 import QRCodeUtil from 'qrcode/lib/core/qrcode.js'
 
 const generateMatrix = (data: string): Array<number[]> => {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
 	const arr = QRCodeUtil.create(data, { errorCorrectionLevel: 'M' }).modules.data as Uint8Array
 	const sqrt = Math.sqrt(arr.length)
 

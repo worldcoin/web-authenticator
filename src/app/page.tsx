@@ -13,6 +13,7 @@ import SpinnerIcon from '@/components/icons/SpinnerIcon'
 
 export default function Home() {
 	const [didFail, setFailed] = useState(false)
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- TODO: WIP
 	const [isLoading, setLoading] = useState(false)
 
 	return (
@@ -26,7 +27,7 @@ export default function Home() {
 				<div className="flex flex-col gap-4">
 					<h1 className="font-tiempos text-[45px] leading-12">Welcome, Unique Human</h1>
 					<p className="text-secondary font-light text-[17px]">
-						World ID is a privacy-preserving digital passport that lets you prove you're a real, unique
+						World ID is a privacy-preserving digital passport that lets you prove you&apos;re a real, unique
 						person—without revealing your identity.
 					</p>
 				</div>
