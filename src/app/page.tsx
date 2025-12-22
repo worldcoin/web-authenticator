@@ -13,7 +13,6 @@ import SpinnerIcon from '@/components/icons/SpinnerIcon'
 
 export default function Home() {
 	const [didFail, setFailed] = useState(false)
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- TODO: WIP
 	const [isLoading, setLoading] = useState(false)
 
 	return (
