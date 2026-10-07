@@ -70,7 +70,9 @@ physical-passkey/provider compatibility. For Nix Chromium, set
 configuration with installed fonts. CI installs both Playwright browser targets.
 
 `bun run build:static-demo` retains the standalone preview build. No deployment
-project or automatic publishing target is configured.
+project or automatic publishing target is configured. Automatic Vercel Git
+deployments are disabled in the root `vercel.json`; the existing GitHub integration
+does not need to build this app.
 
 ## Migration provenance
 
