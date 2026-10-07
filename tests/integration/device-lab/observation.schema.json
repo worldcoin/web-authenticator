@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://world-id.example.test/clean-start/device-observation-v0.schema.json",
+  "title": "Clean-start physical iPhone observation v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productRevision",
+    "executedAt",
+    "operatorAlias",
+    "device",
+    "browser",
+    "context",
+    "provider",
+    "permission",
+    "expectedRoute",
+    "observedRoute",
+    "sensitiveOperationCounts",
+    "capture",
+    "interruptions",
+    "performance",
+    "accessibility",
+    "outcome",
+    "evidenceMethod",
+    "sanitizationConfirmed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "physical_iphone_observation_v0" },
+    "productRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "executedAt": { "type": "string", "format": "date-time" },
+    "operatorAlias": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "osVersion", "osBuild", "thermalState"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "osVersion": { "type": "string", "minLength": 1 },
+        "osBuild": { "type": "string", "minLength": 1 },
+        "thermalState": { "enum": ["nominal", "fair", "serious", "critical", "unknown"] }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "version", "build"],
+      "properties": {
+        "family": { "enum": ["safari", "chrome"] },
+        "version": { "type": "string", "minLength": 1 },
+        "build": { "type": "string", "minLength": 1 }
+      }
+    },
+    "context": { "enum": ["normal_tab", "private", "pwa", "in_app", "framed"] },
+    "provider": { "enum": ["apple_passwords", "google_password_manager", "third_party", "unknown", "not_presented"] },
+    "localeRegion": { "type": "string" },
+    "permission": { "enum": ["allow", "deny", "revoked", "not_requested", "restricted"] },
+    "expectedRoute": { "type": "string", "minLength": 1 },
+    "observedRoute": { "type": "string", "minLength": 1 },
+    "sensitiveOperationCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authenticator", "camera", "session", "simulator"],
+      "properties": {
+        "authenticator": { "type": "integer", "minimum": 0 },
+        "camera": { "type": "integer", "minimum": 0 },
+        "session": { "type": "integer", "minimum": 0 },
+        "simulator": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "mime", "descriptorCount", "totalDeclaredBytes", "trackStopped"],
+      "properties": {
+        "settings": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean", "null"] } },
+        "mime": { "type": ["string", "null"] },
+        "descriptorCount": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "totalDeclaredBytes": { "type": "integer", "minimum": 0 },
+        "trackStopped": { "type": ["boolean", "null"] }
+      }
+    },
+    "interruptions": { "type": "array", "items": { "enum": ["app_switch", "lock", "call", "visibility", "track_end", "offline", "timeout"] }, "uniqueItems": true },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "admissionMs": { "type": ["number", "null"], "minimum": 0 },
+        "protectedGestureMs": { "type": ["number", "null"], "minimum": 0 },
+        "permissionToPreviewMs": { "type": ["number", "null"], "minimum": 0 },
+        "captureToResultMs": { "type": ["number", "null"], "minimum": 0 },
+        "memoryMb": { "type": ["number", "null"], "minimum": 0 },
+        "batteryDeltaPercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["voiceOver", "textScalePercent", "horizontalOverflow", "focusNotes"],
+      "properties": {
+        "voiceOver": { "enum": ["on", "off", "not_tested"] },
+        "textScalePercent": { "type": "integer", "minimum": 100, "maximum": 310 },
+        "horizontalOverflow": { "type": ["boolean", "null"] },
+        "focusNotes": { "type": "string" }
+      }
+    },
+    "outcome": { "enum": ["pass", "fail", "blocked", "not_applicable"] },
+    "errorCode": { "type": ["string", "null"] },
+    "notes": { "type": "string" },
+    "evidenceMethod": { "enum": ["physical_observation", "network_inspection", "screen_reader_observation", "structured_log"] },
+    "sanitizationConfirmed": { "const": true }
+  }
+}

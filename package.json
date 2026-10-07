@@ -1,55 +1,58 @@
 {
-	"name": "world-id-web-authenticator",
-	"version": "0.1.0",
-	"private": true,
-	"engines": {
-		"node": ">=24"
-	},
-	"packageManager": "bun@1.3.5",
-	"scripts": {
-		"dev": "next dev --turbopack",
-		"build": "next build --turbopack",
-		"start": "next start",
-		"lint": "eslint",
-		"typecheck": "tsc --noEmit",
-		"format": "prettier --write .",
-		"format:check": "prettier --check ."
-	},
-	"dependencies": {
-		"@radix-ui/react-dropdown-menu": "^2.1.16",
-		"@types/qrcode": "^1.5.5",
-		"clsx": "^2.1.1",
-		"motion": "^12.23.22",
-		"next": "16.1.1",
-		"qrcode": "^1.5.4",
-		"react": "19.2.3",
-		"react-dom": "19.2.3",
-		"tailwind-merge": "^3.3.1"
-	},
-	"devDependencies": {
-		"@eslint/eslintrc": "^3",
-		"@tailwindcss/postcss": "^4",
-		"@types/node": "^20",
-		"@types/react": "19.2.7",
-		"@types/react-dom": "19.2.3",
-		"eslint": "^9",
-		"eslint-config-next": "16.1.1",
-		"prettier": "^3.6.2",
-		"prettier-plugin-sort-imports-desc": "^1.0.0",
-		"tailwindcss": "^4",
-		"typescript": "^5"
-	},
-	"prettier": {
-		"semi": false,
-		"tabWidth": 4,
-		"useTabs": true,
-		"printWidth": 120,
-		"singleQuote": true,
-		"trailingComma": "es5",
-		"arrowParens": "avoid",
-		"bracketSpacing": true,
-		"plugins": [
-			"prettier-plugin-sort-imports-desc"
-		]
-	}
+  "name": "@worldcoin/web-authenticator",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run build:authenticator && bun run build:authenticator-server",
+    "build:authenticator": "vite build --config vite.config.ts",
+    "build:authenticator-server": "bun build apps/authenticator/src/server/main.ts --target=bun --outdir apps/authenticator/dist-server",
+    "build:static-demo": "vite build --config vite.static-demo.config.ts",
+    "dev:authenticator": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
+    "lint": "eslint -c eslint.config.mjs . --max-warnings=0",
+    "preview:static-demo": "vite preview --config vite.static-demo.config.ts",
+    "start:authenticator": "bun apps/authenticator/src/server/main.ts",
+    "start:authenticator:tunnel": "bun --env-file=.env.tunnel apps/authenticator/src/server/main.ts",
+    "test": "bun test .",
+    "test:authenticator": "bun test apps/authenticator/test",
+    "test:browser": "bun run build:authenticator && playwright test -c playwright.integration.config.ts",
+    "test:contracts": "bun test packages/contracts/test",
+    "test:integration": "bun test tests/integration",
+    "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "dev": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
+    "start": "bun apps/authenticator/src/server/main.ts"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@worldcoin/walletkit-web": "0.27.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@happy-dom/global-registrator": "20.13.2",
+    "@playwright/test": "1.62.1",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/bun": "1.3.11",
+    "@types/node": "20.19.25",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.1",
+    "axe-core": "4.13.0",
+    "concurrently": "9.2.1",
+    "eslint": "9.39.4",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "16.4.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.68.0",
+    "vite": "8.2.2"
+  }
 }

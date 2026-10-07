@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["bun", "node"]
+  },
+  "include": [
+    "apps/authenticator/src/server/**/*.ts",
+    "apps/authenticator/src/**/*.server.ts",
+    "apps/authenticator/src/**/*.server.tsx",
+    "config/**/*.ts",
+    "packages/biometric-verification-port/src/**/*.ts",
+    "packages/contracts/src/**/*.ts",
+    "packages/staging-issuance-port/src/**/*.ts",
+    "services/**/*.ts"
+  ]
+}

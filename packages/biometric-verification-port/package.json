@@ -1,0 +1,13 @@
+{
+  "name": "@world-id/web-authenticator-biometric-verification-port",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test test",
+    "lint": "eslint ."
+  }
+}

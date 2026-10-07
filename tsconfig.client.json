@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": ["vite/client"]
+  },
+  "include": [
+    "apps/authenticator/src/**/*.ts",
+    "apps/authenticator/src/**/*.tsx",
+    "apps/authenticator/static-demo/**/*.tsx",
+    "packages/browser-admission/src/**/*.ts",
+    "packages/client-quality/src/**/*.ts",
+    "packages/contracts/src/**/*.ts",
+    "packages/frame-capture/src/**/*.ts"
+  ],
+  "exclude": ["apps/authenticator/src/server/**", "apps/authenticator/src/**/*.server.*"]
+}
