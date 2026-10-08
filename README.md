@@ -1,12 +1,8 @@
 # Web Authenticator
 
-A browser authenticator for World ID. We will let users complete Selfie Check and respond to IDKit requests without downloading an app.
-
 This repo contains the browser experience and the current staging demo. Real selfie enrollment through a TEE is still being built.
 
 ## Run locally
-
-Use Bun to install dependencies and start the demo:
 
 ```sh
 bun install --frozen-lockfile
@@ -29,13 +25,7 @@ VITE_TEE_BASE_URL=http://localhost:8000
 
 This only selects a target. It does not start a TEE, verify an enclave or enable uploads. The current `connect()` implementation reports that connection setup is unavailable.
 
-## What works today
-
-The demo has passkey-derived authenticator setup, WalletKit integration, an encrypted browser credential vault and a continuous camera preview.
-
 The developer enrollment flow can issue a staging credential using synthetic face data. It does not use the camera image, create a real face PCP or verify TEE enrollment evidence.
-
-We still need frame extraction, local capture guidance, a verified TEE connection, real enrollment and request-bound face matching.
 
 ## Responsibility Table
 
@@ -46,8 +36,6 @@ We still need frame extraction, local capture guidance, a verified TEE connectio
 | [di-migration-tee](https://github.com/worldcoin/di-migration-tee)                                 | Starting point for the biometrics TEE: admission API, host-to-enclave communication and attested keys. Selfie operations need to be added. |
 | [signup-service](https://github.com/worldcoin/signup-service)                                     | Verify enrollment authorization and evidence, submit shares for uniqueness processing and request credential signing.                      |
 | [signup-service-credential-signer](https://github.com/worldcoin/signup-service-credential-signer) | Sign the credential with the ordered claims supplied by the issuer.                                                                        |
-
-We refer to the planned biometric service as `biometrics-tee`. The starting implementation is in `di-migration-tee`; its migration API is not a selfie enrollment API.
 
 ## Authenticator setup
 
@@ -87,8 +75,6 @@ We will validate the incoming request, unlock the authenticator and check the st
 
 When fresh user presence is required, we will capture a new selfie and ask the TEE to compare it with the credential-bound PCP reference. The match evidence must be bound to the current request. WalletKit and the RP verifier must carry and verify that binding before the response is accepted.
 
-Having a stored credential alone does not prove fresh presence. If the credential or PCP is missing, we need reissuance or transfer from another authenticator.
-
 ## Browser and TEE checks
 
 | Browser: capture feedback              | TEE: authoritative evaluation                                                     |
@@ -103,8 +89,6 @@ An encrypted connection does not prove that an image came from a live camera. Li
 
 ## PCP storage and reissuance
 
-The browser builds the PCP. The TEE supplies the verified biometric outputs needed to build it.
-
 We will store the PCP encrypted in browser storage. Its binding to the signed credential must survive storage and later verification. The browser PCP API and storage format are still to be implemented.
 
 A passkey can recover a storage key; it cannot recreate deleted vault files. If browser storage is lost, the intended recovery paths are:
@@ -116,15 +100,11 @@ Reissuance requires issuer support and face continuity checks. Creating a new id
 
 ## Issuance claims — proposed
 
-The existing signed claims occupy indices 0–2:
-
 | Index | Claim          |
 | ----- | -------------- |
 | 0     | Z-score.       |
 | 1     | Match count.   |
 | 2     | Database size. |
-
-We will extend the credential with verified issuance information:
 
 | Proposed index | Claim                    | Meaning                                                                                          |
 | -------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
@@ -139,23 +119,7 @@ The public ingress must admit and rate-limit enrollment attempts before allocati
 
 Promon Shield for Web is a proposed runtime-protection layer. Its session validation would need enforcement at ingress. It does not replace enclave attestation, biometric checks or issuer verification.
 
-Logs should record operation status, timings and bounded failure codes. Do not log images, embeddings, PCP contents, secrets or authorization tokens.
-
-## Next implementation steps
-
-1. **Browser frame sampling.** Keep the native preview smooth; process sampled frames in a worker with bounded memory and no backlog of stale guidance frames.
-2. **TEE enrollment session.** Add subject/challenge binding, expiry, attested channel setup and a bounded encrypted-capture receiver.
-3. **Encrypted frame-set experiment.** Send selected captures and verify an authenticated enclave acknowledgement.
-4. **Encrypted WebRTC experiment.** Add signaling and media reception, with frame encryption that remains intact until enclave decryption.
-5. **Real enrollment.** Run the full biometric checks, return enrollment outputs, build the PCP on the client and wire issuer verification and polling.
-6. **Returning presence and recovery.** Add request-bound matching, credential reissuance and cross-authenticator transfer.
-
-Compare the two transport experiments using time to first accepted capture, bytes uploaded, guidance latency, UI responsiveness and enclave processing cost.
-
 ## References
 
 - [Selfie Check via Web Authenticator — source spec](https://app.notion.com/p/worldcoin/Selfie-Check-via-Web-Authenticator-cfd0a1d9d6de45d49241382a36645c6b)
 - [Soam's handover](https://github.com/worldcoin/web-authenticator-experiments/blob/0bd61a20b23ff0a778553ac1788bd3aa3c7b9404/docs/web-authenticator-handover.md)
-- [WalletKit](https://github.com/worldcoin/walletkit)
-- [TEE starting implementation](https://github.com/worldcoin/di-migration-tee)
-- [Face signup service](https://github.com/worldcoin/signup-service)
