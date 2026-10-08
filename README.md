@@ -37,21 +37,19 @@ The developer enrollment flow can issue a staging credential using synthetic fac
 
 We still need frame extraction, local capture guidance, a verified TEE connection, real enrollment and request-bound face matching.
 
-## Where the work lives
+## Responsibility Table
 
-| Component                          | Responsibility                                                                                                                             |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web-authenticator`                | Consent, passkeys, camera, capture guidance, request handling and browser storage.                                                         |
-| `walletkit`                        | Protocol registration, credential subjects, credential storage and proof generation. Browser TEE APIs still need integration.              |
-| `di-migration-tee`                 | Starting point for the biometrics TEE: admission API, host-to-enclave communication and attested keys. Selfie operations need to be added. |
-| `signup-service`                   | Verify enrollment authorization and evidence, submit shares for uniqueness processing and request credential signing.                      |
-| `signup-service-credential-signer` | Sign the credential with the ordered claims supplied by the issuer.                                                                        |
+| Component                                                                                         | Responsibility                                                                                                                             |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [web-authenticator](https://github.com/worldcoin/web-authenticator)                               | Consent, passkeys, camera, capture guidance, request handling and browser storage.                                                         |
+| [walletkit](https://github.com/worldcoin/walletkit)                                               | Protocol registration, credential subjects, credential storage and proof generation. Browser TEE APIs still need integration.              |
+| [di-migration-tee](https://github.com/worldcoin/di-migration-tee)                                 | Starting point for the biometrics TEE: admission API, host-to-enclave communication and attested keys. Selfie operations need to be added. |
+| [signup-service](https://github.com/worldcoin/signup-service)                                     | Verify enrollment authorization and evidence, submit shares for uniqueness processing and request credential signing.                      |
+| [signup-service-credential-signer](https://github.com/worldcoin/signup-service-credential-signer) | Sign the credential with the ordered claims supplied by the issuer.                                                                        |
 
 We refer to the planned biometric service as `biometrics-tee`. The starting implementation is in `di-migration-tee`; its migration API is not a selfie enrollment API.
 
 ## Authenticator setup
-
-The current flow creates a passkey before enrollment. We derive two independent secrets from that passkey:
 
 ```text
 seed = HKDF-Expand(
@@ -62,12 +60,6 @@ databaseKey = HKDF-Expand(
   PRF("web.world.org/storage"),
   "web.world.org/v1/storage-secret", 32)
 ```
-
-The seed initializes the World ID authenticator. The database key unlocks the encrypted credential vault in OPFS, the browser's origin-private filesystem.
-
-We register the authenticator and wait for finalization before using it. On return, we unlock the same passkey, derive the same secrets and reopen the vault. Secrets stay in memory and must not be logged or persisted in plaintext.
-
-The production passkey RP ID and hosting origin must be agreed before rollout. The domain names in the PRF labels do not configure either one.
 
 ## First enrollment — planned
 
