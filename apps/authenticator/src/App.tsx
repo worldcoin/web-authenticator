@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CameraPreview } from "./components/CameraPreview";
+import { DeveloperPanel } from "./components/DeveloperPanel";
 import { openAuthenticator } from "./wallet/session";
 import { walletOpenErrorMessage } from "./wallet/errors";
 import { abortable } from "./lib/async";
@@ -26,6 +27,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const [configurationError, setConfigurationError] = useState(false);
   const [preview, setPreview] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [devMode, setDevMode] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const activeWallet = useRef<WalletKit | null>(null);
   const retainedProof = useRef<string | null>(null);
@@ -93,7 +95,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       signal.throwIfAborted(); setRecords(next);
       return next;
     } catch (cause) {
-      closeWallet();
+      closeWallet(); setProgress("");
       throw new Error("Could not read the encrypted vault. Unlock again to retry.", { cause });
     }
   }
@@ -155,8 +157,30 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     : screen === "delivery" ? "Sending your proof" : screen === "enroll" ? "Set up Selfie Check"
     : incoming ? "Review your request" : wallet ? "Your World ID wallet" : "World ID authenticator";
   const finished = screen === "done" || screen === "cancelled";
+  const vaultDisabled = busy || screen === "delivery" || finished;
 
-  return <main className="app-main">
+  const refreshVault = () => run(async signal => {
+    if (!wallet || vaultDisabled) return;
+    await refresh(wallet, signal);
+    setProgress("Credential vault refreshed.");
+  });
+  const deleteCredential = (id: bigint) => run(async signal => {
+    if (!wallet || vaultDisabled || !records.some(record => record.credentialId === id)) return;
+    setProgress("Deleting local credential…");
+    try {
+      await abortable(wallet.deleteCredential(id), AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      signal.throwIfAborted();
+    } catch (cause) {
+      closeWallet(); setProgress("");
+      throw new Error("Credential deletion could not be confirmed. Unlock again to check the vault before retrying.", { cause });
+    }
+    await refresh(wallet, signal);
+    setProgress("Local credential deleted.");
+  });
+
+  return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
+    <header className="dev-mode-bar"><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
+    <div className="authenticator-layout"><main className="app-main">
     <p className="staging-banner">World ID · Staging</p>
     <div className="screen-content"><div className="centered-layout">
       <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />
@@ -207,5 +231,8 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       {finished && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl}>Return to requesting app</a>}
       {(finished || loadFailed) && <a className="secondary-action return-link" href="/">Open authenticator</a>}
     </div>
-  </main>;
+    </main>
+    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} canIssue={canIssue} configurationError={configurationError} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
+    </div>
+  </div>;
 }

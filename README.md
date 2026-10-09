@@ -77,8 +77,17 @@ multiple local checkouts. Run one issuer process per directory; the in-memory
 concurrency guard is not a distributed lock.
 
 The optional MediaPipe camera preview stays local and provides framing guidance.
+It uses Face Landmarker through CPU/WASM, not ONNX.
 It does **not** supply the issuer input or establish liveness. TEE capture, challenge
 verification and production Selfie Check issuance remain separate integrations.
+
+The **Dev mode** switch is off by default and resets on reload. It opens a side
+panel (below the authenticator on narrow screens) with credential descriptions,
+IDs, dates, vault refresh and confirmed local deletion, plus request and runtime
+details. Unlock the wallet before inspecting credentials. Vault mutations are
+disabled during active operations and pending proof delivery. The inspector never
+shows secret keys, PRF output, blinding factors or proof payloads. Deleting a local
+credential does not delete the passkey, account registration or issuer record.
 
 ## Storage
 

@@ -19,6 +19,34 @@ if (!("bun" in process.versions)) {
     }
   });
 
+  test("dev tools are opt-in, responsive and accessible without opening a wallet", async ({ page }, info) => {
+    await page.addInitScript({ content: axe.source });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
+    const toggle = page.getByRole("switch", { name: "Dev mode" });
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByRole("complementary")).toHaveCount(0);
+    await toggle.click();
+    await expect(page.getByRole("complementary", { name: "Developer tools" })).toBeVisible();
+    await expect(page.getByText("Unlock your wallet to inspect its credentials.")).toBeVisible();
+    await page.getByText("What is stored here?", { exact: true }).click();
+    for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
+      await page.setViewportSize(viewport);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-dev-${viewport.width}.png`, fullPage: true });
+    }
+    const violations = await page.evaluate(async () => {
+      const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
+      return (await runtime.run()).violations;
+    });
+    expect(violations).toEqual([]);
+    await toggle.click();
+    await expect(page.getByRole("complementary")).toHaveCount(0);
+    expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
+    await page.reload();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
   test("signed external request shows its requirements and sends encrypted rejection", async ({ page }, info) => {
     const { payload, registry } = await signedRequest(1);
     const encrypted = await encryptedRequest(payload);
