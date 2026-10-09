@@ -179,9 +179,8 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   });
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
-    <header className="dev-mode-bar"><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
+    <header className="dev-mode-bar"><p className="staging-banner">World ID · Staging</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
     <div className="authenticator-layout"><main className={`app-main${preview && screen === "enroll" ? " app-main--camera-preview" : ""}`}>
-    <p className="staging-banner">World ID · Staging</p>
     <div className="screen-content"><div className="centered-layout">
       {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />}
       <div className="message-block">

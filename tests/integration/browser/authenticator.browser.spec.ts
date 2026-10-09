@@ -12,9 +12,12 @@ if (!("bun" in process.versions)) {
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
     expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
-    for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
+      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+      await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
     }
   });
