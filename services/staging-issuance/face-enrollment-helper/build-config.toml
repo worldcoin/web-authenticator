@@ -1,0 +1,7 @@
+# Native dependency settings from pinned Oxide .cargo/config.toml.
+# Cargo does not inherit a git dependency's workspace configuration.
+[env]
+IGNITION_BUCKET_URL = "https://wld-ml-face-engine-public.worldcoin.org"
+IGNITION_CACHE_PATH = "cache"
+IGNITION_DIRECTORY_PATH = "assets/dependencies"
+OPENCV_LINK_LIBS = "libopencv_imgproc,libopencv_core"

@@ -83,7 +83,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/authenticator/src/wallet/session.ts"],
+    files: ["apps/authenticator/src/wallet/session.ts", "apps/authenticator/src/wallet/persistence.ts"],
     rules: {
       "no-restricted-properties": ["error",
         { object: "document", property: "cookie" },

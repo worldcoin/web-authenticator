@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["html", { outputFolder: "./playwright-report", open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "http://127.0.0.1:4194",
     trace: "off",
     video: "off",
     screenshot: "only-on-failure",
@@ -19,17 +19,17 @@ export default defineConfig({
     env: {
       ...process.env,
       AUTHENTICATOR_HOST: "127.0.0.1",
-      PORT: "4173",
-      AUTHENTICATOR_PUBLIC_ORIGIN: "http://127.0.0.1:4173",
-      AUTHENTICATOR_LOCAL_ORIGIN: "http://localhost:4173",
+      PORT: "4194",
+      AUTHENTICATOR_PUBLIC_ORIGIN: "http://127.0.0.1:4194",
+      AUTHENTICATOR_LOCAL_ORIGIN: "http://localhost:4194",
     },
-    port: 4173,
+    port: 4194,
     reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [
     {
-      name: "desktop-chromium-synthetic",
+      name: "desktop-chromium",
       use: {
         browserName: "chromium",
         viewport: { width: 393, height: 852 },
@@ -44,7 +44,7 @@ export default defineConfig({
       },
     },
     {
-      name: "desktop-webkit-synthetic",
+      name: "desktop-webkit",
       use: { browserName: "webkit", viewport: { width: 393, height: 852 } },
     },
   ],
