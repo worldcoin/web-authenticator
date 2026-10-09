@@ -55,7 +55,7 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, canIssue
     </section>
     <section aria-labelledby="runtime-title"><h3 id="runtime-title">Camera & issuance</h3>
       <dl><dt>Preview</dt><dd>{preview ? "Open — local camera guidance" : "Closed"}</dd><dt>Guidance model</dt><dd>{LIVE_GUIDANCE_MODEL_V1.modelKind}</dd><dt>Runtime</dt><dd>{LIVE_GUIDANCE_MODEL_V1.runtimePackage} · {LIVE_GUIDANCE_MODEL_V1.runtimeVersion} · CPU / WASM</dd><dt>Staging issuance</dt><dd>{configurationError ? "Configuration unavailable" : canIssue ? "Available · synthetic face input" : "Unavailable on this server"}</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
-      <p>Landmarks and framing heuristics drive the camera instructions. Camera frames stay in this tab; they are not used by the staging issuer.</p>
+      <p>RGBNet face boxes drive face-count, centering and distance instructions. Inference runs in a dedicated worker, one frame at a time. Camera frames stay in this tab; they are not used by the staging issuer.</p>
     </section>
   </aside>;
 }

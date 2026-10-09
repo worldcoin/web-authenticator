@@ -19,3 +19,5 @@ coverage/
 services/staging-issuance/face-enrollment-helper/target/
 services/staging-issuance/face-enrollment-helper/cache/
 services/staging-issuance/face-enrollment-helper/assets/
+
+apps/authenticator/public/models/rgbnet.onnx

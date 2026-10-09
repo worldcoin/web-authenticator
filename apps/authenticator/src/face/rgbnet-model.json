@@ -1,0 +1,6 @@
+{
+	"url": "/models/rgbnet.onnx",
+	"sha256": "35e9bdee626e16721e4566d1e552ad369d8334658b7893ee62cf3a026f1c0d06",
+	"bytes": 1720022,
+	"source": "world-app-ios/Sources/FaceAuthLibrary/Sources/FaceEngineFaceAuthModel/MLModels/RGBNet.onnx"
+}

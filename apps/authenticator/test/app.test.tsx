@@ -6,6 +6,7 @@ import { AuthenticatorAppV1 } from "../src/App";
 import { signedRequest } from "../../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../src/lib/requests/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../src/lib/walletkit";
+import type { DetectorResponse } from "../src/face/rgbnet.worker";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
@@ -90,6 +91,39 @@ test("missing camera APIs show an actionable failure without crashing the flow",
   } finally {
     if (original) Object.defineProperty(navigator, "mediaDevices", original);
     else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
+});
+
+test("camera preview consumes ONNX results and releases camera and worker on close", async () => {
+  let stopped = 0, terminated = 0, time = 0;
+  const media = new MediaStream();
+  Object.defineProperty(media, "getTracks", { value: () => [{ stop: () => { stopped++; } }] });
+  const worker = {
+    onmessage: undefined as ((event: { data: DetectorResponse }) => void) | undefined,
+    postMessage: (request: { type: string; id?: number }) => queueMicrotask(() => worker.onmessage?.({ data: request.type === "init"
+      ? { type: "ready" }
+      : { type: "result", id: request.id!, width: 640, height: 480, timings: "inference 1ms", faces: [{ box: [0.35, 0.2, 0.65, 0.8], landmarks: [], score: 0.99 }] } })),
+    terminate: () => { terminated++; },
+  };
+  const replacements = [
+    [globalThis, "Worker", function () { return worker; }],
+    [globalThis, "createImageBitmap", async () => ({ close: () => {} })],
+    [navigator, "mediaDevices", { getUserMedia: async () => media }],
+  ] as const;
+  const saved = replacements.map(([object, key]) => Object.getOwnPropertyDescriptor(object, key));
+  replacements.forEach(([object, key, value]) => Object.defineProperty(object, key, { value, configurable: true }));
+  const play = spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) {
+    Object.defineProperties(this, { readyState: { value: 2 }, currentTime: { get: () => ++time }, clientWidth: { value: 260 }, clientHeight: { value: 364 } });
+    return Promise.resolve();
+  });
+  try {
+    const view = render(<CameraPreview />);
+    expect(await view.findByText("Face positioned")).toBeTruthy();
+    view.unmount();
+    expect(terminated).toBe(1); expect(stopped).toBe(1);
+  } finally {
+    cleanup(); play.mockRestore();
+    replacements.forEach(([object, key], i) => { const descriptor = saved[i]; if (descriptor) Object.defineProperty(object, key, descriptor); else Reflect.deleteProperty(object, key); });
   }
 });
 

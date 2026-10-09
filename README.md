@@ -76,8 +76,17 @@ Set `STAGING_SELFIE_STATE_DIR` to a separate persistent directory when running
 multiple local checkouts. Run one issuer process per directory; the in-memory
 concurrency guard is not a distributed lock.
 
-The optional MediaPipe camera preview stays local and provides framing guidance.
-It uses Face Landmarker through CPU/WASM, not ONNX.
+The optional camera preview runs Face Engine’s RGBNet detector locally through
+ONNX Runtime Web (CPU/WASM, dedicated worker). It provides face-count, centering
+and distance guidance. MediaPipe and its head-turn/lighting heuristics are removed.
+Install the pinned model before using the preview:
+
+```sh
+bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
+```
+
+The model is ignored by Git; install it before building a deployable preview.
+See [RGBNet setup and processing](docs/rgbnet-browser.md).
 It does **not** supply the issuer input or establish liveness. TEE capture, challenge
 verification and production Selfie Check issuance remain separate integrations.
 
@@ -134,4 +143,4 @@ PR #9 migrated the browser UX from `worldcoin/web-authenticator-experiments`
 commit `b4139268da213a680e89bf5877c29fcafb145f25`. This branch replaces its embedded
 RP scenario, simulated session gateway and simulated issuers with the existing
 development checkout's WalletKit, bridge and staging issuance integrations.
-The original asset/model provenance and passkey vault format are retained.
+The original UI assets and passkey vault format are retained. Camera guidance now uses the pinned RGBNet model described above.

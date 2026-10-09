@@ -36,6 +36,7 @@ export default defineConfig({
   root: appRoot,
   plugins: [rejectServerModulesFromBrowser(), react()],
   publicDir: "public",
+  worker: { format: "es" },
   resolve: {
     alias: {
       "@clean-start/browser-admission": path("./packages/browser-admission/src/index.ts"),

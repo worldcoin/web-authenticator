@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { LiveFaceGuidanceControllerV1 } from "../walkthrough/live-face-guidance";
+import { startFaceDetector } from "../face/face-detector";
+import { faceGuidance } from "../face/rgbnet";
 
 /** Local framing guidance only. No camera data enters synthetic staging issuance. */
 export function CameraPreview() {
   const video = useRef<HTMLVideoElement>(null);
   const [message, setMessage] = useState("Starting your camera…");
+  const [detectorStatus, setDetectorStatus] = useState("");
   useEffect(() => {
     let stopped = false;
     let stream: MediaStream | undefined;
-    const guidance = new LiveFaceGuidanceControllerV1(() => video.current, result => {
-      setMessage(result.code === "unavailable" ? "Face guidance is unavailable. The preview is still local." : result.text);
-    });
+    const detector = new AbortController();
+    let candidate = "";
+    let consecutive = 0;
     const stop = () => {
       stopped = true;
-      guidance.stop();
+      detector.abort();
       stream?.getTracks().forEach(track => track.stop());
       if (video.current) video.current.srcObject = null;
     };
@@ -27,7 +29,20 @@ export function CameraPreview() {
         if (stopped || !video.current) { media.getTracks().forEach(track => track.stop()); return; }
         video.current.srcObject = media;
         await video.current.play();
-        if (!stopped) guidance.start();
+        if (!stopped) {
+          setMessage("Loading face detector…");
+          startFaceDetector(video.current, detector.signal, false,
+            (faces, width, height) => {
+              if (stopped || !video.current) return;
+              const next = faceGuidance(faces, width, height, video.current.clientWidth, video.current.clientHeight);
+              consecutive = next === candidate ? consecutive + 1 : 1;
+              candidate = next;
+              if (consecutive >= 2) setMessage(next);
+            },
+            status => { if (!stopped) setDetectorStatus(status); },
+            failure => { if (!stopped) setMessage(`Face guidance unavailable: ${failure} Close and reopen the preview to retry.`); },
+          );
+        }
       })().catch(() => {
         stream?.getTracks().forEach(track => track.stop());
         if (!stopped) setMessage("Camera unavailable. Allow camera access, then reopen the preview.");
@@ -44,6 +59,7 @@ export function CameraPreview() {
       <img src="/assets/figma/capture-ring-ready.svg" alt="" />
     </div>
     <p role="status">{message}</p>
+    <details><summary>ONNX processing status</summary><p className="detail-copy">{detectorStatus || "Waiting for camera frames."}</p></details>
     <p className="detail-copy">Framing preview only. Images stay in this browser; the staging issuer uses synthetic input.</p>
   </section>;
 }
