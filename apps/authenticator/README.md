@@ -1,8 +1,11 @@
-# Browser app
+# Browser authenticator
 
-See the [root README](../../README.md) for setup, current behavior and limitations.
+See the [root README](../../README.md) for setup, external RP integration and limits.
 
-`src/wallet/session.ts` owns passkey PRF evaluation, key derivation and the real
-WalletKit worker/vault. `src/App.tsx` prevents capture progression until that vault
-opens successfully. The session controller and `src/server` retain the migrated
-metadata-only simulator; they do not issue real credentials or attest biometrics.
+- `src/App.tsx`: request review, wallet unlock, enrollment and explicit proof approval.
+- `src/wallet/session.ts`: PR #9 passkey derivation and encrypted WalletKit vault.
+- `src/wallet/registration.ts`: register once or reopen an existing staging account.
+- `src/lib/requests`: bridge encryption, request validation, credential routing and proof generation.
+- `src/lib/selfie-issuance.ts`: resumable staging issuance and vault storage.
+- `src/server`: static assets, RP registry lookup and localhost-only staging issuer.
+- `src/components/CameraPreview.tsx`: local camera guidance, separate from synthetic issuance.

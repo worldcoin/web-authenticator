@@ -1,9 +1,15 @@
-# Main-owned application configuration
+# Authenticator server configuration
 
-This directory contains non-secret, staging-only values frozen by Main for cs5. W01 may import these values but may not edit them.
+`AUTHENTICATOR_HOST` defaults to `127.0.0.1`; `PORT`/`AUTHENTICATOR_PORT` defaults
+to 4173. `AUTHENTICATOR_PUBLIC_ORIGIN` defaults to `http://127.0.0.1:<port>` and
+`AUTHENTICATOR_LOCAL_ORIGIN` to `http://localhost:<port>`. Origins must be bare
+HTTP(S) origins; invalid configuration fails startup.
 
-- The browser cannot select simulator scenarios.
-- Signing keys and completion-handle keys are generated or injected at server startup and never appear here.
-- The local origin is a development/evidence surface, not deployment or physical-iPhone evidence.
-- Security headers apply to the app-owned Bun server and keep camera permission limited to the same origin.
-- Server binding and the two exact allowed browser origins come from the environment: `AUTHENTICATOR_HOST` (default `127.0.0.1`; `0.0.0.0` in containers), `PORT`/`AUTHENTICATOR_PORT` (default `4173`), `AUTHENTICATOR_PUBLIC_ORIGIN` (default `http://127.0.0.1:<port>`), and `AUTHENTICATOR_LOCAL_ORIGIN` (default `http://localhost:<port>`). Origins must be bare `http(s)://host[:port]` values; anything else fails startup. The RP identifier is the public origin's hostname.
+Security headers apply to all responses. The browser CSP permits only this origin,
+the two official World ID bridges and WalletKit's US staging gateway/indexer/OPRF
+endpoints. Staging addresses and the WalletKit version are pinned together; review
+that allowlist when upgrading the SDK.
+
+Synthetic issuance additionally requires a loopback listener, a loopback request
+host and a matching allowed Origin. Binding a container to `0.0.0.0` disables it.
+There are no selectable demo scenarios or RP identities in configuration.

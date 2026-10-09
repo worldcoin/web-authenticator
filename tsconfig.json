@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "strict": true,
     "noEmit": true,
     "module": "ESNext",
@@ -13,16 +15,9 @@
     "types": [],
     "baseUrl": ".",
     "paths": {
-      "@clean-start/contracts": ["packages/contracts/src/index.ts"],
-      "@clean-start/browser-admission": ["packages/browser-admission/src/index.ts"],
-      "@clean-start/frame-capture": ["packages/frame-capture/src/index.ts"],
-      "@clean-start/client-quality": ["packages/client-quality/src/index.ts"],
-      "@clean-start/session-gateway": ["services/session-gateway/src/index.ts"],
-      "@clean-start/biometric-verification-port": ["packages/biometric-verification-port/src/index.ts"],
-      "@clean-start/staging-issuance-port": ["packages/staging-issuance-port/src/index.ts"],
-      "@clean-start/simulated-biometric-verifier": ["services/simulated-biometric-verifier/src/index.ts"],
-      "@clean-start/simulated-staging-issuer": ["services/simulated-staging-issuer/src/index.ts"],
-      "@clean-start/app-config": ["config/authenticator-app-v0.ts"]
+      "@clean-start/browser-admission": [
+        "packages/browser-admission/src/index.ts"
+      ]
     }
   },
   "files": []

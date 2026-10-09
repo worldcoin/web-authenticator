@@ -38,10 +38,7 @@ export default defineConfig({
   publicDir: "public",
   resolve: {
     alias: {
-      "@clean-start/contracts": path("./packages/contracts/src/index.ts"),
       "@clean-start/browser-admission": path("./packages/browser-admission/src/index.ts"),
-      "@clean-start/frame-capture": path("./packages/frame-capture/src/index.ts"),
-      "@clean-start/client-quality": path("./packages/client-quality/src/index.ts"),
     },
   },
   server: {

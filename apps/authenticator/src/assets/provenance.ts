@@ -7,7 +7,6 @@ export interface FigmaAssetProvenanceV1 {
 }
 
 export const FIGMA_ASSET_PROVENANCE_V1 = Object.freeze([
-  { localPath: "/assets/figma/zoom-app-icon.png", nodeId: "5132:134352", sourceUrl: "https://www.figma.com/api/mcp/asset/f74f1a52-3b0c-456d-a8a1-9580acc91f99.png", sha256: "5dba613c9919c1d0e8ff72aa57f860c85e727364939685a4630d9199bed5efb9", purpose: "Zoom wordmark inside the RP icon" },
   { localPath: "/assets/figma/human-emblem.svg", nodeId: "5132:134352", sourceUrl: "https://www.figma.com/api/mcp/asset/8d74901f-d2fa-4734-af04-c57af0a4d676.svg", sha256: "57859d4d34ced3758dcb099eba5ba9c12de04bd2d0d9202223472a05a3ad802b", purpose: "Staging workflow result disclosure" },
   { localPath: "/assets/figma/disclosure-check.svg", nodeId: "5132:134352", sourceUrl: "https://www.figma.com/api/mcp/asset/e273220e-71af-4d7c-8d25-fac1d2341eb3.svg", sha256: "58c175883fd32c423ad0db2e8b997711124193387379f80d91b8c37058643777", purpose: "Disclosure included marker" },
   { localPath: "/assets/figma/person-circle.svg", nodeId: "5132:134352", sourceUrl: "https://www.figma.com/api/mcp/asset/13368a6a-b3ab-43fe-8c5f-4eded03075b5.svg", sha256: "5a22414bbd7a80fcc6ca7d1b2ba4428d271264a6bbcfa7b895608a218ed64145", purpose: "Camera-image disclosure" },
@@ -27,7 +26,6 @@ export const FIGMA_ASSET_PROVENANCE_V1 = Object.freeze([
 ] as const satisfies readonly FigmaAssetProvenanceV1[]);
 
 export const FIGMA_ASSET_PATHS_V1 = Object.freeze({
-  zoom: "/assets/figma/zoom-app-icon.png",
   humanEmblem: "/assets/figma/human-emblem.svg",
   disclosureCheck: "/assets/figma/disclosure-check.svg",
   personCircle: "/assets/figma/person-circle.svg",

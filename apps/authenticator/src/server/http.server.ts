@@ -1,25 +1,9 @@
 import { resolve, relative, sep } from "node:path";
-import {
-  SIMULATION_ENVIRONMENT,
-  SIMULATION_MODE,
-  SIMULATOR_BROWSER_SESSION_ERROR_V0,
-  SIMULATOR_BROWSER_SESSION_PORT_V0,
-  isBrowserIdempotentSessionFieldsV0,
-  isBrowserSessionFieldsV0,
-  isCompleteDemoAuthenticatorV0,
-  isCreateSimulatorBrowserSessionV0,
-  isSubmitSimulatorCaptureShapeV0,
-  type SimulatorBrowserSessionErrorCodeV0,
-  type SimulatorBrowserSessionOperationV0,
-  type SimulatorBrowserSessionPortV0,
-} from "@clean-start/contracts";
-import {
-  AUTHENTICATOR_APP_CONFIG,
-  AUTHENTICATOR_APP_SECURITY_HEADERS_V0,
-} from "@clean-start/app-config";
+import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0, allowsSyntheticIssuance } from "../../../../config/authenticator-app-v0";
+import { POST as issueSelfie } from "./selfie-credential.server";
+import { GET as lookupRp } from "./staging-rp.server";
 
-const API_PREFIX = "/api/v0/";
-const DEFAULT_STATIC_ROOT = resolve(import.meta.dir, "../../dist");
+const DEFAULT_STATIC_ROOT = resolve(process.cwd(), "apps/authenticator/dist");
 const DEFAULT_MEDIAPIPE_ROOT = resolve(
   process.cwd(),
   "node_modules/@mediapipe/tasks-vision/wasm",
@@ -37,148 +21,6 @@ function headers(contentType?: string): Headers {
   const result = new Headers(AUTHENTICATOR_APP_SECURITY_HEADERS_V0);
   if (contentType !== undefined) result.set("Content-Type", contentType);
   return result;
-}
-
-function errorBody(
-  operation: SimulatorBrowserSessionOperationV0,
-  reasonCode: SimulatorBrowserSessionErrorCodeV0,
-) {
-  return Object.freeze({
-    kind: SIMULATOR_BROWSER_SESSION_ERROR_V0,
-    version: SIMULATOR_BROWSER_SESSION_PORT_V0,
-    mode: SIMULATION_MODE,
-    environment: SIMULATION_ENVIRONMENT,
-    operation,
-    reasonCode,
-  });
-}
-
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: headers("application/json; charset=utf-8"),
-  });
-}
-
-function statusForReason(reasonCode: SimulatorBrowserSessionErrorCodeV0): number {
-  if (reasonCode === "origin_forbidden") return 403;
-  if (reasonCode === "unauthorized") return 401;
-  if (reasonCode === "not_found") return 404;
-  if (reasonCode === "expired") return 410;
-  if (reasonCode === "body_too_large") return 413;
-  if (reasonCode === "resource_busy") return 429;
-  if (
-    reasonCode === "invalid_state" ||
-    reasonCode === "binding_mismatch" ||
-    reasonCode === "replay_rejected"
-  ) return 409;
-  if (reasonCode === "gateway_disabled") return 503;
-  return 400;
-}
-
-function operationForPath(pathname: string): SimulatorBrowserSessionOperationV0 {
-  const operations: Readonly<Record<string, SimulatorBrowserSessionOperationV0>> = {
-    "/api/v0/bootstrap": "bootstrap",
-    "/api/v0/session/create": "create_session",
-    "/api/v0/session/demo/begin": "begin_demo_authenticator",
-    "/api/v0/session/demo/complete": "complete_demo_authenticator",
-    "/api/v0/session/capture/prepare": "prepare_capture",
-    "/api/v0/session/capture/submit": "submit_capture",
-    "/api/v0/session/retry": "retry_unavailable",
-    "/api/v0/session/status": "get_status",
-    "/api/v0/session/cancel": "cancel",
-    "/api/v0/session/return": "return_to_rp",
-  };
-  return operations[pathname] ?? "bootstrap";
-}
-
-function isEmptyRecord(value: unknown): boolean {
-  return typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length === 0;
-}
-
-async function readStrictJson(
-  request: Request,
-  operation: SimulatorBrowserSessionOperationV0,
-): Promise<{ readonly value: unknown } | { readonly response: Response }> {
-  if (request.method !== "POST") {
-    return { response: json(errorBody(operation, "invalid_request"), 405) };
-  }
-  const origin = request.headers.get("origin");
-  if (
-    origin !== AUTHENTICATOR_APP_CONFIG.publicOrigin &&
-    origin !== AUTHENTICATOR_APP_CONFIG.localWalkthroughOrigin
-  ) {
-    return { response: json(errorBody(operation, "origin_forbidden"), 403) };
-  }
-  const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim();
-  if (contentType !== "application/json") {
-    return { response: json(errorBody(operation, "invalid_request"), 415) };
-  }
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > AUTHENTICATOR_APP_CONFIG.maxRequestBodyBytes
-  ) {
-    return { response: json(errorBody(operation, "body_too_large"), 413) };
-  }
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await request.arrayBuffer();
-  } catch {
-    return { response: json(errorBody(operation, "invalid_request"), 400) };
-  }
-  if (bytes.byteLength > AUTHENTICATOR_APP_CONFIG.maxRequestBodyBytes) {
-    return { response: json(errorBody(operation, "body_too_large"), 413) };
-  }
-  try {
-    return { value: JSON.parse(new TextDecoder().decode(bytes)) as unknown };
-  } catch {
-    return { response: json(errorBody(operation, "invalid_request"), 400) };
-  }
-}
-
-async function dispatchApi(
-  browserPort: SimulatorBrowserSessionPortV0,
-  request: Request,
-  pathname: string,
-): Promise<Response> {
-  const operation = operationForPath(pathname);
-  const parsed = await readStrictJson(request, operation);
-  if ("response" in parsed) return parsed.response;
-  const value = parsed.value;
-
-  let result;
-  if (pathname === "/api/v0/bootstrap" && isEmptyRecord(value)) {
-    result = await browserPort.bootstrap();
-  } else if (pathname === "/api/v0/session/create" && isCreateSimulatorBrowserSessionV0(value)) {
-    result = await browserPort.createSession(value);
-  } else if (pathname === "/api/v0/session/demo/begin" && isBrowserIdempotentSessionFieldsV0(value)) {
-    result = await browserPort.beginDemoAuthenticator(value);
-  } else if (pathname === "/api/v0/session/demo/complete" && isCompleteDemoAuthenticatorV0(value)) {
-    result = await browserPort.completeDemoAuthenticator(value);
-  } else if (pathname === "/api/v0/session/capture/prepare" && isBrowserSessionFieldsV0(value)) {
-    result = await browserPort.prepareCapture(value);
-  } else if (pathname === "/api/v0/session/capture/submit" && isSubmitSimulatorCaptureShapeV0(value)) {
-    result = await browserPort.submitCapture(value);
-  } else if (pathname === "/api/v0/session/retry" && isBrowserIdempotentSessionFieldsV0(value)) {
-    result = await browserPort.retryUnavailable(value);
-  } else if (pathname === "/api/v0/session/status" && isBrowserSessionFieldsV0(value)) {
-    result = await browserPort.getStatus(value);
-  } else if (pathname === "/api/v0/session/cancel" && isBrowserSessionFieldsV0(value)) {
-    result = await browserPort.cancel(value);
-  } else if (pathname === "/api/v0/session/return" && isBrowserSessionFieldsV0(value)) {
-    result = await browserPort.returnToRp(value);
-  } else {
-    return json(errorBody(operation, "invalid_request"), 400);
-  }
-
-  if (result.kind === SIMULATOR_BROWSER_SESSION_ERROR_V0) {
-    return json(result, statusForReason(result.reasonCode));
-  }
-  return json(result);
 }
 
 function contentType(pathname: string): string {
@@ -223,7 +65,7 @@ async function serveStatic(pathname: string, staticRoot: string): Promise<Respon
   if (decoded.includes("..") || decoded.includes("\\") || decoded.includes("\0")) {
     return new Response("Not found", { status: 404, headers: headers("text/plain; charset=utf-8") });
   }
-  const assetPath = ["/", "/returned", "/demo", "/demo/returned"].includes(decoded)
+  const assetPath = ["/"].includes(decoded)
     ? "index.html"
     : decoded.replace(/^\//, "");
   const resolved = resolve(staticRoot, assetPath);
@@ -238,45 +80,31 @@ async function serveStatic(pathname: string, staticRoot: string): Promise<Respon
   return new Response(file, { headers: headers(contentType(resolved)) });
 }
 
-export function createAuthenticatorHttpHandlerV0(
-  browserPort: SimulatorBrowserSessionPortV0,
-  options: {
-    readonly staticRoot?: string;
-    readonly mediapipeRoot?: string;
-  } = {},
-): (request: Request) => Promise<Response> {
+export function createAuthenticatorHttpHandler(options: { staticRoot?: string; mediapipeRoot?: string } = {}) {
   const staticRoot = resolve(options.staticRoot ?? DEFAULT_STATIC_ROOT);
   const mediapipeRoot = resolve(options.mediapipeRoot ?? DEFAULT_MEDIAPIPE_ROOT);
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
-    if (url.pathname.startsWith(API_PREFIX)) {
-      const known = new Set([
-        "/api/v0/bootstrap",
-        "/api/v0/session/create",
-        "/api/v0/session/demo/begin",
-        "/api/v0/session/demo/complete",
-        "/api/v0/session/capture/prepare",
-        "/api/v0/session/capture/submit",
-        "/api/v0/session/retry",
-        "/api/v0/session/status",
-        "/api/v0/session/cancel",
-        "/api/v0/session/return",
-      ]);
-      if (!known.has(url.pathname)) {
-        return json(errorBody("bootstrap", "not_found"), 404);
-      }
-      try {
-        return await dispatchApi(browserPort, request, url.pathname);
-      } catch {
-        return json(errorBody(operationForPath(url.pathname), "response_invalid"), 500);
-      }
+    let response: Response;
+    if (url.pathname === "/api/capabilities" && request.method === "GET") {
+      const probe = new Request(request.url, { headers: { origin: url.origin } });
+      response = Response.json({ environment: "staging", syntheticSelfieIssuance: allowsSyntheticIssuance(probe) });
+    } else if (url.pathname === "/api/staging-rp" && request.method === "GET") {
+      response = await lookupRp(request);
+    } else if (url.pathname === "/api/selfie-credential" && request.method === "POST") {
+      response = allowsSyntheticIssuance(request)
+        ? await issueSelfie(request)
+        : Response.json({ error: "Synthetic staging issuance is available only on the local authenticator." }, { status: 403 });
+    } else if (url.pathname.startsWith("/api/")) {
+      response = Response.json({ error: "Not found" }, { status: 404 });
+    } else if (request.method !== "GET" && request.method !== "HEAD") {
+      response = new Response("Method not allowed", { status: 405 });
+    } else if (url.pathname.startsWith("/mediapipe/")) {
+      response = await serveMediapipeRuntime(url.pathname, mediapipeRoot);
+    } else {
+      response = await serveStatic(url.pathname, staticRoot);
     }
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      return new Response("Not found", { status: 404, headers: headers("text/plain; charset=utf-8") });
-    }
-    if (url.pathname.startsWith("/mediapipe/")) {
-      return serveMediapipeRuntime(url.pathname, mediapipeRoot);
-    }
-    return serveStatic(url.pathname, staticRoot);
+    for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) response.headers.set(name, value);
+    return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
   };
 }

@@ -12,26 +12,26 @@
     "build": "bun run build:authenticator && bun run build:authenticator-server",
     "build:authenticator": "vite build --config vite.config.ts",
     "build:authenticator-server": "bun build apps/authenticator/src/server/main.ts --target=bun --outdir apps/authenticator/dist-server",
-    "build:static-demo": "vite build --config vite.static-demo.config.ts",
     "dev:authenticator": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
     "lint": "eslint -c eslint.config.mjs . --max-warnings=0",
-    "preview:static-demo": "vite preview --config vite.static-demo.config.ts",
     "start:authenticator": "bun apps/authenticator/src/server/main.ts",
     "start:authenticator:tunnel": "bun --env-file=.env.tunnel apps/authenticator/src/server/main.ts",
     "test": "bun test .",
     "test:authenticator": "bun test apps/authenticator/test",
     "test:browser": "bun run build:authenticator && playwright test -c playwright.integration.config.ts",
-    "test:contracts": "bun test packages/contracts/test",
     "test:integration": "bun test tests/integration",
     "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "dev": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
-    "start": "bun apps/authenticator/src/server/main.ts"
+    "start": "bun apps/authenticator/src/server/main.ts",
+    "build:selfie-helper": "cargo build --locked --config services/staging-issuance/face-enrollment-helper/build-config.toml --manifest-path services/staging-issuance/face-enrollment-helper/Cargo.toml"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "@worldcoin/walletkit-web": "0.27.1"
+    "@worldcoin/walletkit-web": "0.27.1",
+    "viem": "2.56.0",
+    "lossless-json": "4.3.1"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",

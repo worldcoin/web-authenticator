@@ -1,4 +1,7 @@
 import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
+import { WalletKit as AccountWallet } from "../lib/walletkit";
+import { activateStagingWallet } from "./registration";
+import { abortable } from "../lib/async";
 
 const PROFILE_KEY = "world-id-wallet-v1";
 const PRF_INPUT = new TextEncoder().encode("world-id/web-authenticator/prf/v1");
@@ -44,19 +47,39 @@ export async function deriveWalletKeys(prf: Uint8Array<ArrayBuffer>): Promise<{
 
 /** Unlocks the local vault. This does not register an account or issue a credential. */
 export async function openPasskeyWallet(signal: AbortSignal): Promise<WalletSession> {
+  return openWithPasskey(signal);
+}
+
+/** The seed stays inside the unlock scope and is erased after account activation. */
+export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void): Promise<AccountWallet> {
+  let account: AccountWallet | undefined;
+  await openWithPasskey(signal, async (session, seed, credentialId, deadline) => {
+    account = new AccountWallet(session.client, session.store, "staging", "us");
+    await activateStagingWallet(account, seed, credentialId, deadline, progress);
+  });
+  if (!account) throw new Error("The authenticator could not be opened.");
+  return account;
+}
+
+type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal) => Promise<void>;
+
+async function openWithPasskey(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
   if (!window.isSecureContext || typeof PublicKeyCredential === "undefined") {
     throw new Error("Use a secure browser with a PRF-capable passkey provider.");
+  }
+  if (window.top !== window.self || document.visibilityState !== "visible") {
+    throw new Error("Open this authenticator in a visible top-level browser tab.");
   }
   if (navigator.locks === undefined) {
     throw new Error("This browser cannot safely coordinate wallet setup across tabs.");
   }
   return navigator.locks.request("world-id-wallet-setup-v1", { ifAvailable: true }, async (lock) => {
     if (lock === null) throw new Error("Wallet setup is already running in another tab.");
-    return openWalletUnderLock(signal);
+    return openWalletUnderLock(signal, activate);
   });
 }
 
-async function openWalletUnderLock(signal: AbortSignal): Promise<WalletSession> {
+async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
   signal.throwIfAborted();
   const saved = window.localStorage.getItem(PROFILE_KEY);
   let profile = saved === null ? undefined : parseWalletProfile(saved);
@@ -106,7 +129,7 @@ async function openWalletUnderLock(signal: AbortSignal): Promise<WalletSession> 
   let client: WalletKit | undefined;
   const opening = new AbortController();
   const abort = () => { opening.abort(); client?.terminate(); };
-  const timeout = setTimeout(abort, 60_000);
+  const timeout = setTimeout(abort, activate ? 300_000 : 60_000);
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
@@ -126,6 +149,7 @@ async function openWalletUnderLock(signal: AbortSignal): Promise<WalletSession> 
     }
     signal.throwIfAborted();
     opening.signal.throwIfAborted();
+    if (activate) await abortable(activate({ client, store }, keys.seed, profile.credentialId, opening.signal), opening.signal);
     return { client, store };
   } catch (error) {
     client?.terminate();
