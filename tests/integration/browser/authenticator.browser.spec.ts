@@ -67,7 +67,8 @@ if (!("bun" in process.versions)) {
     expect(violations).toEqual([]);
   });
 
-  test("real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting", async ({ page, browserName }) => {
+  for (const providerArrays of [false, true]) {
+  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Virtual PRF requires Chromium CDP");
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
@@ -76,6 +77,15 @@ if (!("bun" in process.versions)) {
       protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true,
       hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true,
     } });
+    if (providerArrays) await page.addInitScript(() => {
+      const original = PublicKeyCredential.prototype.getClientExtensionResults;
+      PublicKeyCredential.prototype.getClientExtensionResults = function () {
+        const output = original.call(this);
+        const result = (output as unknown as { prf?: { results?: { first?: unknown } } }).prf?.results;
+        if (result?.first instanceof ArrayBuffer) result.first = Array.from(new Uint8Array(result.first));
+        return output;
+      };
+    });
     let registrations = 0;
     await page.route("https://**/*", async route => {
       if (new URL(route.request().url()).pathname === "/create-account") registrations++;
@@ -95,4 +105,5 @@ if (!("bun" in process.versions)) {
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });
+  }
 }

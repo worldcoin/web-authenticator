@@ -1,9 +1,11 @@
+import { WalletOpenError } from "./errors";
+
 export type RegistrationState = "submitting" | "finalized";
 
 export function registrationState(credentialId: string): RegistrationState | null {
   const value = window.localStorage.getItem(`world-id-staging-registration-v1:${credentialId}`);
   if (value !== null && value !== "submitting" && value !== "finalized") {
-    throw new Error("Saved registration status is invalid. Do not clear site data to retry registration.");
+    throw new WalletOpenError("Saved registration status is invalid. Do not clear site data to retry registration.");
   }
   return value;
 }

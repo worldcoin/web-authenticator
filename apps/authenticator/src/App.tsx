@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CameraPreview } from "./components/CameraPreview";
 import { openAuthenticator } from "./wallet/session";
+import { walletOpenErrorMessage } from "./wallet/errors";
 import { abortable } from "./lib/async";
 import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
 import { issueSelfieCredential } from "./lib/selfie-issuance";
@@ -102,8 +103,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     let current: WalletKit;
     try { current = await services.open(signal, setProgress); }
     catch (cause) {
-      throw new Error(cause instanceof Error && cause.message.startsWith("Could not ")
-        ? cause.message : "Passkey setup or unlock did not complete. Use a PRF-capable passkey provider and try again.", { cause });
+      throw new Error(walletOpenErrorMessage(cause), { cause });
     }
     if (signal.aborted) { current.terminate(); signal.throwIfAborted(); }
     activeWallet.current = current; setWallet(current);

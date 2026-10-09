@@ -1,3 +1,4 @@
+import { WalletOpenError } from "./errors";
 import type { WalletKit } from "../lib/walletkit";
 import { abortable, pause } from "../lib/async";
 import { registrationState, saveRegistrationState } from "./persistence";
@@ -38,6 +39,6 @@ export async function activateStagingWallet(
     saveRegistrationState(credentialId, "finalized");
   } catch (cause) {
     wallet.terminate();
-    throw new Error(`Could not ${stage}. Unlock to check again. No automatic resubmission was made.`, { cause });
+    throw new WalletOpenError(`Could not ${stage}. Unlock to check again. No automatic resubmission was made.`, { cause });
   }
 }
