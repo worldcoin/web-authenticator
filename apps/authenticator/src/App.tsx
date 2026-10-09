@@ -180,10 +180,10 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
     <header className="dev-mode-bar"><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
-    <div className="authenticator-layout"><main className="app-main">
+    <div className="authenticator-layout"><main className={`app-main${preview && screen === "enroll" ? " app-main--camera-preview" : ""}`}>
     <p className="staging-banner">World ID · Staging</p>
     <div className="screen-content"><div className="centered-layout">
-      <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />
+      {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />}
       <div className="message-block">
         <h1>{title}</h1>
         {screen === "done" && <p>Your proof reached the bridge. The requesting app verifies it.</p>}
@@ -210,7 +210,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         {screen === "enroll" && !canIssue && <p>Staging enrollment is available only when running this authenticator locally.</p>}
         {!wallet && supported && !loading && !finished && screen !== "delivery" && <p className="detail-copy">New wallets register an account on staging. Your passkey also unlocks encrypted credential storage on this browser.</p>}
       </div>
-      {preview && screen === "enroll" && <CameraPreview />}
       {progress && !finished && <p className="progress-copy" role="status">{progress}</p>}
       {error && <p className="error-copy" role="alert">{error}</p>}
     </div></div>

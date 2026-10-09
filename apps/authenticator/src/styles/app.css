@@ -551,6 +551,7 @@ h1:focus {
 .error-copy { color: #a32424; padding: 12px; background: #fff1f1; border-radius: 12px; }
 .return-link { display: block; text-align: center; text-decoration: none; }
 .camera-preview { display: grid; gap: 16px; width: 100%; font-size: 14px; text-align: center; }
+.app-main--camera-preview .screen-content { align-items: flex-start; padding-block: 24px; }
 .camera-oval { position: relative; aspect-ratio: 345 / 482; width: min(100%, 260px); margin: auto; }
 .camera-oval video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); clip-path: ellipse(46% 47% at 50% 49%); }
 .camera-oval img { position: absolute; inset: 0; width: 100%; height: 100%; }
