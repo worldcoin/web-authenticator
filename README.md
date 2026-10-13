@@ -1,126 +1,160 @@
-# Web Authenticator
+# World ID Web Authenticator
 
-This repo contains the browser experience and the current staging demo. Real selfie enrollment through a TEE is still being built.
+Staging authenticator built on PR #9 with published `@worldcoin/walletkit-web@0.27.1`.
+The relying-party demo belongs in its own website. This repository consumes its
+requests; it does not host an RP demo, generate RP requests, or verify proofs for the RP.
 
-## Run locally
+## Run
 
 ```sh
 bun install --frozen-lockfile
-bun run dev
+bun run build
+bun run start
 ```
 
-Open [localhost:3100](http://localhost:3100). The development command starts Vite on port 3100 and the Bun API server on port 3101.
+Open **http://localhost:4173**. Use localhost or HTTPS for passkeys.
+`bun run dev` watches the browser build and Bun server. Use `PORT=4193 bun run dev`
+when another checkout already occupies the default port.
 
-- `/`: authenticator setup, unlock and request entry.
-- `/selfie-check`: Selfie Check request flow.
-- `/selfie-demo`: local RGBNet face positioning, ONNX diagnostics and connection log.
-  See [model setup and validation](docs/rgbnet-browser.md).
+## Request and proof flow
 
-Passkey setup requires a browser and provider that support the WebAuthn PRF extension. Camera access requires HTTPS or localhost.
-
-The TEE target is configured in `.env.local`:
-
-```dotenv
-VITE_TEE_BASE_URL=http://127.0.0.1:8010
-```
-
-The development selfie demo now makes an authenticated `POST /v1/connect` request using a short-lived demo token supplied automatically by the local backend. This is local admission, not enclave attestation. Missing/invalid/expired credentials are forbidden; a valid token receives 503 until the face worker is attached. See [local connection setup](docs/local-tee-connect.md).
-
-The developer enrollment flow can issue a staging credential using synthetic face data. It does not use the camera image, create a real face PCP or verify TEE enrollment evidence.
-
-## Responsibility Table
-
-| Component                                                                                         | Responsibility                                                                                                                             |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [web-authenticator](https://github.com/worldcoin/web-authenticator)                               | Consent, passkeys, camera, capture guidance, request handling and browser storage.                                                         |
-| [walletkit](https://github.com/worldcoin/walletkit)                                               | Protocol registration, credential subjects, credential storage and proof generation. Browser TEE APIs still need integration.              |
-| [di-migration-tee](https://github.com/worldcoin/di-migration-tee)                                 | Starting point for the biometrics TEE: admission API, host-to-enclave communication and attested keys. Selfie operations need to be added. |
-| [signup-service](https://github.com/worldcoin/signup-service)                                     | Verify enrollment authorization and evidence, submit shares for uniqueness processing and request credential signing.                      |
-| [signup-service-credential-signer](https://github.com/worldcoin/signup-service-credential-signer) | Sign the credential with the ordered claims supplied by the issuer.                                                                        |
-
-## Authenticator setup
+The external website sends its normal World ID connector link to this authenticator:
 
 ```text
-seed = HKDF-Expand(
-  PRF("web.world.org/authenticator"),
-  "web.world.org/v1/authenticator-secret", 32)
-
-databaseKey = HKDF-Expand(
-  PRF("web.world.org/storage"),
-  "web.world.org/v1/storage-secret", 32)
+http://localhost:4173/?i=<bridge-request-uuid>&k=<URL-encoded-base64-key>&b=https%3A%2F%2Fstaging-bridge.worldcoin.org
 ```
 
-## First enrollment — planned
+`b` is optional and defaults to `https://bridge.worldcoin.org`. Only those two
+World ID bridge origins are accepted. `t=wld` and a validated `return_to` URL are
+also supported. The encrypted request's callback takes precedence and conflicting
+callbacks are rejected. Configure the external demo's authenticator base URL;
+request creation and final verification remain on that website/server.
 
-1. Open an IDKit request or start enrollment from the authenticator. Show consent.
-2. Prepare the schema-11 credential subject and blinding factor through WalletKit.
-3. Start the camera and TEE session setup concurrently. Show local capture guidance while the connection is prepared.
-4. Verify the enclave attestation and its public-key binding. Establish a session bound to the subject, challenge and expiry.
-5. Capture the required images or video and encrypt them to the enclave.
-6. The TEE runs the authoritative checks and generates the embedding, protected enrollment outputs and evidence binding those outputs to the enrollment.
-7. The browser builds and encrypts the PCP from those outputs and the corresponding capture material. The exact output and PCP contracts still need implementation.
-8. Submit the enrollment payload and TEE evidence to the Face issuer. The issuer verifies their binding and processes the uniqueness result.
-9. Poll for the signed credential. Store it with its blinding factor and retain the associated encrypted PCP.
-10. Complete the original IDKit request if enrollment started from one.
+1. Fetch and decrypt the bridge request. Validate staging environment, timestamps,
+   action binding, RP signer and OPRF key against the staging registry.
+2. Show the RP ID, action and exact AND/OR credential requirements before opening
+   a passkey. New wallets register on staging; existing wallets unlock their vault.
+3. Check the requested issuer schemas and date bounds. Selfie-only requests can
+   enter enrollment; Orb-only requests require an existing Orb credential. An
+   either-credential request asks the user to choose, without selecting Selfie automatically.
+4. On explicit approval, revalidate the request and use WalletKit to generate the
+   proof from the original requirements. Selfie proofs include the existing
+   schema-11 uniqueness-score disclosure.
+5. Encrypt and upload the response to the bridge. Failed delivery retains the same
+   proof in memory for retry. The UI reports delivery, not successful RP verification.
 
-We intend to use the existing Face issuer endpoints:
+Only staging World ID 4 uniqueness requests are supported. User-presence and
+identity-attribute requests fail closed. Orb enrollment/import, recovery, and
+production requests are not implemented. Closing/reloading the page discards the
+bridge response capability; reopen a fresh request from the RP. Bridge keys are
+removed from browser history and never persisted by the app.
 
-- `PUT /api/v1/identity`: submit enrollment.
-- `GET /api/v1/identity`: poll for its result and credential.
+## Selfie issuance
 
-Keeping those routes still requires changes to accept and verify TEE evidence, and to authorize browser polling. The browser does not have a World App integrity token.
+The local flow uses the **existing real staging issuer with synthetic face input**.
+It obtains a schema-11 subject/blinding factor through WalletKit, creates encrypted
+synthetic AMPC shares in a native helper, submits/polls Face staging, verifies the
+issuer signature and subject, and stores the issued credential in the encrypted vault.
 
-## Returning verification — planned
+```sh
+bun run build:selfie-helper
+```
 
-We will validate the incoming request, unlock the authenticator and check the stored credential's expiry and constraints.
+The helper has pinned private Oxide/AMPC dependencies and needs their repository
+access and native dependencies. See its [README](services/staging-issuance/face-enrollment-helper/README.md).
+`STAGING_FACE_HELPER=/absolute/path/to/staging-face-crypto` can select an existing
+build of this same helper for local development. Missing helpers return an actionable
+503; there is no fake-success fallback. The web build does not build the native helper.
 
-When fresh user presence is required, we will capture a new selfie and ask the TEE to compare it with the credential-bound PCP reference. The match evidence must be bound to the current request. WalletKit and the RP verifier must carry and verify that binding before the response is accepted.
+Issuance is allowed only with a loopback server binding, an allowed localhost
+request origin, and matching `Origin` header. Remote deployments cannot enable
+this synthetic enrollment route by changing browser input. Interrupted submissions
+are saved and polled instead of automatically submitted again. The server retains
+operations under `~/.local/state/web-authenticator/synthetic-selfie-issuance` with
+private filesystem permissions; the browser retains an opaque resume capability.
+Set `STAGING_SELFIE_STATE_DIR` to a separate persistent directory when running
+multiple local checkouts. Run one issuer process per directory; the in-memory
+concurrency guard is not a distributed lock.
 
-## Browser and TEE checks
+The optional camera preview runs Face Engine’s RGBNet detector locally through
+ONNX Runtime Web (CPU/WASM, dedicated worker). It provides face-count, centering
+and distance guidance. MediaPipe and its head-turn/lighting heuristics are removed.
+Install the pinned model before using the preview:
 
-| Browser: capture feedback              | TEE: authoritative evaluation                                                     |
-| -------------------------------------- | --------------------------------------------------------------------------------- |
-| TFH face detection and QA models.      | The complete configured face-engine enrollment or verification pipeline.          |
-| Lightweight glasses detector.          | Full required occlusion and image-quality checks, including non-model validators. |
-| Our own orchestration and guidance UI. | Configured spoof checks, embedding generation and matching when required.         |
+```sh
+bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
+```
 
-A capture can pass browser guidance and still fail in the TEE. We will surface the rejection and let the user retake it.
+The model is ignored by Git; install it before building a deployable preview.
+See [RGBNet setup and processing](docs/rgbnet-browser.md).
+It does **not** supply the issuer input or establish liveness. TEE capture, challenge
+verification and production Selfie Check issuance remain separate integrations.
 
-An encrypted connection does not prove that an image came from a live camera. Liveness guarantees depend on the capture protocol and the checks actually performed. We must not claim mobile LightGuard parity for the web flow.
+The **Dev mode** switch is off by default and resets on reload. It opens a side
+panel (below the authenticator on narrow screens) with credential descriptions,
+IDs, dates, vault refresh and confirmed local deletion, plus request and runtime
+details. Unlock the wallet before inspecting credentials. Vault mutations are
+disabled during active operations and pending proof delivery. The inspector never
+shows secret keys, PRF output, blinding factors or proof payloads. Deleting a local
+credential does not delete the passkey, account registration or issuer record.
 
-## PCP storage and reissuance
+## Storage
 
-We will store the PCP encrypted in browser storage. Its binding to the signed credential must survive storage and later verification. The browser PCP API and storage format are still to be implemented.
+PR #9's public profile (`world-id-wallet-v1`), PRF input, HKDF labels and OPFS path
+are unchanged. Reloading at the **same origin** reopens that passkey's encrypted
+WalletKit vault. PRF output and seed/database-key buffers are erased after opening.
+No plaintext key fallback is available. Close other wallet tabs before unlocking.
 
-A passkey can recover a storage key; it cannot recreate deleted vault files. If browser storage is lost, the intended recovery paths are:
+Registration status and the opaque issuance resume capability are additional
+browser metadata. A submission of unknown outcome is never automatically
+registered again; unlocking checks whether that account became available.
 
-- Transfer the credential and PCP from another authenticator.
-- Prove control of the same World ID, capture a fresh selfie and request reissuance with a new PCP.
+Ports/hostnames are separate browser origins. The earlier development checkout
+also used a different key derivation/storage format; this branch does not import
+its vault. A synced passkey alone does not back up OPFS. Clearing site data loses
+local vault/profile data; cross-device backup, passkey rotation and recovery are
+not implemented.
 
-Reissuance requires issuer support and face continuity checks. Creating a new identity is not a reliable recovery path: the existing face enrollment can still match during uniqueness processing.
+## Validation
 
-## Issuance claims — proposed
+```sh
+bun run lint
+bun run typecheck
+bun run build
+bun test
+bun x playwright install chromium webkit
+bun run test:browser
+cargo fmt --manifest-path services/staging-issuance/face-enrollment-helper/Cargo.toml -- --check
+```
 
-| Index | Claim          |
-| ----- | -------------- |
-| 0     | Z-score.       |
-| 1     | Match count.   |
-| 2     | Database size. |
+Browser tests run a separate server on port 4194. Unit and browser tests use fixture
+RP signatures, mocked upstream registry/bridge responses and mocked account/issuer
+boundaries; they do not submit staging registrations or enrollments. Chromium also
+exercises a virtual PRF passkey and the real WalletKit worker/vault against a failed
+upstream registration. This is not physical-passkey or live end-to-end issuance evidence.
 
-| Proposed index | Claim                    | Meaning                                                                                          |
-| -------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
-| 3              | `issuance_assurance`     | `0`: unknown; `1`: app; `2`: TEE; `3`: app and TEE.                                              |
-| 4              | `model_security_profile` | Versioned identifier for the checks and configuration that ran. Profile IDs remain to be agreed. |
+No automatic deployment is configured. PR #9's `vercel.json` keeps Vercel Git
+publishing disabled. Server bindings/origins and the explicit CSP allowlist live in
+[`config/authenticator-app-v0.ts`](config/authenticator-app-v0.ts).
 
-These additions need a compatible schema rollout. The issuer derives and persists the values from verified evidence; it must not accept assurance values supplied by the browser.
+## Provenance
 
-## Admission and runtime protection
+PR #9 migrated the browser UX from `worldcoin/web-authenticator-experiments`
+commit `b4139268da213a680e89bf5877c29fcafb145f25`. This branch replaces its embedded
+RP scenario, simulated session gateway and simulated issuers with the existing
+development checkout's WalletKit, bridge and staging issuance integrations.
+The original UI assets and passkey vault format are retained. Camera guidance now uses the pinned RGBNet model described above.
 
-The public ingress must admit and rate-limit enrollment attempts before allocating expensive TEE work. IP and User-Agent can support abuse controls; they are not proof of identity or camera authenticity. We do not plan to request browser geolocation.
+## Local integration branch
 
-Promon Shield for Web is a proposed runtime-protection layer. Its session validation would need enforcement at ingress. It does not replace enclave attestation, biometric checks or issuer verification.
+`integration/authenticator-demo` is the consolidated working branch. The default
+app is `apps/authenticator`, with the responsive UI and published WalletKit 0.27.1.
+Run `bun run build` then `PORT=3100 bun run start` for localhost:3100.
 
-## References
+The earlier TEE experiment is preserved under `experiments/tee-demo`; its local
+WalletKit #604 integration is not yet wired into the main UI. Existing legacy
+demo passkeys retain their original derivation, vault namespace, and registration
+status. Registration and initialization share one unlocked session.
 
-- [Selfie Check via Web Authenticator — source spec](https://app.notion.com/p/worldcoin/Selfie-Check-via-Web-Authenticator-cfd0a1d9d6de45d49241382a36645c6b)
-- [Soam's handover](https://github.com/worldcoin/web-authenticator-experiments/blob/0bd61a20b23ff0a778553ac1788bd3aa3c7b9404/docs/web-authenticator-handover.md)
+Browser diagnostics use `authenticator_step` events with step names, timings, and
+safe failure categories; they omit key material and raw dependency errors.

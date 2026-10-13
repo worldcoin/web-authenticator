@@ -1,0 +1,18 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="88" height="88" viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Frame 2147265302">
+<g clip-path="url(#clip0_0_24)">
+<g id="profile-circle">
+<path id="Vector" d="M44.0005 57.5135C51.4571 57.5135 57.5019 51.4675 57.5019 44.0095C57.5019 36.5514 51.4571 30.5054 44.0005 30.5054C36.5438 30.5054 30.499 36.5514 30.499 44.0095C30.499 51.4675 36.5438 57.5135 44.0005 57.5135Z" stroke="#1F1F1F" stroke-width="3" stroke-miterlimit="10"/>
+<path id="Vector_2" d="M44.0004 45.4402C46.4689 45.4402 48.47 43.4387 48.47 40.9697C48.47 38.5007 46.4689 36.4992 44.0004 36.4992C41.5318 36.4992 39.5307 38.5007 39.5307 40.9697C39.5307 43.4387 41.5318 45.4402 44.0004 45.4402Z" stroke="#1F1F1F" stroke-width="3" stroke-miterlimit="10"/>
+<path id="Vector_3" d="M34.6384 53.844C35.7425 51.9989 37.8049 50.7557 40.1681 50.7557H47.8297C50.0332 50.7557 51.9776 51.8368 53.1233 53.4783" stroke="#1F1F1F" stroke-width="3" stroke-miterlimit="10"/>
+</g>
+<circle id="Ellipse 15313" cx="44" cy="44" r="42.5" stroke="#F1F1F1" stroke-width="3"/>
+<path id="Ellipse 15314" d="M44 1.5C50.2392 1.5 56.402 2.87374 62.0505 5.52366C67.6991 8.17357 72.6949 12.0347 76.6832 16.8327C80.6715 21.6308 83.5545 27.2482 85.1273 33.2859C86.7002 39.3237 86.9245 45.6336 85.7841 51.7678" stroke="#007CFB" stroke-width="3"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_24">
+<rect width="88" height="88" rx="44" fill="white"/>
+</clipPath>
+</defs>
+</svg>
