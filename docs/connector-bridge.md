@@ -1,6 +1,7 @@
 # Native connector and bridge flow
 
-The authenticator accepts World ID connector query parameters at `/verify` or `/`.
+The authenticator accepts World ID connector query parameters at `/`.
+Old `/verify` links redirect to `/`, preserving their connector parameters.
 This code is independent of the relying-party demo's request generation.
 
 - `src/lib/requests/connector.ts`: strict `i`/`k` parsing, official bridge allowlist,
@@ -15,7 +16,17 @@ This code is independent of the relying-party demo's request generation.
   drawer can review. No signed request fields are rewritten to fit available credentials.
 - `CredentialRequestSheet`: opens automatically, shows the actual requested schemas,
   blocks unsatisfied or unsupported requests, and requires approval before generation.
-  The proof stays visible for review before explicit encrypted delivery/return.
+  Approval generates and automatically delivers the encrypted proof response. A
+  failed delivery retains the same proof for an explicit retry; it does not repeat
+  enrollment or proof generation. Successful delivery follows the return URL when supplied.
+
+Credential routing checks the vault before offering enrollment. A missing Selfie
+credential opens setup automatically only when Selfie is required by the request
+and enrollment can satisfy the complete constraint tree. Requests accepting
+Selfie or another issuer show an explicit Selfie choice. Orb-only requests never
+fall back to Selfie: they use an eligible Orb credential or explain that one is
+missing. The sheet displays the AND/OR requirements and can recheck the vault;
+it does not implement Orb enrollment or transfer from another authenticator.
 
 The connector query is removed from browser history after capture, and the app uses
 `Referrer-Policy: no-referrer`. Reloading that cleaned page loses the in-memory request;

@@ -1,0 +1,108 @@
+@import 'tailwindcss';
+
+@font-face {
+	font-family: 'TWK Lausanne';
+	src: url('./fonts/TWKLausanne-300.otf') format('opentype');
+	font-weight: 300;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'TWK Lausanne';
+	src: url('./fonts/TWKLausanne-400.otf') format('opentype');
+	font-weight: 400;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'TWK Lausanne';
+	src: url('./fonts/TWKLausanne-600.otf') format('opentype');
+	font-weight: 600;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Tiempos Headline';
+	src: url('./fonts/TiemposHeadline-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-display: swap;
+}
+:root {
+	--raw-font-twk-lausanne: 'TWK Lausanne';
+	--raw-font-tiempos: 'Tiempos Headline';
+}
+
+@theme inline {
+	--color-background: #f9f9f8;
+	--color-primary: #2d2c2c;
+	--color-secondary: #848382;
+	--color-border: #e1dfda;
+
+	--font-tiempos: var(--raw-font-tiempos), var(--font-serif);
+	--font-brand: var(--raw-font-twk-lausanne), var(--font-sans);
+}
+
+.credential-sheet {
+	position: fixed;
+	inset: auto 0 0;
+	margin: 0 auto;
+	width: min(100%, 480px);
+	max-width: 100%;
+	max-height: 92dvh;
+	overflow-y: auto;
+	border: 0;
+	border-radius: 28px 28px 0 0;
+	padding: 16px 32px max(32px, env(safe-area-inset-bottom));
+	background: #fff;
+	color: var(--color-primary);
+	box-shadow: 0 -12px 48px #00000015;
+}
+.credential-sheet[open] {
+	animation: sheet-enter 180ms ease-out;
+}
+.credential-sheet::backdrop {
+	background: #0007;
+}
+.sheet-handle {
+	width: 36px;
+	height: 4px;
+	border-radius: 4px;
+	background: #dedddb;
+	margin: 0 auto 24px;
+}
+.sheet-primary,
+.sheet-secondary {
+	min-height: 52px;
+	width: 100%;
+	border-radius: 999px;
+	padding: 14px 20px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.sheet-primary {
+	background: #2d2c2c;
+	color: white;
+}
+.sheet-secondary {
+	background: #f1f0ee;
+}
+.sheet-primary:disabled {
+	opacity: 0.6;
+	cursor: wait;
+}
+.credential-sheet button:focus-visible {
+	outline: 2px solid #2d2c2c;
+	outline-offset: 3px;
+}
+@keyframes sheet-enter {
+	from {
+		transform: translateY(32px);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.credential-sheet[open] {
+		animation: none;
+	}
+}

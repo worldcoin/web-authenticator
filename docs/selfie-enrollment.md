@@ -2,8 +2,13 @@
 
 ## Implemented synthetic staging issuance
 
-**Issue selfie credential** appears only in the initialized developer menu, below
-faux issuance. It prepares schema 11 in the existing browser WalletKit, calls the
+**Issue selfie credential** is available in the initialized developer menu, below
+faux issuance. Missing-credential requests also enter `/selfie-check`, which opens
+a continuous circular camera preview. There is no timed photo capture or automatic
+issuance. Developer tools on that screen offer manual synthetic enrollment. The
+preview is not saved or uploaded and stops on leaving or hiding the tab.
+
+Issuance prepares schema 11 in the existing browser WalletKit, calls the
 localhost-only `/api/selfie-credential` route, polls staging, verifies the returned
 credential's signature against the current staging schema registry and its subject,
 and stores it with the browser-held blinding factor. An active schema-11 credential
@@ -29,7 +34,8 @@ using `FaceVector::random_normalized`; the preview fixture below is separate.
 
 Only the staging enrollment endpoint is enabled. Like Orb Tools, this fixture uses
 `staging-test-token` headers, a synthetic associated-data hash, and omits attested
-share hashes. It has no actual camera capture, liveness check, or recoverable PCP.
+share hashes. The issuer does not consume the captured image and has no liveness
+check or recoverable PCP.
 
 A private operation file under
 `~/.local/state/web-authenticator/synthetic-selfie-issuance` contains a separate

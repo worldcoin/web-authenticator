@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist/
 
 # misc
 .DS_Store
@@ -39,3 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local playground and generated diagrams
+/demo/
+/.codex-visualizations/
+/src/server/face-enrollment-helper/target/
+
+# Installed with scripts/setup-rgbnet.ts; only the browser detector is served.
+/public/models/*.onnx

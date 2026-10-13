@@ -13,17 +13,18 @@ Open [localhost:3100](http://localhost:3100). The development command starts Vit
 
 - `/`: authenticator setup, unlock and request entry.
 - `/selfie-check`: Selfie Check request flow.
-- `/selfie-demo`: camera preview and connection log.
+- `/selfie-demo`: local RGBNet face positioning, ONNX diagnostics and connection log.
+  See [model setup and validation](docs/rgbnet-browser.md).
 
 Passkey setup requires a browser and provider that support the WebAuthn PRF extension. Camera access requires HTTPS or localhost.
 
 The TEE target is configured in `.env.local`:
 
 ```dotenv
-VITE_TEE_BASE_URL=http://localhost:8000
+VITE_TEE_BASE_URL=http://127.0.0.1:8010
 ```
 
-This only selects a target. It does not start a TEE, verify an enclave or enable uploads. The current `connect()` implementation reports that connection setup is unavailable.
+The development selfie demo now makes an authenticated `POST /v1/connect` request using a short-lived demo token supplied automatically by the local backend. This is local admission, not enclave attestation. Missing/invalid/expired credentials are forbidden; a valid token receives 503 until the face worker is attached. See [local connection setup](docs/local-tee-connect.md).
 
 The developer enrollment flow can issue a staging credential using synthetic face data. It does not use the camera image, create a real face PCP or verify TEE enrollment evidence.
 
