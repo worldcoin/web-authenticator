@@ -16,14 +16,13 @@
     "lint": "eslint -c eslint.config.mjs . --max-warnings=0",
     "start:authenticator": "bun apps/authenticator/src/server/main.ts",
     "start:authenticator:tunnel": "bun --env-file=.env.tunnel apps/authenticator/src/server/main.ts",
-    "test": "bun test apps packages services config tests",
-    "test:authenticator": "bun test apps/authenticator/test",
-    "test:browser": "bun run build:authenticator && playwright test -c playwright.integration.config.ts",
-    "test:integration": "bun test tests/integration",
+    "test": "bun test ./apps ./packages ./config ./tests",
+    "test:authenticator": "bun test ./apps/authenticator/test",
+    "test:browser": "bun run build:authenticator && playwright test -c tests/e2e/playwright.config.ts",
+    "test:integration": "bun test ./tests/integration",
     "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "dev": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
-    "start": "bun apps/authenticator/src/server/main.ts",
-    "build:selfie-helper": "cargo build --locked --config services/staging-issuance/face-enrollment-helper/build-config.toml --manifest-path services/staging-issuance/face-enrollment-helper/Cargo.toml"
+    "start": "bun apps/authenticator/src/server/main.ts"
   },
   "dependencies": {
     "onnxruntime-web": "1.30.0",

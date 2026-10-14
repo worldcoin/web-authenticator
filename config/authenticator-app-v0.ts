@@ -38,37 +38,7 @@ function envPort(): number {
   return port;
 }
 
-function envOrigin(name: string, fallback: string): string {
-  const raw = envValue(name);
-  if (raw === undefined) return fallback;
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new TypeError(`${name}_invalid: ${raw}`);
-  }
-  if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
-    url.pathname !== "/" || url.search !== "" || url.hash !== "" ||
-    url.username !== "" || url.password !== ""
-  ) {
-    throw new TypeError(`${name}_must_be_a_bare_origin: ${raw}`);
-  }
-  return url.origin;
-}
-
-const port = envPort();
 export const AUTHENTICATOR_APP_CONFIG = Object.freeze({
   host: envValue("AUTHENTICATOR_HOST") ?? "127.0.0.1",
-  port,
-  publicOrigin: envOrigin("AUTHENTICATOR_PUBLIC_ORIGIN", `http://127.0.0.1:${port}`),
-  localOrigin: envOrigin("AUTHENTICATOR_LOCAL_ORIGIN", `http://localhost:${port}`),
+  port: envPort(),
 });
-
-export function allowsSyntheticIssuance(request: Request): boolean {
-  const url = new URL(request.url);
-  const origins = [AUTHENTICATOR_APP_CONFIG.publicOrigin, AUTHENTICATOR_APP_CONFIG.localOrigin];
-  return ["127.0.0.1", "::1", "localhost"].includes(AUTHENTICATOR_APP_CONFIG.host) &&
-    ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) && origins.includes(url.origin) &&
-    request.headers.get("origin") === url.origin;
-}

@@ -42,4 +42,4 @@ jobs:
               run: bunx playwright install --with-deps chromium webkit
 
             - name: Browser regression tests
-              run: bunx playwright test -c playwright.integration.config.ts
+              run: bunx playwright test -c tests/e2e/playwright.config.ts

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { startFaceDetector } from "../face/face-detector";
 import { faceGuidance } from "../face/rgbnet";
 
-/** Local framing guidance only. No camera data enters synthetic staging issuance. */
+/** Local framing guidance only. No camera data is submitted for enrollment. */
 export function CameraPreview() {
   const video = useRef<HTMLVideoElement>(null);
   const [message, setMessage] = useState("Starting your camera…");
@@ -60,6 +60,6 @@ export function CameraPreview() {
     </div>
     <p role="status">{message}</p>
     <details><summary>ONNX processing status</summary><p className="detail-copy">{detectorStatus || "Waiting for camera frames."}</p></details>
-    <p className="detail-copy">Framing preview only. Images stay in this browser; the staging issuer uses synthetic input.</p>
+    <p className="detail-copy">Framing preview only. Images stay in this browser; no enrollment is submitted.</p>
   </section>;
 }

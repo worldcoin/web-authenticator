@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createAuthenticatorHttpHandler } from "../src/server/http.server";
 import { AUTHENTICATOR_APP_CONFIG, AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../../../config/authenticator-app-v0";
 const handler = createAuthenticatorHttpHandler();
-const origin = AUTHENTICATOR_APP_CONFIG.localOrigin;
+const origin = `http://localhost:${AUTHENTICATOR_APP_CONFIG.port}`;
 const post = (body: unknown, headerOrigin = origin, pathOrigin = origin) => handler(new Request(`${pathOrigin}/api/selfie-credential`, {
   method: "POST", headers: { origin: headerOrigin, "content-type": "application/json" }, body: JSON.stringify(body),
 }));
@@ -11,15 +11,12 @@ test("embedded demo routes and simulated endpoints are gone", async () => {
     expect((await handler(new Request(origin + path))).status).toBe(404);
   }
 });
-test("synthetic issuance rejects other origins and non-loopback hosts before issuing", async () => {
+test("synthetic enrollment is absent even for valid localhost requests", async () => {
   const body = { sub: "0x" + "a".repeat(64), token: "b".repeat(64) };
-  expect((await post(body, "https://other.example")).status).toBe(403);
-  expect((await post(body, "https://auth.example", "https://auth.example")).status).toBe(403);
-});
-test("issuance rejects malformed subjects, tokens, types and oversized bodies", async () => {
-  for (const body of [null, {}, { sub: ["0x" + "a".repeat(64)], token: "b".repeat(64) }, { sub: "0x01", token: "abc" }, { excess: "x".repeat(2000) }]) {
-    expect((await post(body)).status).toBe(400);
-  }
+  expect((await post(body)).status).toBe(404);
+  expect((await post(body, "https://other.example")).status).toBe(404);
+  expect((await post(body, "https://auth.example", "https://auth.example")).status).toBe(404);
+  expect((await handler(new Request(origin + "/api/capabilities"))).status).toBe(404);
 });
 test("RP lookup rejects malformed identifiers without a remote call", async () => {
   expect((await handler(new Request(origin + "/api/staging-rp?id=bad"))).status).toBe(400);

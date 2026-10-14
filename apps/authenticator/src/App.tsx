@@ -5,12 +5,11 @@ import { openAuthenticator } from "./wallet/session";
 import { walletOpenErrorMessage } from "./wallet/errors";
 import { abortable } from "./lib/async";
 import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
-import { issueSelfieCredential } from "./lib/selfie-issuance";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/requests/incoming-request";
 import { credentialAvailability, credentialRequirementsLabel } from "./lib/requests/proof-request";
 import { createProof } from "./lib/requests/prove";
 
-const defaults = { open: openAuthenticator, load: loadIncomingRequest, issue: issueSelfieCredential, prove: createProof };
+const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled";
 
 export function AuthenticatorAppV1({ services = defaults }: { services?: typeof defaults }) {
@@ -23,8 +22,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [canIssue, setCanIssue] = useState(false);
-  const [configurationError, setConfigurationError] = useState(false);
   const [preview, setPreview] = useState(false);
   const [expired, setExpired] = useState(false);
   const [devMode, setDevMode] = useState(false);
@@ -39,13 +36,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     const url = new URL(source.current);
     // Keep the response capability in memory; remove the bridge key from browser history immediately.
     if (url.searchParams.has("k")) window.history.replaceState(null, "", window.location.pathname);
-    void fetch("/api/capabilities", { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]), cache: "no-store" })
-      .then(async response => {
-        if (!response.ok) throw new Error("Configuration unavailable");
-        const value = await response.json() as { environment?: unknown; syntheticSelfieIssuance?: unknown };
-        if (value.environment !== "staging" || typeof value.syntheticSelfieIssuance !== "boolean") throw new Error("Invalid configuration");
-        if (!controller.signal.aborted) setCanIssue(value.syntheticSelfieIssuance);
-      }).catch(() => { if (!controller.signal.aborted) setConfigurationError(true); });
     void services.load(source.current, controller.signal, setProgress).then(request => {
       if (!controller.signal.aborted) { setIncoming(request); setLoading(false); setProgress(""); }
     }).catch(cause => {
@@ -112,19 +102,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     const next = await refresh(current, signal);
     if (incoming && credentialAvailability(incoming.proof, next).needsSelfieEnrollment && supported) setScreen("enroll");
     setProgress("Wallet unlocked.");
-  });
-
-  const issue = () => run(async signal => {
-    if (!wallet || !canIssue || !supported || (incoming && !availability?.canEnrollSelfie)) return;
-    setPreview(false);
-    try { await services.issue(wallet, signal, setProgress); }
-    catch (cause) {
-      closeWallet();
-      throw new Error(cause instanceof Error ? cause.message : "Issuance failed. Unlock and retry to resume the same operation.", { cause });
-    }
-    await refresh(wallet, signal);
-    setScreen("review");
-    setProgress("Selfie credential stored in your encrypted wallet.");
   });
 
   async function deliver(signal: AbortSignal) {
@@ -204,9 +181,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
             : availability.requiresOrb ? "This request needs an eligible Orb credential. Orb enrollment and transfer are not available here."
             : "Your wallet does not meet the requested credential and date requirements."}</p>}
         </section>}
-        {screen === "enroll" && <p className="detail-copy">This local flow issues a real staging credential using synthetic face data. Camera preview is optional; face verification and TEE issuance are not connected yet.</p>}
-        {configurationError && <p role="alert">Issuance configuration is unavailable. Reload to retry; request verification can still continue.</p>}
-        {screen === "enroll" && !canIssue && <p>Staging enrollment is available only when running this authenticator locally.</p>}
+        {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet. You can preview camera positioning, but it will not issue a credential.</p>}
         {!wallet && supported && !loading && !finished && screen !== "delivery" && <p className="detail-copy">New wallets register an account on staging. Your passkey also unlocks encrypted credential storage on this browser.</p>}
       </div>
       {progress && !finished && <p className="progress-copy" role="status">{progress}</p>}
@@ -218,7 +193,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         {wallet && screen === "review" && incoming && supported && <button className="primary-action" disabled={busy || !availability?.satisfied} onClick={() => void approve()}>Approve and share proof</button>}
         {wallet && screen === "review" && supported && (incoming ? availability?.canEnrollSelfie : !hasSelfie) && <button className="secondary-action" disabled={busy} onClick={() => { setScreen("enroll"); setError(null); }}>Set up Selfie Check</button>}
         {wallet && screen === "enroll" && supported && <>
-          <button className="primary-action" disabled={busy || !canIssue} onClick={() => void issue()}>Issue staging Selfie credential</button>
           <button className="secondary-action" disabled={busy} onClick={() => setPreview(value => !value)}>{preview ? "Close camera preview" : "Open camera preview"}</button>
           <button className="secondary-action" disabled={busy} onClick={() => { setScreen("review"); setPreview(false); }}>Back to wallet</button>
         </>}
@@ -230,7 +204,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       {(finished || loadFailed) && <a className="secondary-action return-link" href="/">Open authenticator</a>}
     </div>
     </main>
-    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} canIssue={canIssue} configurationError={configurationError} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
+    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
     </div>
   </div>;
 }

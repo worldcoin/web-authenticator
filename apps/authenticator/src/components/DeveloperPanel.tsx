@@ -5,7 +5,7 @@ import { credentialRequirementsLabel } from "../lib/requests/proof-request";
 import { LIVE_GUIDANCE_MODEL_V1 } from "../walkthrough/model-provenance";
 
 function credentialDescription(schema: bigint) {
-  if (schema === 11n) return { name: "Selfie Check", description: "Schema 11. A proof can disclose the uniqueness score. Credentials issued by this local flow use synthetic face data." };
+  if (schema === 11n) return { name: "Selfie Check", description: "Schema 11. A proof can disclose the uniqueness score. Enrollment is not available in this app." };
   if (schema === 1n) return { name: "Orb", description: "Schema 1. Used for requests accepting Orb verification. Orb enrollment and transfer are not available here." };
   if (schema === 128n) return { name: "Faux", description: "Schema 128. A development credential; it does not establish face verification." };
   return { name: "Credential", description: "No description is available for this issuer schema." };
@@ -13,13 +13,11 @@ function credentialDescription(schema: bigint) {
 
 function date(value: bigint) { return new Date(Number(value) * 1000).toLocaleString(); }
 
-export function DeveloperPanel({ records, unlocked, disabled, incoming, canIssue, configurationError, preview, onRefresh, onDelete }: {
+export function DeveloperPanel({ records, unlocked, disabled, incoming, preview, onRefresh, onDelete }: {
   records: CredentialMetadata[];
   unlocked: boolean;
   disabled: boolean;
   incoming: IncomingRequest | null;
-  canIssue: boolean;
-  configurationError: boolean;
   preview: boolean;
   onRefresh: () => void;
   onDelete: (id: bigint) => void;
@@ -54,8 +52,8 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, canIssue
       {incoming ? <dl><dt>Requesting RP</dt><dd>{incoming.label}</dd><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd><dt>Accepted credentials</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd><dt>Expires</dt><dd>{date(BigInt(incoming.proof.expires_at))}</dd></dl> : <p>No RP request loaded. Open a request from the separate demo app.</p>}
     </section>
     <section aria-labelledby="runtime-title"><h3 id="runtime-title">Camera & issuance</h3>
-      <dl><dt>Preview</dt><dd>{preview ? "Open — local camera guidance" : "Closed"}</dd><dt>Guidance model</dt><dd>{LIVE_GUIDANCE_MODEL_V1.modelKind}</dd><dt>Runtime</dt><dd>{LIVE_GUIDANCE_MODEL_V1.runtimePackage} · {LIVE_GUIDANCE_MODEL_V1.runtimeVersion} · CPU / WASM</dd><dt>Staging issuance</dt><dd>{configurationError ? "Configuration unavailable" : canIssue ? "Available · synthetic face input" : "Unavailable on this server"}</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
-      <p>RGBNet face boxes drive face-count, centering and distance instructions. Inference runs in a dedicated worker, one frame at a time. Camera frames stay in this tab; they are not used by the staging issuer.</p>
+      <dl><dt>Preview</dt><dd>{preview ? "Open — local camera guidance" : "Closed"}</dd><dt>Guidance model</dt><dd>{LIVE_GUIDANCE_MODEL_V1.modelKind}</dd><dt>Runtime</dt><dd>{LIVE_GUIDANCE_MODEL_V1.runtimePackage} · {LIVE_GUIDANCE_MODEL_V1.runtimeVersion} · CPU / WASM</dd><dt>Staging issuance</dt><dd>Not implemented</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
+      <p>RGBNet face boxes drive face-count, centering and distance instructions. Inference runs in a dedicated worker, one frame at a time. Camera frames stay in this tab; they are not submitted for enrollment.</p>
     </section>
   </aside>;
 }

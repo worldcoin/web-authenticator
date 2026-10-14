@@ -1,6 +1,5 @@
 import { resolve, relative, sep } from "node:path";
-import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0, allowsSyntheticIssuance } from "../../../../config/authenticator-app-v0";
-import { POST as issueSelfie } from "./selfie-credential.server";
+import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../../../../config/authenticator-app-v0";
 import { GET as lookupRp } from "./staging-rp.server";
 
 const DEFAULT_STATIC_ROOT = resolve(process.cwd(), "apps/authenticator/dist");
@@ -51,15 +50,8 @@ export function createAuthenticatorHttpHandler(options: { staticRoot?: string } 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     let response: Response;
-    if (url.pathname === "/api/capabilities" && request.method === "GET") {
-      const probe = new Request(request.url, { headers: { origin: url.origin } });
-      response = Response.json({ environment: "staging", syntheticSelfieIssuance: allowsSyntheticIssuance(probe) });
-    } else if (url.pathname === "/api/staging-rp" && request.method === "GET") {
+    if (url.pathname === "/api/staging-rp" && request.method === "GET") {
       response = await lookupRp(request);
-    } else if (url.pathname === "/api/selfie-credential" && request.method === "POST") {
-      response = allowsSyntheticIssuance(request)
-        ? await issueSelfie(request)
-        : Response.json({ error: "Synthetic staging issuance is available only on the local authenticator." }, { status: 403 });
     } else if (url.pathname.startsWith("/api/")) {
       response = Response.json({ error: "Not found" }, { status: 404 });
     } else if (request.method !== "GET" && request.method !== "HEAD") {

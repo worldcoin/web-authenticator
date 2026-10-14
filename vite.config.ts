@@ -13,6 +13,8 @@ function rejectServerModulesFromBrowser(): Plugin {
   const forbidden = [
     path("./apps/authenticator/src/server/"),
     path("./services/"),
+    path("./experiments/"),
+    path("./tests/"),
     path("./packages/biometric-verification-port/"),
     path("./packages/staging-issuance-port/"),
   ];

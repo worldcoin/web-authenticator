@@ -4,5 +4,5 @@
     "lib": ["ES2022"],
     "types": ["bun", "node"]
   },
-  "include": ["*.config.ts", "vite.config.ts", "scripts/**/*.ts"]
+  "include": ["*.config.ts", "vite.config.ts", "scripts/**/*.ts", "tests/e2e/playwright.config.ts"]
 }

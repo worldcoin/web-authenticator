@@ -10,12 +10,11 @@ import type { DetectorResponse } from "../src/face/rgbnet.worker";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
-let restore: (() => void) | undefined;
-afterEach(() => { cleanup(); restore?.(); });
+afterEach(() => cleanup());
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
-  const calls = { prove: 0, issue: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
+  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
     proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {},
@@ -30,20 +29,18 @@ async function fixture(schema: number, available = false) {
     load: async () => incoming,
     open: async () => wallet,
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
-    issue: async () => { calls.issue++; records = [{ credentialId: 1n, issuerSchemaId: 11n, isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata]; return { credentialId: 1n, issuerSchemaId: 11n }; },
   };
-  const mocked = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ environment: "staging", syntheticSelfieIssuance: true }));
-  restore = () => mocked.mockRestore();
   return { services, calls, incoming };
 }
-test("Selfie-only requests lead to enrollment, then return for separate proof approval", async () => {
+test("missing Selfie credentials show unavailable enrollment without an issuance action", async () => {
   const f = await fixture(11); const view = render(<AuthenticatorAppV1 services={f.services} />);
   fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
   expect(await view.findByRole("heading", { name: "Set up Selfie Check" })).toBeTruthy();
-  expect(view.getByText(/real staging credential using synthetic face data/)).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Issue staging Selfie credential" }));
-  await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(f.calls.issue).toBe(1); expect(f.calls.prove).toBe(0);
+  expect(view.getByText(/Selfie Check enrollment is not available/)).toBeTruthy();
+  expect(view.queryByRole("button", { name: /Issue.*credential/ })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Back to wallet" }));
+  expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.calls.prove).toBe(0);
 });
 test("Orb-only requests never offer Selfie enrollment", async () => {
   const f = await fixture(1); const view = render(<AuthenticatorAppV1 services={f.services} />);
@@ -60,7 +57,6 @@ test("either-credential requests wait for the user's choice", async () => {
   fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
   expect(await view.findByRole("button", { name: "Set up Selfie Check" })).toBeTruthy();
   expect(view.queryByRole("heading", { name: "Set up Selfie Check" })).toBeNull();
-  expect(f.calls.issue).toBe(0);
 });
 test("delivery retries reuse the proof and show success only after the bridge accepts it", async () => {
   const f = await fixture(11, true); f.calls.failDelivery = true;
@@ -140,7 +136,7 @@ test("dev mode is opt-in, inspects metadata and refreshes without issuing", asyn
   expect(view.getByText(/CPU \/ WASM/)).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Refresh vault" }));
   await waitFor(() => expect(f.calls.listed).toBe(2));
-  expect(f.calls.issue).toBe(0); expect(f.calls.prove).toBe(0);
+  expect(f.calls.prove).toBe(0);
   fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
   expect(view.queryByRole("complementary", { name: "Developer tools" })).toBeNull();
 });

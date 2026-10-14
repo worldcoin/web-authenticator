@@ -1,12 +1,15 @@
 import { defineConfig } from "@playwright/test";
+import { resolve } from "node:path";
+
+const repositoryRoot = resolve(import.meta.dirname, "../..");
 
 export default defineConfig({
-  testDir: "./tests/integration/browser",
-  outputDir: "./test-results",
+  testDir: resolve(repositoryRoot, "tests/integration/browser"),
+  outputDir: resolve(repositoryRoot, "test-results"),
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
-  reporter: [["list"], ["html", { outputFolder: "./playwright-report", open: "never" }]],
+  reporter: [["list"], ["html", { outputFolder: resolve(repositoryRoot, "playwright-report"), open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:4194",
     trace: "off",
@@ -15,13 +18,11 @@ export default defineConfig({
   },
   webServer: {
     command: "bun run start:authenticator",
-    cwd: import.meta.dirname,
+    cwd: repositoryRoot,
     env: {
       ...process.env,
       AUTHENTICATOR_HOST: "127.0.0.1",
       PORT: "4194",
-      AUTHENTICATOR_PUBLIC_ORIGIN: "http://127.0.0.1:4194",
-      AUTHENTICATOR_LOCAL_ORIGIN: "http://localhost:4194",
     },
     port: 4194,
     reuseExistingServer: false,

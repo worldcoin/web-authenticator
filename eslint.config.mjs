@@ -8,6 +8,9 @@ export default tseslint.config(
   {
     ignores: [
       "experiments/**",
+      "demo/**",
+      "**/.next/**",
+      "**/target/**",
       "**/dist/**",
       "**/dist-server/**",
       "**/dist-static/**",
@@ -113,6 +116,14 @@ export default tseslint.config(
         "sessionStorage",
         "indexedDB",
       ],
+    },
+  },
+  {
+    files: ["apps/**/src/**/*.{ts,tsx}", "packages/**/src/**/*.{ts,tsx}", "services/**/*.{ts,tsx}", "config/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{ group: ["**/experiments/**", "**/fixtures/**"], message: "Product code must not import experiments or test fixtures." }],
+      }],
     },
   },
   { files: ["apps/authenticator/src/wallet/flow-logging.ts"], rules: { "no-console": "off" } },
