@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CameraPreview } from "./components/CameraPreview";
 import { DeveloperPanel } from "./components/DeveloperPanel";
 import { openAuthenticator } from "./lib/wallet-session";
-import { walletOpenErrorMessage } from "./lib/wallet-errors";
+import { WalletRegistrationError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
 import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
@@ -10,7 +10,7 @@ import { credentialAvailability, credentialRequirementsLabel } from "./lib/proof
 import { createProof } from "./lib/prove";
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
-type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled";
+type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled" | "wallet-timeout" | "wallet-error";
 
 export function AuthenticatorAppV1({ services = defaults }: { services?: typeof defaults }) {
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
@@ -91,10 +91,13 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   }
 
   const unlock = () => run(async signal => {
+    setScreen("review");
     setProgress("Use your passkey to open your wallet…");
     let current: WalletKit;
     try { current = await services.open(signal, setProgress); }
     catch (cause) {
+      setProgress("");
+      if (cause instanceof WalletRegistrationError) setScreen(cause.timedOut ? "wallet-timeout" : "wallet-error");
       throw new Error(walletOpenErrorMessage(cause), { cause });
     }
     if (signal.aborted) { current.terminate(); signal.throwIfAborted(); }
@@ -139,6 +142,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const title = loading ? "Checking your request" : loadFailed ? "Request unavailable"
     : screen === "done" ? "Proof response sent" : screen === "cancelled" ? "Request cancelled"
     : deliveryExpired ? "Request expired"
+    : screen === "wallet-timeout" ? "Wallet setup timed out" : screen === "wallet-error" ? "Wallet setup interrupted"
     : screen === "delivery" ? "Sending your proof" : screen === "enroll" ? "Set up Selfie Check"
     : incoming ? "Review your request" : wallet ? "Your World ID wallet" : "World ID authenticator";
   const finished = screen === "done" || screen === "cancelled";
@@ -198,7 +202,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     </div></div>
     <div className="actions">
       {!loading && !finished && screen !== "delivery" && <>
-        {!wallet && supported && <button className="primary-action" disabled={busy} onClick={() => void unlock()}>{busy ? "Opening wallet…" : "Create or unlock with passkey"}</button>}
+        {!wallet && supported && <button className="primary-action" disabled={busy} onClick={() => void unlock()}>{busy ? "Opening wallet…" : screen === "wallet-timeout" || screen === "wallet-error" ? "Retry wallet setup" : "Create or unlock with passkey"}</button>}
         {wallet && screen === "review" && incoming && supported && <button className="primary-action" disabled={busy || !availability?.satisfied} onClick={() => void approve()}>Approve and share proof</button>}
         {wallet && screen === "review" && supported && (incoming ? availability?.canEnrollSelfie : !hasSelfie) && <button className="secondary-action" disabled={busy} onClick={() => { setScreen("enroll"); setError(null); }}>Set up Selfie Check</button>}
         {wallet && screen === "enroll" && supported && <>
@@ -210,7 +214,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       </>}
       {screen === "delivery" && <button className="primary-action" disabled={busy || expired} onClick={() => void run(deliver)}>{busy && !expired ? "Sending…" : "Retry sending proof"}</button>}
       {finished && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl}>Return to requesting app</a>}
-      {(finished || loadFailed || deliveryExpired) && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
+      {(finished || loadFailed || deliveryExpired || screen === "wallet-timeout" || screen === "wallet-error") && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
     </div>
     </main>
     {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}

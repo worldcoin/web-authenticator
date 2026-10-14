@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { activateStagingWallet } from "../lib/wallet-registration";
 import { registrationState, saveRegistrationState } from "../lib/wallet-persistence";
 import type { WalletKit } from "../lib/walletkit";
+import { WalletRegistrationError } from "../lib/wallet-errors";
 
 beforeAll(() => GlobalRegistrator.register());
 afterAll(() => GlobalRegistrator.unregister());
@@ -38,4 +39,49 @@ test("malformed registration metadata fails closed", async () => {
   window.localStorage.setItem("world-id-staging-registration-v1:ab", "unknown");
   const f = fixture(); await expect(activate(f.wallet)).rejects.toThrow("Saved registration");
   expect(f.calls).toEqual([]);
+});
+
+test("a definitive registration failure allows an explicit retry with the same passkey", async () => {
+  const f = fixture();
+  f.wallet.pollRegistration = async () => ({ state: "failed", error: "gateway rejected" });
+  await expect(activate(f.wallet)).rejects.toThrow("Registration failed");
+  expect(registrationState("ab")).toBe("failed");
+  expect(f.calls).toEqual(["register", "terminate"]);
+  const retry = fixture();
+  await activate(retry.wallet);
+  expect(retry.calls).toEqual(["register", "init"]);
+  expect(registrationState("ab")).toBe("finalized");
+});
+
+for (const step of ["register", "pollRegistration"] as const) {
+  test(`${step} timeout stops the worker and retry checks without resubmitting`, async () => {
+    const f = fixture();
+    f.wallet[step] = () => new Promise<never>(() => {});
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    try {
+      const result = activate(f.wallet);
+      // Allow submission to finish and polling to start in the polling case.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      deadline.abort(new DOMException("Timed out", "TimeoutError"));
+      await expect(result).rejects.toBeInstanceOf(WalletRegistrationError);
+      await expect(result).rejects.toMatchObject({ timedOut: true });
+      expect(timeout).toHaveBeenCalledWith(30_000);
+      expect(registrationState("ab")).toBe("submitting");
+      expect(f.calls).toContain("terminate");
+    } finally { timeout.mockRestore(); }
+    const retry = fixture();
+    await activate(retry.wallet);
+    expect(retry.calls).toEqual(["init"]);
+    expect(registrationState("ab")).toBe("finalized");
+  });
+}
+
+test("an unsuccessful account check after timeout preserves the uncertain registration", async () => {
+  saveRegistrationState("ab", "submitting");
+  const f = fixture();
+  f.wallet.initializeAuthenticator = async () => { throw new Error("Account unavailable"); };
+  await expect(activate(f.wallet)).rejects.toThrow("Retry with your existing passkey");
+  expect(registrationState("ab")).toBe("submitting");
+  expect(f.calls).toEqual(["terminate"]);
 });

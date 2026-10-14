@@ -7,7 +7,7 @@ import { WalletKit as AccountWallet } from "./walletkit";
 import { activateStagingWallet } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
-import { WalletOpenError } from "./wallet-errors";
+import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
 
 const PROFILE_KEY = "world-id-wallet-v1";
 const PRF_INPUT = new TextEncoder().encode("world-id/web-authenticator/prf/v1");
@@ -148,7 +148,10 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   let client: WalletKit | undefined;
   const opening = new AbortController();
   const abort = () => { opening.abort(); client?.terminate(); };
-  const timeout = setTimeout(abort, activate ? 300_000 : 60_000);
+  const timeout = setTimeout(() => {
+    opening.abort(new DOMException("Wallet setup timed out", "TimeoutError"));
+    client?.terminate();
+  }, activate ? 300_000 : 60_000);
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
@@ -172,6 +175,9 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     return { client, store };
   } catch (error) {
     client?.terminate();
+    if (activate && opening.signal.reason instanceof Error && opening.signal.reason.name === "TimeoutError") {
+      throw new WalletRegistrationError("Wallet setup timed out. Retry with your existing passkey. Any previously submitted registration will be checked before continuing.", true, { cause: error });
+    }
     throw error;
   } finally {
     clearTimeout(timeout);

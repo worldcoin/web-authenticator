@@ -1,6 +1,12 @@
 /** Deliberate UI-safe failures; raw worker/provider errors may contain sensitive data. */
 export class WalletOpenError extends Error {}
 
+export class WalletRegistrationError extends WalletOpenError {
+  constructor(message: string, readonly timedOut: boolean, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
 export function walletOpenErrorMessage(cause: unknown): string {
   if (cause instanceof WalletOpenError) return cause.message;
   if (cause instanceof Error) {

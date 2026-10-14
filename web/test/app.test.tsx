@@ -7,10 +7,37 @@ import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import type { DetectorResponse } from "../lib/rgbnet.worker";
+import { WalletRegistrationError } from "../lib/wallet-errors";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
 afterEach(() => cleanup());
+
+test("wallet setup timeout clears progress and offers a retry that preserves the incoming request", async () => {
+  const f = await fixture(1, true);
+  const open = f.services.open;
+  f.services.open = async () => { throw new WalletRegistrationError("Registration may still finish. Retry to check the account.", true); };
+  const view = render(<AuthenticatorAppV1 services={f.services} />);
+  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
+  expect(await view.findByRole("heading", { name: "Wallet setup timed out" })).toBeTruthy();
+  expect(view.queryByRole("status")).toBeNull();
+  expect(view.getByText("Registration may still finish. Retry to check the account.")).toBeTruthy();
+  expect(view.getByRole("link", { name: "Open authenticator" }).getAttribute("href")).toBe("/");
+  f.services.open = open;
+  fireEvent.click(view.getByRole("button", { name: "Retry wallet setup" }));
+  await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(view.queryByRole("alert")).toBeNull();
+  expect(f.calls.prove).toBe(0);
+});
+
+test("definitive wallet setup failure offers retry", async () => {
+  const f = await fixture(1);
+  f.services.open = async () => { throw new WalletRegistrationError("Registration failed. Retry registration.", false); };
+  const view = render(<AuthenticatorAppV1 services={f.services} />);
+  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
+  expect(await view.findByRole("heading", { name: "Wallet setup interrupted" })).toBeTruthy();
+  expect((view.getByRole("button", { name: "Retry wallet setup" }) as HTMLButtonElement).disabled).toBe(false);
+});
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
