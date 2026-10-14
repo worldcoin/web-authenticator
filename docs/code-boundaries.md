@@ -6,8 +6,8 @@ still incomplete. A file's location states its role, not its security approval.
 
 | Location | Role | Current status |
 | --- | --- | --- |
-| `apps/web/src` | React UI, browser wallet, camera and proof requests | Real staging registration, vault, bridge and proof flow; no Selfie enrollment |
-| `apps/api/src` | Bun server, routes and server configuration | Serves web assets and staging RP lookup; Promon and Redis are not implemented |
+| `web` | React UI, browser wallet, camera and proof requests | Real staging registration, vault, bridge and proof flow; no Selfie enrollment |
+| `api` | Bun server, routes and server configuration | Serves web assets and staging RP lookup; Promon and Redis are not implemented |
 | `packages` | Shared libraries and contracts | Per-package validation required; current admission policy/contracts are not wired into the app |
 | `tests` and `*/test` | Regression tests and fixtures | Mocks are test inputs, not live-service validation |
 | `experiments/tee-demo` | Preserved standalone demo | Synthetic enrollment, placeholder integrity, local TEE integration; never a product dependency |
@@ -16,7 +16,7 @@ still incomplete. A file's location states its role, not its security approval.
 ## Enforced separation
 
 - Root tests use explicit directory paths, so Bun does not also select experiment tests by substring.
-- `apps/web` and `apps/api` have separate dependencies, TypeScript configurations and builds. Bun serves both outputs from one origin.
+- `web` and `api` have separate dependencies, TypeScript configurations and builds. Bun serves both outputs from one origin.
 - Root build/start commands target these two apps; experiments are outside workspaces.
 - ESLint rejects product imports from experiments and fixture directories.
 - ESLint rejects browser imports of API modules and server imports of browser implementation code.
@@ -32,8 +32,8 @@ the existing staging verification rules.
 
 ## Where new code belongs
 
-Promon validation, session storage and rate limiting belong in `apps/api/src`.
-Browser integration belongs in `apps/web/src`. Add shared API schemas under
+Promon validation, session storage and rate limiting belong in `api`.
+Browser integration belongs in `web`. Add shared API schemas under
 `packages` only when both apps need them; neither app currently depends on the
 legacy admission/contracts packages. Those packages retain their own regression
 coverage. The root package owns shared development tools and cross-app tests.

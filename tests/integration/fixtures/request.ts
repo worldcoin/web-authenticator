@@ -1,6 +1,6 @@
 import { keccak256, stringToHex, hexToBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { Payload } from "../../../apps/web/src/requests/proof-request";
+import type { Payload } from "../../../web/lib/proof-request";
 
 // Public, deterministic test-only signing key. Never used against an actual registry.
 const signer = privateKeyToAccount(`0x${"1".padStart(64, "0")}`);

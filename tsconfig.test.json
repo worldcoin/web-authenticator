@@ -12,9 +12,10 @@
     ]
   },
   "include": [
-    "apps/web/src/vite-env.d.ts",
-    "apps/*/test/**/*.ts",
-    "apps/*/test/**/*.tsx",
+    "web/vite-env.d.ts",
+    "web/test/**/*.ts",
+    "web/test/**/*.tsx",
+    "api/test/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts"
   ]

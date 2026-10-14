@@ -1,7 +1,8 @@
 node_modules/
-apps/*/dist/
-apps/*/dist-server/
-apps/*/dist-static/
+web/dist/
+api/dist/
+web/dist-server/
+web/dist-static/
 .artifacts/
 .runtime/
 playwright-report/
@@ -17,7 +18,7 @@ coverage/
 .wrangler/
 
 
-apps/web/public/models/rgbnet.onnx
+web/public/models/rgbnet.onnx
 
 .next/
 demo/

@@ -10,7 +10,7 @@
     ]
   },
   "include": [
-    "apps/web/vite.config.ts",
+    "web/vite.config.ts",
     "scripts/**/*.ts",
     "tests/e2e/playwright.config.ts"
   ]

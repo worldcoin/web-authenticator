@@ -4,21 +4,22 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "workspaces": [
-    "apps/*",
+    "web",
+    "api",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n web,api \"bun run --cwd apps/web dev\" \"bun run --cwd apps/api dev\"",
+    "dev": "concurrently -k -n web,api \"bun run --cwd web dev\" \"bun run --cwd api dev\"",
     "build": "bun run build:web && bun run build:api",
-    "build:web": "bun run --cwd apps/web build",
-    "build:api": "bun run --cwd apps/api build",
-    "start": "bun run --cwd apps/api start",
-    "start:tunnel": "bun --env-file=.env.tunnel apps/api/dist/main.js",
+    "build:web": "bun run --cwd web build",
+    "build:api": "bun run --cwd api build",
+    "start": "bun run --cwd api start",
+    "start:tunnel": "bun --env-file=.env.tunnel api/dist/main.js",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "bun run --cwd apps/web typecheck && bun run --cwd apps/api typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
-    "test": "bun test ./apps ./packages ./tests",
-    "test:web": "bun run --cwd apps/web test",
-    "test:api": "bun run --cwd apps/api test",
+    "typecheck": "bun run --cwd web typecheck && bun run --cwd api typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "test": "bun test ./web/test ./api/test ./packages ./tests",
+    "test:web": "bun run --cwd web test",
+    "test:api": "bun run --cwd api test",
     "test:browser": "bun run build && playwright test -c tests/e2e/playwright.config.ts"
   },
   "devDependencies": {

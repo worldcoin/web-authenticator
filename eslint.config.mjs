@@ -37,7 +37,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/*/**/*.{ts,tsx}"],
+    files: ["web/**/*.{ts,tsx}", "api/**/*.{ts,tsx}"],
     plugins: {
       "jsx-a11y": jsxA11y,
       "react-hooks": reactHooks,
@@ -58,7 +58,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/web/src/**/*.{ts,tsx}"],
+    files: ["web/**/*.{ts,tsx}"],
+    ignores: ["web/test/**", "web/vite.config.ts"],
     languageOptions: {
       globals: globals.browser,
     },
@@ -86,7 +87,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/web/src/wallet/session.ts", "apps/web/src/wallet/persistence.ts"],
+    files: ["web/lib/wallet-session.ts", "web/lib/wallet-persistence.ts"],
     rules: {
       "no-restricted-properties": ["error",
         { object: "document", property: "cookie" },
@@ -96,7 +97,7 @@ export default tseslint.config(
   },
   {
     files: [
-      "apps/api/src/**/*.{ts,tsx}",
+      "api/*.{ts,tsx}",
     ],
     languageOptions: {
       globals: {
@@ -117,7 +118,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/**/src/**/*.{ts,tsx}", "packages/**/src/**/*.{ts,tsx}"],
+    files: ["packages/**/src/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [{ group: ["**/experiments/**", "**/fixtures/**"], message: "Product code must not import experiments or test fixtures." }],
@@ -125,7 +126,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/web/src/**/*.{ts,tsx}"],
+    files: ["web/**/*.{ts,tsx}"],
+    ignores: ["web/test/**", "web/vite.config.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         paths: ["bun", "fs", "path", "crypto", "http", "https", "net", "tls", "child_process"],
@@ -137,15 +139,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/api/src/**/*.ts"],
+    files: ["api/*.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [
-          { group: ["@web-authenticator/web", "@web-authenticator/web/*", "**/web/src/**"], message: "API code must not import browser implementation modules." },
+          { group: ["@web-authenticator/web", "@web-authenticator/web/*", "**/web/**"], message: "API code must not import browser implementation modules." },
           { group: ["**/experiments/**", "**/test/**", "**/fixtures/**"], message: "Product code must not import experiments or tests." },
         ],
       }],
     },
   },
-  { files: ["apps/web/src/wallet/flow-logging.ts"], rules: { "no-console": "off" } },
+  { files: ["web/lib/flow-logging.ts"], rules: { "no-console": "off" } },
 );

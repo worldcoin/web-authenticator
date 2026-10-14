@@ -19,8 +19,8 @@ bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
 bun run dev
 ```
 
-The setup script installs `apps/web/public/models/rgbnet.onnx` after
-checking its 1,720,022-byte size and SHA-256 against `src/face/rgbnet-model.json`
+The setup script installs `web/public/models/rgbnet.onnx` after
+checking its 1,720,022-byte size and SHA-256 against `web/lib/rgbnet-model.json`
 inside the authenticator app. The worker repeats those checks before inference.
 Model weights are ignored by Git; install them before building a deployed preview.
 Without them, the preview reports a model-download failure; wallet/proof operations

@@ -20,8 +20,8 @@ Wallet and proof flows work without it.
 
 ## Where things live
 
-- [`apps/web`](apps/web): React UI, passkeys, wallet, camera and proof requests.
-- [`apps/api`](apps/api): Bun server, API routes and server configuration.
+- [`web`](web): React UI, passkeys, wallet, camera and proof requests.
+- [`api`](api): Bun server, API routes and server configuration.
 - [`tests`](tests): browser tests and shared integration fixtures.
 - [`experiments`](experiments): older demos, excluded from the app build.
 
@@ -39,4 +39,4 @@ bun run test:browser
 ```
 
 To run the compiled app: `bun run build && bun run start`.
-[Container instructions](apps/api/README.md#container) · [App request format](docs/connector-bridge.md)
+[Container instructions](api/README.md#container) · [App request format](docs/connector-bridge.md)
