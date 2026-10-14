@@ -3,6 +3,8 @@
 `tee-demo/` preserves the earlier localhost demo, including the local WalletKit
 #604 adapter and TEE routes. It is not the default application. Its source and
 local-package dependency are retained for the next TEE integration step.
+The published WalletKit `0.27.1` used by the product does not expose this demo's
+`extractSelfieEmbedding` API, so the demo cannot use that release unchanged.
 
 The canonical UI and registration flow now live in `web`.
 Use the repository-root commands for that app. The pre-convergence checkpoint is

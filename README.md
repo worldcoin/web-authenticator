@@ -4,6 +4,8 @@ Unlock your World ID wallet with a passkey and approve requests from apps.
 Currently uses staging and supports proofs with existing Orb and Selfie
 credentials. Selfie enrollment, user presence and recovery are still to come.
 
+The app uses published packages, including WalletKit `0.27.1`.
+
 ## Run locally
 
 Install [Bun](https://bun.sh) **1.4.2**, then:
