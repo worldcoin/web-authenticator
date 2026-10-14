@@ -43,3 +43,12 @@ jobs:
 
             - name: Browser regression tests
               run: bunx playwright test -c tests/e2e/playwright.config.ts
+
+            - name: Build and smoke-test container
+              run: |
+                  docker build -t web-authenticator:test .
+                  docker run --detach --name authenticator-test -p 127.0.0.1:4195:4173 web-authenticator:test
+                  trap 'docker logs authenticator-test; docker rm --force authenticator-test' EXIT
+                  curl --fail --retry 10 --retry-connrefused --retry-delay 1 --max-time 5 http://127.0.0.1:4195/ > /dev/null
+                  status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 'http://127.0.0.1:4195/api/staging-rp?id=invalid')
+                  test "$status" = 400
