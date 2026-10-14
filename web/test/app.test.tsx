@@ -65,6 +65,10 @@ test("missing Selfie credentials show unavailable enrollment without an issuance
   expect(await view.findByRole("heading", { name: "Set up Selfie Check" })).toBeTruthy();
   expect(view.getByText(/Selfie Check enrollment is not available/)).toBeTruthy();
   expect(view.queryByRole("button", { name: /Issue.*credential/ })).toBeNull();
+  expect(view.queryByRole("button", { name: /camera preview/i })).toBeNull();
+  expect(view.container.querySelector("video")).toBeNull();
+  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+  expect(view.queryByRole("button", { name: /camera preview/i })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Back to wallet" }));
   expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
   expect(f.calls.prove).toBe(0);
@@ -201,7 +205,7 @@ test("dev mode is opt-in, inspects metadata and refreshes without issuing", asyn
   fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
   expect(await view.findByText("Credential ID")).toBeTruthy();
   expect(view.getByText(/Schema 11. A proof can disclose/)).toBeTruthy();
-  expect(view.getByText(/CPU \/ WASM/)).toBeTruthy();
+  expect(view.getByText("Not available in this app")).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Refresh vault" }));
   await waitFor(() => expect(f.calls.listed).toBe(2));
   expect(f.calls.prove).toBe(0);

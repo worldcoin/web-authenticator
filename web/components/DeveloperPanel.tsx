@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { CredentialMetadata } from "../lib/walletkit";
 import type { IncomingRequest } from "../lib/incoming-request";
 import { credentialRequirementsLabel } from "../lib/proof-request";
-import { LIVE_GUIDANCE_MODEL_V1 } from "../lib/model-provenance";
 
 function credentialDescription(schema: bigint) {
   if (schema === 11n) return { name: "Selfie Check", description: "Schema 11. A proof can disclose the uniqueness score. Enrollment is not available in this app." };
@@ -13,12 +12,11 @@ function credentialDescription(schema: bigint) {
 
 function date(value: bigint) { return new Date(Number(value) * 1000).toLocaleString(); }
 
-export function DeveloperPanel({ records, unlocked, disabled, incoming, preview, onRefresh, onDelete }: {
+export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete }: {
   records: CredentialMetadata[];
   unlocked: boolean;
   disabled: boolean;
   incoming: IncomingRequest | null;
-  preview: boolean;
   onRefresh: () => void;
   onDelete: (id: bigint) => void;
 }) {
@@ -51,9 +49,8 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, preview,
     <section aria-labelledby="request-title"><h3 id="request-title">Current request</h3>
       {incoming ? <dl><dt>Requesting RP</dt><dd>{incoming.label}</dd><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd><dt>Accepted credentials</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd><dt>Expires</dt><dd>{date(BigInt(incoming.proof.expires_at))}</dd></dl> : <p>No RP request loaded. Open a request from the separate demo app.</p>}
     </section>
-    <section aria-labelledby="runtime-title"><h3 id="runtime-title">Camera & issuance</h3>
-      <dl><dt>Preview</dt><dd>{preview ? "Open — local camera guidance" : "Closed"}</dd><dt>Guidance model</dt><dd>{LIVE_GUIDANCE_MODEL_V1.modelKind}</dd><dt>Runtime</dt><dd>{LIVE_GUIDANCE_MODEL_V1.runtimePackage} · {LIVE_GUIDANCE_MODEL_V1.runtimeVersion} · CPU / WASM</dd><dt>Staging issuance</dt><dd>Not implemented</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
-      <p>RGBNet face boxes drive face-count, centering and distance instructions. Inference runs in a dedicated worker, one frame at a time. Camera frames stay in this tab; they are not submitted for enrollment.</p>
+    <section aria-labelledby="runtime-title"><h3 id="runtime-title">Selfie Check</h3>
+      <dl><dt>Camera preview</dt><dd>Not available in this app</dd><dt>Staging issuance</dt><dd>Not implemented</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
     </section>
   </aside>;
 }

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { CameraPreview } from "./components/CameraPreview";
 import { DeveloperPanel } from "./components/DeveloperPanel";
 import { openAuthenticator } from "./lib/wallet-session";
 import { WalletRegistrationError, walletOpenErrorMessage } from "./lib/wallet-errors";
@@ -22,7 +21,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [preview, setPreview] = useState(false);
   const [expired, setExpired] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const operation = useRef<AbortController | null>(null);
@@ -129,7 +127,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       try { await incoming.cancel(AbortSignal.any([signal, AbortSignal.timeout(15_000)])); }
       catch (cause) { throw new Error("Could not send the rejection. Retry cancellation or close this tab and let the request expire.", { cause }); }
     }
-    setPreview(false); setScreen("cancelled"); setProgress(""); closeWallet();
+    setScreen("cancelled"); setProgress(""); closeWallet();
   });
 
   const deliveryExpired = screen === "delivery" && expired;
@@ -169,9 +167,9 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
     <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
-    <div className="authenticator-layout"><main className={`app-main${preview && screen === "enroll" ? " app-main--camera-preview" : ""}`}>
+    <div className="authenticator-layout"><main className="app-main">
     <div className="screen-content"><div className="centered-layout">
-      {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "human-emblem"}.svg`} alt="" />}
+      <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "human-emblem"}.svg`} alt="" />
       <div className="message-block">
         <h1>{title}</h1>
         {screen === "done" && <p>Your proof reached the bridge. The requesting app verifies it.</p>}
@@ -195,7 +193,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
             : availability.requiresOrb ? "This request needs an eligible Orb credential. Orb enrollment and transfer are not available here."
             : "Your wallet does not meet the requested credential and date requirements."}</p>}
         </section>}
-        {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet. You can preview camera positioning, but it will not issue a credential.</p>}
+        {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet.</p>}
       </div>
       {progress && !finished && !deliveryExpired && <p className="progress-copy" role="status">{progress}</p>}
       {error && !deliveryExpired && <p className="error-copy" role="alert">{error}</p>}
@@ -206,8 +204,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         {wallet && screen === "review" && incoming && supported && <button className="primary-action" disabled={busy || !availability?.satisfied} onClick={() => void approve()}>Approve and share proof</button>}
         {wallet && screen === "review" && supported && (incoming ? availability?.canEnrollSelfie : !hasSelfie) && <button className="secondary-action" disabled={busy} onClick={() => { setScreen("enroll"); setError(null); }}>Set up Selfie Check</button>}
         {wallet && screen === "enroll" && supported && <>
-          <button className="secondary-action" disabled={busy} onClick={() => setPreview(value => !value)}>{preview ? "Close camera preview" : "Open camera preview"}</button>
-          <button className="secondary-action" disabled={busy} onClick={() => { setScreen("review"); setPreview(false); }}>Back to wallet</button>
+          <button className="secondary-action" disabled={busy} onClick={() => setScreen("review")}>Back to wallet</button>
         </>}
         {incoming && <button className="secondary-action" disabled={busy} onClick={() => void cancel()}>Cancel request</button>}
         {wallet && !incoming && screen === "review" && <button className="secondary-action" disabled={busy} onClick={closeWallet}>Lock wallet</button>}
@@ -217,7 +214,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       {(finished || loadFailed || deliveryExpired || screen === "wallet-timeout" || screen === "wallet-error") && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
     </div>
     </main>
-    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
+    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
     </div>
   </div>;
 }
