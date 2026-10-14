@@ -57,7 +57,8 @@ export function createAuthenticatorHttpHandler(options: { staticRoot?: string } 
       response = Response.json({ error: "Not found" }, { status: 404 });
     } else if (request.method !== "GET" && request.method !== "HEAD") {
       response = new Response("Method not allowed", { status: 405 });
-
+    } else if (url.pathname === "/verify") {
+      response = new Response(null, { status: 302, headers: { Location: `/${url.search}` } });
     } else {
       response = await serveStatic(url.pathname, staticRoot);
     }

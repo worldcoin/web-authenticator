@@ -29,6 +29,21 @@ test("serves web assets and HEAD responses with security headers", async () => {
     await rm(staticRoot, { recursive: true, force: true });
   }
 });
+test("verify links redirect to root with the original connector query and security headers", async () => {
+  const query = "?i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D&b=https%3A%2F%2Fstaging-bridge.worldcoin.org&return_to=https%3A%2F%2Fexample.com%2Fdone";
+  for (const method of ["GET", "HEAD"]) {
+    for (const search of ["", query]) {
+      const response = await handler(new Request(`${origin}/verify${search}`, { method }));
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(`/${search}`);
+      expect(await response.text()).toBe("");
+      for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) {
+        expect(response.headers.get(name)).toBe(value);
+      }
+    }
+  }
+  expect((await handler(new Request(`${origin}/verify${query}`, { method: "POST" }))).status).toBe(405);
+});
 test("embedded demo routes and simulated endpoints are gone", async () => {
   for (const path of ["/demo", "/returned", "/api/v0/bootstrap", "/api/v0/session/create"]) {
     expect((await handler(new Request(origin + path))).status).toBe(404);
