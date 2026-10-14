@@ -22,7 +22,7 @@ Install the optional model from the repo root:
 bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
 ```
 
-The source model is in `world-app-ios` at
+The source model is in [World App iOS](https://github.com/worldcoin/world-app-ios) at
 `Sources/FaceAuthLibrary/Sources/FaceEngineFaceAuthModel/MLModels/RGBNet.onnx`.
 The script checks its size and SHA-256 against [the model manifest](lib/rgbnet-model.json)
 and copies it to `web/public/models/rgbnet.onnx`, which Git ignores.

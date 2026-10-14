@@ -1,7 +1,7 @@
 # Authenticator API
 
 Bun serves the web build and `/api/staging-rp` from the same origin. The RP lookup
-reads the staging registry; passkeys, WalletKit and proof generation run in the
+reads the staging registry; passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
 browser. Promon sessions and Redis are not implemented yet.
 
 Run `bun run dev` from the repo root to watch both apps. For the compiled app,

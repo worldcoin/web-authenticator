@@ -4,9 +4,12 @@ Unlock your World ID wallet with a passkey and approve requests from apps.
 Currently uses staging and supports proofs with existing Orb and Selfie
 credentials. Selfie enrollment, user presence and recovery are still to come.
 
-The app uses published packages, including WalletKit `0.27.1`.
+## Dependencies
 
-## Run locally
+- [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.
+- [Biometrics TEE](https://github.com/worldcoin/biometrics-tee) — intended for face processing; not integrated yet.
+
+## Local Development
 
 Install [Bun](https://bun.sh) **1.4.2**, then:
 
@@ -15,28 +18,43 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-Open **http://localhost:4173** in a browser with WebAuthn PRF support.
+Open [localhost:4173](http://localhost:4173) in a browser with WebAuthn PRF support.
 
 For camera guidance, [install the RGBNet model](web/README.md#camera-guidance).
 Wallet and proof flows work without it.
 
-## Where things live
+## Repository Structure
 
-- [`web`](web): React UI, passkeys, wallet, camera and proof requests.
-- [`api`](api): Bun server, API routes and server configuration.
-- [`tests`](tests): browser tests and shared integration fixtures.
+```text
+web/         React UI, browser logic and public assets
+api/         Bun HTTP server and API routes
+packages/    Shared contracts and browser admission policy
+tests/       Browser tests and integration fixtures
+scripts/     Local setup tools
+```
 
-Each app owns its dependencies. Bun serves the frontend and API from one origin.
+`web/` and `api/` own their dependencies. Bun serves both from one origin.
 
-## Check your changes
+## Running Tests
 
 ```sh
-bun run lint
-bun run typecheck
 bun run test
 bun x playwright install chromium webkit # First run only
 bun run test:browser
 ```
 
-To run the compiled app: `bun run build && bun run start`.
+Static checks:
+
+```sh
+bun run lint
+bun run typecheck
+```
+
+## Build and Run
+
+```sh
+bun run build
+bun run start
+```
+
 [Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
