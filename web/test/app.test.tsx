@@ -78,6 +78,47 @@ test("unsupported presence requirements stop before passkey setup", async () => 
   expect(view.queryByRole("button", { name: "Create or unlock with passkey" })).toBeNull();
 });
 
+for (const pending of [false, true]) {
+  test(`expired delivery offers a local exit after ${pending ? "a pending upload" : "an upload failure"}`, async () => {
+    const f = await fixture(11, true);
+    f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
+    let deliverySignal: AbortSignal | undefined;
+    let cancellations = 0;
+    f.incoming.cancel = async () => { cancellations++; };
+    f.incoming.deliver = async (proof, signal) => {
+      f.calls.deliver.push(proof);
+      deliverySignal = signal;
+      if (pending) await new Promise<void>((_, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+      throw new Error("Transport unavailable");
+    };
+    const view = render(<AuthenticatorAppV1 services={f.services} />);
+    fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
+    await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(view.getByRole("button", { name: "Approve and share proof" }));
+    await waitFor(() => expect(f.calls.deliver).toHaveLength(1));
+    expect(await view.findByRole("heading", { name: "Request expired" }, { timeout: 3000 })).toBeTruthy();
+    expect(view.getByText(/Proof delivery is unconfirmed\. Check the requesting app/)).toBeTruthy();
+    expect(view.queryByText(/Retry sending the same proof/)).toBeNull();
+    const retry = view.getByRole("button", { name: "Retry sending proof" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    fireEvent.click(retry);
+    expect(f.calls.deliver).toHaveLength(1);
+    const exit = view.getByRole("link", { name: "Open authenticator" });
+    expect(exit.getAttribute("href")).toBe("/");
+    // Keep this DOM test on the page while exercising the exit's cleanup.
+    exit.addEventListener("click", event => event.preventDefault());
+    fireEvent.click(exit);
+    expect(f.calls.terminated).toBe(1);
+    if (pending) expect(deliverySignal?.aborted).toBe(true);
+    expect(cancellations).toBe(0);
+    expect(f.calls.prove).toBe(1);
+    expect(view.queryByText("No proof was sent. You can return to the requesting app.")).toBeNull();
+    view.unmount();
+  });
+}
+
 test("missing camera APIs show an actionable failure without crashing the flow", async () => {
   const original = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
   Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });

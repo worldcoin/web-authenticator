@@ -129,8 +129,16 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     setPreview(false); setScreen("cancelled"); setProgress(""); closeWallet();
   });
 
+  const deliveryExpired = screen === "delivery" && expired;
+  const leaveDelivery = () => {
+    operation.current?.abort();
+    retainedProof.current = null;
+    closeWallet();
+  };
+
   const title = loading ? "Checking your request" : loadFailed ? "Request unavailable"
     : screen === "done" ? "Proof response sent" : screen === "cancelled" ? "Request cancelled"
+    : deliveryExpired ? "Request expired"
     : screen === "delivery" ? "Sending your proof" : screen === "enroll" ? "Set up Selfie Check"
     : incoming ? "Review your request" : wallet ? "Your World ID wallet" : "World ID authenticator";
   const finished = screen === "done" || screen === "cancelled";
@@ -173,7 +181,9 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
           {incoming.proof.proof_requests.some(item => item.issuer_schema_id === 11) && <p className="detail-copy">A Selfie Check proof also shares the credential’s uniqueness score.</p>}
         </section>}
         {incoming?.unsupportedReason && <p role="alert">{incoming.unsupportedReason}</p>}
-        {expired && !finished && <p role="alert">This request expired. Start a new request at the requesting app.</p>}
+        {expired && !finished && <p role="alert">{deliveryExpired
+          ? "This request expired. Proof delivery is unconfirmed. Check the requesting app before starting a new request."
+          : "This request expired. Start a new request at the requesting app."}</p>}
         {wallet && screen === "review" && <section className="request-details" aria-label="Wallet credentials">
           <p>{records.length ? `${records.length} credential${records.length === 1 ? "" : "s"} in your encrypted wallet.` : "No credentials in your encrypted wallet yet."}</p>
           {availability && !availability.satisfied && <p>{availability.canEnrollSelfie
@@ -183,8 +193,8 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         </section>}
         {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet. You can preview camera positioning, but it will not issue a credential.</p>}
       </div>
-      {progress && !finished && <p className="progress-copy" role="status">{progress}</p>}
-      {error && <p className="error-copy" role="alert">{error}</p>}
+      {progress && !finished && !deliveryExpired && <p className="progress-copy" role="status">{progress}</p>}
+      {error && !deliveryExpired && <p className="error-copy" role="alert">{error}</p>}
     </div></div>
     <div className="actions">
       {!loading && !finished && screen !== "delivery" && <>
@@ -198,9 +208,9 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         {incoming && <button className="secondary-action" disabled={busy} onClick={() => void cancel()}>Cancel request</button>}
         {wallet && !incoming && screen === "review" && <button className="secondary-action" disabled={busy} onClick={closeWallet}>Lock wallet</button>}
       </>}
-      {screen === "delivery" && <button className="primary-action" disabled={busy || expired} onClick={() => void run(deliver)}>{busy ? "Sending…" : "Retry sending proof"}</button>}
+      {screen === "delivery" && <button className="primary-action" disabled={busy || expired} onClick={() => void run(deliver)}>{busy && !expired ? "Sending…" : "Retry sending proof"}</button>}
       {finished && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl}>Return to requesting app</a>}
-      {(finished || loadFailed) && <a className="secondary-action return-link" href="/">Open authenticator</a>}
+      {(finished || loadFailed || deliveryExpired) && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
     </div>
     </main>
     {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} preview={preview} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
