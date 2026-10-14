@@ -79,7 +79,7 @@ question, not a claim that the current iOS selfie flow already sends that proof.
 
 Implementation references: [selfie enrollment](selfie-enrollment.md),
 [preserved enrollment adapter](../experiments/tee-demo/src/lib/selfie-issuer-server.ts), and
-[current WalletKit adapter](../apps/authenticator/src/lib/walletkit.ts).
+[current WalletKit adapter](../apps/web/src/lib/walletkit.ts).
 
 The RP verifier and replay ledger described above belong to the separate local
 playground under ignored `demo/`; their implementation is not included in this branch.

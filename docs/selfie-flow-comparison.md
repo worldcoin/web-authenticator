@@ -16,7 +16,7 @@ outcomes, Mini Apps, or DeepFace challenge flow. No iOS build was run.
 flowchart TD
     RP["RP / IDKit creates request and deeplink"]
     Entry["src/main.tsx<br/>AuthenticatorScreen + CredentialRequestSheet"]
-    Load["src/lib/requests/incoming-request.ts<br/>loadIncomingRequest()<br/>parseConnector → openBridge → parsePayload → validateSignature"]
+    Load["src/requests/incoming-request.ts<br/>loadIncomingRequest()<br/>parseConnector → openBridge → parsePayload → validateSignature"]
     Consent["RequestPreflight.tsx<br/>Share → passkey unlock / wallet initialization"]
     Session["AuthenticatorSession.tsx<br/>wallet + incoming request retained in this tab"]
     Check{"checkRequestCredentials()<br/>credentialAvailability()"}
@@ -158,8 +158,8 @@ work; this diagram does not claim a deployed Promon evidence contract.
 
 - Browser request/UI: [CredentialRequestSheet](../src/components/CredentialRequestSheet.tsx),
   [SelfieCheckScreen](../src/components/selfie-check/SelfieCheckScreen.tsx),
-  [incoming request](../src/lib/requests/incoming-request.ts),
-  [bridge](../src/lib/requests/bridge.ts).
+  [incoming request](../src/requests/incoming-request.ts),
+  [bridge](../src/requests/bridge.ts).
 - Browser issuance: [issueSelfieCredential](../src/lib/selfie-issuance.ts),
   [server adapter](../src/lib/selfie-issuer-server.ts),
   [native helper](../src/server/face-enrollment-helper/src/main.rs).

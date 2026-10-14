@@ -1,5 +1,5 @@
-import { AUTHENTICATOR_APP_CONFIG } from "../../../../config/authenticator-app-v0";
-import { createAuthenticatorHttpHandler } from "./http.server";
+import { AUTHENTICATOR_APP_CONFIG } from "./config";
+import { createAuthenticatorHttpHandler } from "./http";
 
 Bun.serve({
   hostname: AUTHENTICATOR_APP_CONFIG.host,

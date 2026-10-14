@@ -6,7 +6,7 @@ import {
 	credentialRequirementsLabel,
 	type ProofRequest,
 	type Constraint,
-} from '../src/lib/requests/proof-request'
+} from '../src/requests/proof-request'
 
 const request = (constraints?: Constraint): ProofRequest => ({
 	id: 'test',

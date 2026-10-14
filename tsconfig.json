@@ -12,13 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "types": [],
-    "baseUrl": ".",
-    "paths": {
-      "@clean-start/browser-admission": [
-        "packages/browser-admission/src/index.ts"
-      ]
-    }
+    "types": []
   },
   "files": []
 }

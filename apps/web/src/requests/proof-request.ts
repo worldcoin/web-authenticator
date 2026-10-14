@@ -1,4 +1,4 @@
-import type { CredentialMetadata } from '../walletkit'
+import type { CredentialMetadata } from '../lib/walletkit'
 import { hexToBytes, keccak256, stringToHex, verifyMessage, type Hex } from 'viem'
 
 export type Requirement = {

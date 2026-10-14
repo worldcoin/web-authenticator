@@ -1,8 +1,9 @@
 import { resolve, relative, sep } from "node:path";
-import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../../../../config/authenticator-app-v0";
-import { GET as lookupRp } from "./staging-rp.server";
+import { fileURLToPath } from "node:url";
+import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "./config";
+import { GET as lookupRp } from "./routes/staging-rp";
 
-const DEFAULT_STATIC_ROOT = resolve(process.cwd(), "apps/authenticator/dist");
+const DEFAULT_STATIC_ROOT = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 function headers(contentType?: string): Headers {
   const result = new Headers(AUTHENTICATOR_APP_SECURITY_HEADERS_V0);
   if (contentType !== undefined) result.set("Content-Type", contentType);

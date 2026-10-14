@@ -1,6 +1,6 @@
 import { openBridge } from './bridge'
-import type { WalletKit } from '../walletkit'
-import { abortable } from '../async'
+import type { WalletKit } from '../lib/walletkit'
+import { abortable } from '../lib/async'
 import { parseConnector, returnUrl } from './connector'
 import {
 	credentialAvailability,

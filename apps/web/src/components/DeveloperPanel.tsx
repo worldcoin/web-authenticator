@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CredentialMetadata } from "../lib/walletkit";
-import type { IncomingRequest } from "../lib/requests/incoming-request";
-import { credentialRequirementsLabel } from "../lib/requests/proof-request";
+import type { IncomingRequest } from "../requests/incoming-request";
+import { credentialRequirementsLabel } from "../requests/proof-request";
 import { LIVE_GUIDANCE_MODEL_V1 } from "../walkthrough/model-provenance";
 
 function credentialDescription(schema: bigint) {

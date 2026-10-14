@@ -1,9 +1,9 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { signedRequest, encryptedRequest } from "../../../tests/integration/fixtures/request";
-import { loadIncomingRequest } from "../src/lib/requests/incoming-request";
-import { parseConnector, returnUrl } from "../src/lib/requests/connector";
-import { parsePayload } from "../src/lib/requests/proof-request";
-import { createProof } from "../src/lib/requests/prove";
+import { loadIncomingRequest } from "../src/requests/incoming-request";
+import { parseConnector, returnUrl } from "../src/requests/connector";
+import { parsePayload } from "../src/requests/proof-request";
+import { createProof } from "../src/requests/prove";
 import type { WalletKit } from "../src/lib/walletkit";
 
 let restore: (() => void) | undefined;

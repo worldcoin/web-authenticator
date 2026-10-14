@@ -4,7 +4,7 @@
 #604 adapter and TEE routes. It is not the default application. Its source and
 local-package dependency are retained for the next TEE integration step.
 
-The canonical UI and registration flow now live in `apps/authenticator`.
+The canonical UI and registration flow now live in `apps/web`.
 Use the repository-root commands for that app. The pre-convergence checkpoint is
 `ae0b178`; no legacy passkey state or local secrets were deleted.
 
@@ -17,7 +17,7 @@ production or make the entire branch production-ready.
 
 `tee-demo` preserves the synthetic enrollment adapter, native helper, placeholder
 integrity headers and simulated flows. The duplicate adapter/helper formerly in
-`apps/authenticator` and `services/staging-issuance` have been removed. The Rust
+`apps/web` and `services/staging-issuance` have been removed. The Rust
 helper source and lockfile were identical to the preserved copy.
 
 To work on the experiment, explicitly change into `experiments/tee-demo` and use

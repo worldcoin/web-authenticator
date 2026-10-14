@@ -1,5 +1,5 @@
-import { abortable } from "../async";
-import type { WalletKit } from "../walletkit";
+import { abortable } from "../lib/async";
+import type { WalletKit } from "../lib/walletkit";
 import { checkRequestCredentials, type IncomingRequest } from "./incoming-request";
 import { checkExpiry } from "./proof-request";
 

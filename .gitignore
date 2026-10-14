@@ -1,7 +1,7 @@
 node_modules/
-apps/authenticator/dist/
-apps/authenticator/dist-server/
-apps/authenticator/dist-static/
+apps/*/dist/
+apps/*/dist-server/
+apps/*/dist-static/
 .artifacts/
 .runtime/
 playwright-report/
@@ -16,11 +16,8 @@ coverage/
 .vercel/
 .wrangler/
 
-services/staging-issuance/face-enrollment-helper/target/
-services/staging-issuance/face-enrollment-helper/cache/
-services/staging-issuance/face-enrollment-helper/assets/
 
-apps/authenticator/public/models/rgbnet.onnx
+apps/web/public/models/rgbnet.onnx
 
 .next/
 demo/

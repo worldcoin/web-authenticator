@@ -4,7 +4,7 @@ The authenticator accepts World ID connector query parameters at `/`.
 Old `/verify` links redirect to `/`, preserving their connector parameters.
 This code is independent of the relying-party demo's request generation.
 
-- `src/lib/requests/connector.ts`: strict `i`/`k` parsing, official bridge allowlist,
+- `src/requests/connector.ts`: strict `i`/`k` parsing, official bridge allowlist,
   safe explicit return URLs. Only ordinary URL/QR links are supported, not invite codes.
 - `bridge.ts`: bounded fetch, browser-only AES-256-GCM decryption, fresh-IV encrypted
   response upload with PUT. The bridge key never goes to our server or browser storage.

@@ -9,13 +9,11 @@ Selfie credentials. Selfie enrollment, user presence and recovery are not yet im
 
 Built with React, TypeScript and Vite, served by Bun. WalletKit handles account
 registration, encrypted storage and proof generation; viem reads the RP registry.
-ONNX Runtime Web runs RGBNet for local camera positioning. Dependencies are pinned
-in [package.json](package.json).
+ONNX Runtime Web runs RGBNet for local camera positioning. Dependencies are pinned in each app’s `package.json`.
 
-The app lives in [apps/authenticator](apps/authenticator): `src/` contains the
-React UI, browser wallet and proof flows; `src/server/` contains the Bun HTTP
-server and RP registry lookup. Both ship together, with separate browser and
-server builds.
+The browser app lives in [apps/web](apps/web), and the Bun server lives in
+[apps/api](apps/api). They have separate dependencies and builds, and ship together
+from one origin.
 [CI](.github/workflows/ci.yml) runs checks and builds; automatic Vercel deployments
 are disabled in [vercel.json](vercel.json). Standalone demos live in `experiments/`
 and are excluded from the app build.
@@ -34,8 +32,8 @@ server. Use a browser and passkey provider with WebAuthn PRF support.
 
 The server binds to `127.0.0.1`. Override it with `AUTHENTICATOR_HOST`, or change
 the port with `PORT=3100 bun run dev` (`AUTHENTICATOR_PORT` is also supported).
-See [server settings](config/authenticator-app-v0.ts) for security headers and
-[the server entry point](apps/authenticator/src/server/main.ts) for request limits.
+See [server settings](apps/api/src/config.ts) for security headers and
+[the server entry point](apps/api/src/main.ts) for request limits.
 
 To run a built version, use `bun run build` followed by `bun run start`.
 Hosting outside localhost requires HTTPS for passkeys and camera access.
@@ -52,7 +50,7 @@ curl -i 'http://localhost:4173/api/staging-rp?id=invalid' # Expected: 400
 ```
 
 Registration, vault access and proof generation run in the browser through
-WalletKit. The [HTTP handlers](apps/authenticator/src/server/http.server.ts)
+WalletKit. The [HTTP handlers](apps/api/src/http.ts)
 define the server routes.
 
 ### Trying a request

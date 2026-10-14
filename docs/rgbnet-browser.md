@@ -7,8 +7,7 @@ five landmarks; the UI uses boxes for face count, centering and distance, with t
 consecutive matching results before changing instructions. These are positioning
 heuristics, not identity, eye tracking, head-pose or liveness verification.
 
-Camera guidance does not gate passkey setup, synthetic staging issuance or RP
-proof generation. Camera frames are not sent to the server. TEE validation remains
+Camera guidance does not gate passkey setup or RP proof generation. Camera frames are not sent to the server. TEE validation remains
 unconnected. A detector error leaves the camera preview available with an explicit
 error; close and reopen it to retry.
 
@@ -20,7 +19,7 @@ bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
 bun run dev
 ```
 
-The setup script installs `apps/authenticator/public/models/rgbnet.onnx` after
+The setup script installs `apps/web/public/models/rgbnet.onnx` after
 checking its 1,720,022-byte size and SHA-256 against `src/face/rgbnet-model.json`
 inside the authenticator app. The worker repeats those checks before inference.
 Model weights are ignored by Git; install them before building a deployed preview.

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { CameraPreview } from "../src/components/CameraPreview";
 import { AuthenticatorAppV1 } from "../src/App";
 import { signedRequest } from "../../../tests/integration/fixtures/request";
-import type { IncomingRequest } from "../src/lib/requests/incoming-request";
+import type { IncomingRequest } from "../src/requests/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../src/lib/walletkit";
 import type { DetectorResponse } from "../src/face/rgbnet.worker";
 

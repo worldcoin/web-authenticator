@@ -1,15 +1,21 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": ["bun", "node", "vite/client"]
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
+    "types": [
+      "bun",
+      "node"
+    ]
   },
   "include": [
-    "apps/authenticator/test/**/*.ts",
-    "apps/authenticator/test/**/*.tsx",
-    "config/**/*.test.ts",
-    "packages/**/*.test.ts",
-    "services/**/*.test.ts",
+    "apps/web/src/vite-env.d.ts",
+    "apps/*/test/**/*.ts",
+    "apps/*/test/**/*.tsx",
+    "packages/**/*.ts",
     "tests/**/*.ts"
   ]
 }

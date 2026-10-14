@@ -5,9 +5,9 @@ import { openAuthenticator } from "./wallet/session";
 import { walletOpenErrorMessage } from "./wallet/errors";
 import { abortable } from "./lib/async";
 import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
-import { loadIncomingRequest, type IncomingRequest } from "./lib/requests/incoming-request";
-import { credentialAvailability, credentialRequirementsLabel } from "./lib/requests/proof-request";
-import { createProof } from "./lib/requests/prove";
+import { loadIncomingRequest, type IncomingRequest } from "./requests/incoming-request";
+import { credentialAvailability, credentialRequirementsLabel } from "./requests/proof-request";
+import { createProof } from "./requests/prove";
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled";

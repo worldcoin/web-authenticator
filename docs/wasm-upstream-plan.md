@@ -3,7 +3,7 @@
 > **Historical dependency snapshot (October 1).** The product now uses published
 > `@worldcoin/walletkit-web@0.27.1` without a local package patch. The old patch
 > directory is removed; current app integration lives in the
-> [WalletKit adapter](../apps/authenticator/src/lib/walletkit.ts).
+> [WalletKit adapter](../apps/web/src/lib/walletkit.ts).
 > Synthetic enrollment remains in `experiments/tee-demo`. See
 > [current boundaries](code-boundaries.md) before acting on the upstream work below.
 

@@ -17,7 +17,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "bun run start:authenticator",
+    command: "bun run start",
     cwd: repositoryRoot,
     env: {
       ...process.env,

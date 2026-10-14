@@ -1,8 +1,17 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
-    "types": ["bun", "node"]
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "bun",
+      "node"
+    ]
   },
-  "include": ["*.config.ts", "vite.config.ts", "scripts/**/*.ts", "tests/e2e/playwright.config.ts"]
+  "include": [
+    "apps/web/vite.config.ts",
+    "scripts/**/*.ts",
+    "tests/e2e/playwright.config.ts"
+  ]
 }
