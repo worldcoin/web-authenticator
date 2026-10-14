@@ -156,7 +156,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   });
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
-    <header className="dev-mode-bar"><p className="staging-banner">World ID · Staging</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
+    <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
     <div className="authenticator-layout"><main className={`app-main${preview && screen === "enroll" ? " app-main--camera-preview" : ""}`}>
     <div className="screen-content"><div className="centered-layout">
       {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />}
@@ -182,7 +182,6 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
             : "Your wallet does not meet the requested credential and date requirements."}</p>}
         </section>}
         {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet. You can preview camera positioning, but it will not issue a credential.</p>}
-        {!wallet && supported && !loading && !finished && screen !== "delivery" && <p className="detail-copy">New wallets register an account on staging. Your passkey also unlocks encrypted credential storage on this browser.</p>}
       </div>
       {progress && !finished && <p className="progress-copy" role="status">{progress}</p>}
       {error && <p className="error-copy" role="alert">{error}</p>}
