@@ -14,8 +14,6 @@ bun run dev
 ```
 
 Open **http://localhost:4173** in a browser with WebAuthn PRF support.
-Both apps rebuild on changes; refresh the page to see frontend updates.
-Use `PORT=3100 bun run dev` if port 4173 is taken.
 
 For camera guidance, [install the RGBNet model](docs/rgbnet-browser.md).
 Wallet and proof flows work without it.
