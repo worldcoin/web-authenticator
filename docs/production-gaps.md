@@ -1,3 +1,7 @@
+> **Historical demo assessment.** The product now uses published WalletKit 0.27.1
+> without a local package patch. Synthetic enrollment is excluded from the main
+> app. See [current boundaries and readiness](code-boundaries.md).
+
 # Demo → production gaps
 
 ## Validated milestone
@@ -74,8 +78,8 @@ question, not a claim that the current iOS selfie flow already sends that proof.
   requirement, not merely a missing hardcoded field.
 
 Implementation references: [selfie enrollment](selfie-enrollment.md),
-[enrollment adapter](../src/lib/selfie-issuer-server.ts), and
-[WalletKit wrapper patch](../walletkit-patches/walletkit-web@0.22.1.patch).
+[preserved enrollment adapter](../experiments/tee-demo/src/lib/selfie-issuer-server.ts), and
+[current WalletKit adapter](../apps/authenticator/src/lib/walletkit.ts).
 
 The RP verifier and replay ledger described above belong to the separate local
 playground under ignored `demo/`; their implementation is not included in this branch.

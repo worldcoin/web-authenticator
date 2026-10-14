@@ -1,5 +1,12 @@
 # Browser/WASM dependencies and upstream PR plan
 
+> **Historical dependency snapshot (October 1).** The product now uses published
+> `@worldcoin/walletkit-web@0.27.1` without a local package patch. The old patch
+> directory is removed; current app integration lives in the
+> [WalletKit adapter](../apps/authenticator/src/lib/walletkit.ts).
+> Synthetic enrollment remains in `experiments/tee-demo`. See
+> [current boundaries](code-boundaries.md) before acting on the upstream work below.
+
 Checked October 1, 2026 against this authenticator's source, dependency pins,
 and the linked GitHub PRs. Proposed PR titles below are a plan, not opened PRs.
 
@@ -9,13 +16,13 @@ and attests the bound enrollment output. The browser handles capture, encrypted
 transport and user custody. This is the implementation target agreed for this
 project, not a claim that the upstream services already implement it.
 
-## What the authenticator uses today
+## What the authenticator used at the time of review
 
 | Capability                                                     | Current implementation                                                                                                 | Upstream action                                                                                                                                                                                                                                               |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Registration, credential preparation/storage, proof generation | `walletkit-web@0.22.1`, from the open WalletKit #480 → #522 → #523 stack                                               | Finish/rebase the existing stack and support package releases; do not duplicate it.                                                                                                                                                                           |
 | Binding generation                                             | The package build pins UniFFI 0.31.2 and patches UBRN's wasm-bindgen processing/generated TypeScript                   | Track UBRN #409, then update and validate WalletKit's generator/toolchain together. This is a build compatibility workaround, not new cryptography.                                                                                                           |
-| Credential listing/deletion                                    | Our `walletkit-patches/` patch adds worker messages and TypeScript methods around existing Rust APIs                   | WalletKit: add the missing public worker APIs above #523. No new Rust implementation is needed just to expose these methods.                                                                                                                                  |
+| Credential listing/deletion                                    | The former local package patch added worker messages and TypeScript methods around existing Rust APIs                   | WalletKit: add the missing public worker APIs above #523. No new Rust implementation is needed just to expose these methods.                                                                                                                                  |
 | Credential subject binding on import                           | Our worker patch checks the imported credential's subject against this authenticator and its blinding factor           | WalletKit: preserve this invariant in the supported import API.                                                                                                                                                                                               |
 | Selfie score disclosure                                        | Our worker patch fetches schema 11 and attaches its first claim to proof JSON                                          | WalletKit/authenticator: expose deliberate claim access tied to the selected credential. Keep disclosure policy in the authenticator and provide accepted response integrity. Appended JSON is not authenticated by the ZK proof.                             |
 | AMPC share creation/encryption                                 | Native helper creates a synthetic vector, secret-shares it using `ampc-secret-sharing`, and seals shares to party keys | Flamingo/TEE: replace this job with attested enrollment output using existing Rust AMPC primitives. Quantization, share generation and party encryption are not browser/WASM requirements. Preserve the exact same shares in enrollment and PCP custody data. |
@@ -23,10 +30,10 @@ project, not a claim that the upstream services already implement it.
 | Issued credential verification                                 | Native helper validates schema, subject, issuer key and signature with protocol primitives                             | WalletKit: expose/reuse verified credential import or verification through the worker. Preserve trusted issuer-key selection and all binding checks.                                                                                                          |
 | Enrollment submission/polling                                  | Next.js routes and a staging-only integrity exception; associated-data hash is currently synthetic                     | Oxide + face signup service: implement the real evidence/binding contract. This is not solved by compiling the helper to WASM. Browser networking/CORS or a deliberate relay also needs integration.                                                          |
 
-Sources: [helper](../src/server/face-enrollment-helper/src/main.rs),
-[helper pins](../src/server/face-enrollment-helper/Cargo.toml),
-[server adapter](../src/lib/selfie-issuer-server.ts),
-[worker patch](../walletkit-patches/walletkit-web@0.22.1.patch).
+Sources: [preserved helper](../experiments/tee-demo/src/server/face-enrollment-helper/src/main.rs),
+[helper pins](../experiments/tee-demo/src/server/face-enrollment-helper/Cargo.toml),
+[preserved server adapter](../experiments/tee-demo/src/lib/selfie-issuer-server.ts).
+The historical worker patch is no longer present or applied.
 
 Passkeys, PRF/HKDF derivation, bridge AES-GCM and request UI use browser APIs and
 TypeScript. They are not missing WASM ports. Encrypted browser credential storage

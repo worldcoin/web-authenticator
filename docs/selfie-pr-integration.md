@@ -1,3 +1,8 @@
+> **Historical demo/integration notes.** Synthetic enrollment and the TEE demo
+> are preserved under `experiments/tee-demo`; they are not part of the default app.
+> Paths and validation below describe that earlier implementation. For current
+> runtime boundaries and readiness, see [code boundaries](code-boundaries.md).
+
 # Selfie enrollment integration snapshot
 
 Updated on 2026-10-09. The product now installs the locally built #604 candidate.

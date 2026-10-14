@@ -12,7 +12,10 @@ registration, encrypted storage and proof generation; viem reads the RP registry
 ONNX Runtime Web runs RGBNet for local camera positioning. Dependencies are pinned
 in [package.json](package.json).
 
-The app lives in [apps/authenticator](apps/authenticator).
+The app lives in [apps/authenticator](apps/authenticator): `src/` contains the
+React UI, browser wallet and proof flows; `src/server/` contains the Bun HTTP
+server and RP registry lookup. Both ship together, with separate browser and
+server builds.
 [CI](.github/workflows/ci.yml) runs checks and builds; automatic Vercel deployments
 are disabled in [vercel.json](vercel.json). Standalone demos live in `experiments/`
 and are excluded from the app build.

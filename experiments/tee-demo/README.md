@@ -1,3 +1,8 @@
+> **Demo/experimental only.** This app is excluded from the root product build.
+> Run the commands below from `experiments/tee-demo`, not the repository root.
+> It requires the local WalletKit tarball referenced by its `package.json`.
+> Synthetic enrollment uses random face input and test integrity headers.
+
 # Web Authenticator
 
 This repo contains the browser experience and the current staging demo. Real selfie enrollment through a TEE is still being built.
