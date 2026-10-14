@@ -20,9 +20,6 @@ bun run dev
 
 Open [localhost:4173](http://localhost:4173) in a browser with WebAuthn PRF support.
 
-For camera guidance, [install the RGBNet model](web/README.md#camera-guidance).
-Wallet and proof flows work without it.
-
 ## Repository Structure
 
 ```text
@@ -30,7 +27,6 @@ web/         React UI, browser logic and public assets
 api/         Bun HTTP server and API routes
 packages/    Shared contracts and browser admission policy
 tests/       Browser tests and integration fixtures
-scripts/     Local setup tools
 ```
 
 `web/` and `api/` own their dependencies. Bun serves both from one origin.

@@ -5,7 +5,7 @@ import type { DetectorResponse } from "../../../web/lib/rgbnet.worker";
 if (!("bun" in process.versions)) {
   for (const missing of [false, true]) {
     test(`built RGBNet worker ${missing ? "reports missing weights" : "runs real ONNX inference"}`, async ({ page }) => {
-      test.skip(!missing && !existsSync("web/dist/models/rgbnet.onnx"), "Install the pinned RGBNet artifact to exercise real inference");
+      test.skip(!missing && !existsSync("web/dist/models/rgbnet.onnx"), "Local model weights are unavailable");
       test.setTimeout(60_000);
       const asset = readdirSync("web/dist/assets").find(name => /^rgbnet\.worker-.*\.js$/.test(name));
       expect(asset).toBeTruthy();

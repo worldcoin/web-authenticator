@@ -47,9 +47,9 @@ self.onmessage = async ({ data }: MessageEvent<DetectorRequest>) => {
 			log(`Downloading RGBNet (${model.bytes} bytes expected). Frames remain on this device.`)
 			const response = await fetch(model.url, { signal: AbortSignal.timeout(20_000), credentials: 'omit' })
 			if (!response.ok)
-				throw new Error(`Model download returned HTTP ${response.status}; run the RGBNet setup script`)
+				throw new Error(`Model download returned HTTP ${response.status}`)
 			const bytes = await response.arrayBuffer()
-			if (bytes.byteLength !== model.bytes) throw new Error('Model length mismatch; run the RGBNet setup script')
+			if (bytes.byteLength !== model.bytes) throw new Error('Model length mismatch')
 			stage = 'model integrity'
 			const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b =>
 				b.toString(16).padStart(2, '0')

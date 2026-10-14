@@ -18,7 +18,8 @@ coverage/
 .wrangler/
 
 
-web/public/models/rgbnet.onnx
+web/public/models/*
+!web/public/models/README.md
 
 .next/
 demo/
