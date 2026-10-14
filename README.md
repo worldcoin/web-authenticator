@@ -17,7 +17,7 @@ bun run dev
 
 Open **http://localhost:4173** in a browser with WebAuthn PRF support.
 
-For camera guidance, [install the RGBNet model](docs/rgbnet-browser.md).
+For camera guidance, [install the RGBNet model](web/README.md#camera-guidance).
 Wallet and proof flows work without it.
 
 ## Where things live
@@ -25,10 +25,8 @@ Wallet and proof flows work without it.
 - [`web`](web): React UI, passkeys, wallet, camera and proof requests.
 - [`api`](api): Bun server, API routes and server configuration.
 - [`tests`](tests): browser tests and shared integration fixtures.
-- [`experiments`](experiments): older demos, excluded from the app build.
 
 Each app owns its dependencies. Bun serves the frontend and API from one origin.
-See [code boundaries](docs/code-boundaries.md) for the remaining packages and planned work.
 
 ## Check your changes
 
@@ -41,4 +39,4 @@ bun run test:browser
 ```
 
 To run the compiled app: `bun run build && bun run start`.
-[Container instructions](api/README.md#container) · [App request format](docs/connector-bridge.md)
+[Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
