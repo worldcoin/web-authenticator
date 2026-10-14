@@ -2,12 +2,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-const repositoryUrl = new URL("../", import.meta.url);
-const cleanRoot = fileURLToPath(repositoryUrl);
-const appRoot = fileURLToPath(new URL("./apps/authenticator", repositoryUrl));
+const cleanRoot = fileURLToPath(new URL(".", import.meta.url));
+const appRoot = fileURLToPath(new URL("./apps/authenticator", import.meta.url));
 
 function path(relativePath: string): string {
-  return fileURLToPath(new URL(relativePath, repositoryUrl));
+  return fileURLToPath(new URL(relativePath, import.meta.url));
 }
 
 function rejectServerModulesFromBrowser(): Plugin {

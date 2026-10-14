@@ -10,18 +10,18 @@
   ],
   "scripts": {
     "build": "bun run build:authenticator && bun run build:authenticator-server",
-    "build:authenticator": "vite build --config tooling/vite.config.ts",
+    "build:authenticator": "vite build --config vite.config.ts",
     "build:authenticator-server": "bun build apps/authenticator/src/server/main.ts --target=bun --outdir apps/authenticator/dist-server",
-    "dev:authenticator": "concurrently -k -n client,server \"vite build --watch --config tooling/vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
-    "lint": "eslint -c tooling/eslint.config.mjs . --max-warnings=0",
+    "dev:authenticator": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
+    "lint": "eslint . --max-warnings=0",
     "start:authenticator": "bun apps/authenticator/src/server/main.ts",
     "start:authenticator:tunnel": "bun --env-file=.env.tunnel apps/authenticator/src/server/main.ts",
     "test": "bun test ./apps ./packages ./config ./tests",
     "test:authenticator": "bun test ./apps/authenticator/test",
     "test:browser": "bun run build:authenticator && playwright test -c tests/e2e/playwright.config.ts",
     "test:integration": "bun test ./tests/integration",
-    "typecheck": "tsc -p tooling/tsconfig.client.json --noEmit && tsc -p tooling/tsconfig.server.json --noEmit && tsc -p tooling/tsconfig.test.json --noEmit && tsc -p tooling/tsconfig.tools.json --noEmit",
-    "dev": "concurrently -k -n client,server \"vite build --watch --config tooling/vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
+    "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "dev": "concurrently -k -n client,server \"vite build --watch --config vite.config.ts\" \"bun --watch apps/authenticator/src/server/main.ts\"",
     "start": "bun apps/authenticator/src/server/main.ts"
   },
   "dependencies": {
