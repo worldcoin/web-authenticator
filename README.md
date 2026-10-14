@@ -1,8 +1,21 @@
 # World ID Web Authenticator
 
-Staging authenticator built on PR #9 with published `@worldcoin/walletkit-web@0.27.1`.
+Staging-only product implementation built on PR #9 with published `@worldcoin/walletkit-web@0.27.1`.
+Production enrollment is not yet available.
 The relying-party demo belongs in its own website. This repository consumes its
 requests; it does not host an RP demo, generate RP requests, or verify proofs for the RP.
+
+## Repository layout
+
+- `apps/authenticator/`: browser app, its HTML entry point and server.
+- `config/`: authenticator runtime settings and HTTP security policy.
+- `tooling/`: Vite, ESLint and environment-specific TypeScript configuration.
+- `tests/e2e/playwright.config.ts`: browser test runner configuration.
+- `tests/integration/`: integration fixtures and browser tests.
+- `experiments/`: isolated demo implementations, excluded from the product build.
+
+Package metadata, lockfile, ignore files and shared `tsconfig.json` stay at the root.
+`vercel.json` also stays at the root to keep automatic Vercel deployments disabled.
 
 ## Run
 
@@ -34,8 +47,9 @@ request creation and final verification remain on that website/server.
    action binding, RP signer and OPRF key against the staging registry.
 2. Show the RP ID, action and exact AND/OR credential requirements before opening
    a passkey. New wallets register on staging; existing wallets unlock their vault.
-3. Check the requested issuer schemas and date bounds. Selfie-only requests can
-   enter enrollment; Orb-only requests require an existing Orb credential. An
+3. Check the requested issuer schemas and date bounds. Selfie-only requests with
+   missing credentials show that enrollment is unavailable; Orb-only requests
+   require an existing Orb credential. An
    either-credential request asks the user to choose, without selecting Selfie automatically.
 4. On explicit approval, revalidate the request and use WalletKit to generate the
    proof from the original requirements. Selfie proofs include the existing
@@ -49,32 +63,19 @@ production requests are not implemented. Closing/reloading the page discards the
 bridge response capability; reopen a fresh request from the RP. Bridge keys are
 removed from browser history and never persisted by the app.
 
-## Selfie issuance
+## Selfie enrollment status
 
-The local flow uses the **existing real staging issuer with synthetic face input**.
-It obtains a schema-11 subject/blinding factor through WalletKit, creates encrypted
-synthetic AMPC shares in a native helper, submits/polls Face staging, verifies the
-issuer signature and subject, and stores the issued credential in the encrypted vault.
+The default app does not issue Selfie credentials. Missing-credential requests show
+an unavailable enrollment state; existing eligible staging credentials can still be
+used for proofs. Camera positioning remains available as local guidance only.
 
-```sh
-bun run build:selfie-helper
-```
+Synthetic enrollment is isolated in [`experiments/tee-demo`](experiments/README.md).
+It submits random face embeddings to the real staging signup service using its
+integrity exception. The main app has no synthetic submission route, native helper,
+or integrity placeholders. Root build/start commands do not include the experiment.
 
-The helper has pinned private Oxide/AMPC dependencies and needs their repository
-access and native dependencies. See its [README](services/staging-issuance/face-enrollment-helper/README.md).
-`STAGING_FACE_HELPER=/absolute/path/to/staging-face-crypto` can select an existing
-build of this same helper for local development. Missing helpers return an actionable
-503; there is no fake-success fallback. The web build does not build the native helper.
-
-Issuance is allowed only with a loopback server binding, an allowed localhost
-request origin, and matching `Origin` header. Remote deployments cannot enable
-this synthetic enrollment route by changing browser input. Interrupted submissions
-are saved and polled instead of automatically submitted again. The server retains
-operations under `~/.local/state/web-authenticator/synthetic-selfie-issuance` with
-private filesystem permissions; the browser retains an opaque resume capability.
-Set `STAGING_SELFIE_STATE_DIR` to a separate persistent directory when running
-multiple local checkouts. Run one issuer process per directory; the in-memory
-concurrency guard is not a distributed lock.
+Previously saved vaults, enrollment-operation files and resume tokens are left in
+place. This cleanup does not delete server enrollments or revoke credentials.
 
 The optional camera preview runs Face Engine’s RGBNet detector locally through
 ONNX Runtime Web (CPU/WASM, dedicated worker). It provides face-count, centering
@@ -87,7 +88,7 @@ bun scripts/setup-rgbnet.ts /path/to/RGBNet.onnx
 
 The model is ignored by Git; install it before building a deployable preview.
 See [RGBNet setup and processing](docs/rgbnet-browser.md).
-It does **not** supply the issuer input or establish liveness. TEE capture, challenge
+It does **not** submit an enrollment or establish liveness. TEE capture, challenge
 verification and production Selfie Check issuance remain separate integrations.
 
 The **Dev mode** switch is off by default and resets on reload. It opens a side
@@ -105,8 +106,9 @@ are unchanged. Reloading at the **same origin** reopens that passkey's encrypted
 WalletKit vault. PRF output and seed/database-key buffers are erased after opening.
 No plaintext key fallback is available. Close other wallet tabs before unlocking.
 
-Registration status and the opaque issuance resume capability are additional
-browser metadata. A submission of unknown outcome is never automatically
+Registration status is additional browser metadata. Legacy synthetic-issuance
+resume tokens may remain in storage but are no longer read by this app. A
+submission of unknown outcome is never automatically
 registered again; unlocking checks whether that account became available.
 
 Ports/hostnames are separate browser origins. The earlier development checkout
@@ -121,10 +123,9 @@ not implemented.
 bun run lint
 bun run typecheck
 bun run build
-bun test
+bun run test
 bun x playwright install chromium webkit
 bun run test:browser
-cargo fmt --manifest-path services/staging-issuance/face-enrollment-helper/Cargo.toml -- --check
 ```
 
 Browser tests run a separate server on port 4194. Unit and browser tests use fixture
@@ -140,9 +141,8 @@ publishing disabled. Server bindings/origins and the explicit CSP allowlist live
 ## Provenance
 
 PR #9 migrated the browser UX from `worldcoin/web-authenticator-experiments`
-commit `b4139268da213a680e89bf5877c29fcafb145f25`. This branch replaces its embedded
-RP scenario, simulated session gateway and simulated issuers with the existing
-development checkout's WalletKit, bridge and staging issuance integrations.
+commit `b4139268da213a680e89bf5877c29fcafb145f25`. The product app uses WalletKit
+and the bridge; embedded RP scenarios, simulated sessions and synthetic enrollment are isolated in the experiment.
 The original UI assets and passkey vault format are retained. Camera guidance now uses the pinned RGBNet model described above.
 
 ## Local integration branch
