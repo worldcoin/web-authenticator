@@ -159,7 +159,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
     <div className="authenticator-layout"><main className={`app-main${preview && screen === "enroll" ? " app-main--camera-preview" : ""}`}>
     <div className="screen-content"><div className="centered-layout">
-      {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "person-key-blue"}.svg`} alt="" />}
+      {preview && screen === "enroll" ? <CameraPreview /> : <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "human-emblem"}.svg`} alt="" />}
       <div className="message-block">
         <h1>{title}</h1>
         {screen === "done" && <p>Your proof reached the bridge. The requesting app verifies it.</p>}
