@@ -14,7 +14,7 @@ for (const mode of ["static", "dynamic", "worker"] as const) {
     const directory = await mkdtemp(resolve(tmpdir(), "authenticator-boundary-"));
     temporaryDirectories.push(directory);
     const entry = resolve(directory, "entry.js");
-    const apiConfig = resolve(import.meta.dir, "../../api/config.ts");
+    const apiConfig = resolve(import.meta.dir, "../../api/lib/config.ts");
     if (mode === "worker") {
       await writeFile(resolve(directory, "worker.js"), `import ${JSON.stringify(apiConfig)};`);
       await writeFile(entry, 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" });');

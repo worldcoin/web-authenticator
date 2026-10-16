@@ -7,9 +7,33 @@ browser. Promon sessions and Redis are not implemented yet.
 Run `bun run dev` from the repo root to watch both apps. For the compiled app,
 run `bun run build` followed by `bun run start`.
 
+## Layout
+
+```
+main.ts          Bun.serve listener settings
+server.ts        wires the route table, static fallback and error handler
+routes/index.ts  every server route, using Bun's built-in router
+routes/*.ts      one file per endpoint, exporting GET/POST like Next.js route.ts
+lib/             config, security headers, static serving, registry client
+test/            runs against a real server on an ephemeral port
+```
+
+To add an endpoint, create `routes/<name>.ts` and register it in
+[`routes/index.ts`](routes/index.ts). Security headers are applied to every route
+centrally in [`lib/http.ts`](lib/http.ts). Unmatched `/api/*` paths and methods
+return JSON 404; everything else falls through to the web build.
+
+## Health
+
+- `GET /api/health/live` returns 200 whenever the process can serve requests. It
+  never checks dependencies.
+- `GET /api/health/ready` returns 503 when the web build is missing. The staging
+  RP registry is not part of readiness: when it fails, only `/api/staging-rp`
+  degrades (502).
+
 ## Configuration
 
-[`config.ts`](config.ts) reads the listener settings and defines response
+[`lib/config.ts`](lib/config.ts) reads the listener settings and defines response
 security headers. `AUTHENTICATOR_HOST` defaults to `127.0.0.1`; `PORT` defaults to
 `4173` (`AUTHENTICATOR_PORT` is also accepted). Invalid ports fail startup.
 

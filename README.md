@@ -1,9 +1,7 @@
 # World ID Web Authenticator
 
 Unlock your World ID wallet with a passkey and approve requests from apps.
-Currently uses staging and supports proofs with existing Orb and Selfie
-credentials. Selfie enrollment, user presence and recovery are still to come.
-
+Currently uses **staging** contracts for enrollment. 
 ## Dependencies
 
 - [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.

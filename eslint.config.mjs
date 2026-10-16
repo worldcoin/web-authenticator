@@ -98,6 +98,7 @@ export default tseslint.config(
   {
     files: [
       "api/*.{ts,tsx}",
+      "api/{lib,routes}/**/*.{ts,tsx}",
     ],
     languageOptions: {
       globals: {
@@ -139,7 +140,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["api/*.ts"],
+    files: ["api/*.ts", "api/{lib,routes}/**/*.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [

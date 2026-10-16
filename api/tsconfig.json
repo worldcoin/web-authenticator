@@ -11,6 +11,8 @@
     ]
   },
   "include": [
-    "*.ts"
+    "*.ts",
+    "lib/**/*.ts",
+    "routes/**/*.ts"
   ]
 }
