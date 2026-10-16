@@ -33,9 +33,9 @@ export async function loadIncomingRequest(
 	progress('Request decrypted. Checking staging metadata and signature…')
 	const payload = parsePayload(bridge.json)
 	await validateSignature(payload.proof_request, signal)
-	const callback = returnUrl(payload.return_to_url) ?? connector.returnUrl
-	// URL metadata cannot replace a different callback inside the encrypted request.
-	if (connector.returnUrl && callback !== connector.returnUrl)
+	const callback = returnUrl(payload.return_to_url)
+	// Connector metadata may confirm a payload callback, but cannot supply one.
+	if (callback && connector.returnUrl && callback !== connector.returnUrl)
 		throw new Error('Connector and encrypted request return URLs disagree.')
 	return {
 		proof: payload.proof_request,

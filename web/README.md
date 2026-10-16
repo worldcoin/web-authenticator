@@ -13,3 +13,7 @@ Requests currently must target staging.
 The browser fetches and decrypts the request, checks its RP signature and asks
 for approval before generating a proof. It removes the key from the address bar;
 reloading loses the in-memory request. Open the original connector link to resume.
+
+Return navigation uses `return_to_url` from the encrypted request. A `return_to`
+query parameter alone does not enable a return link; requests without a payload
+callback still complete through the bridge.

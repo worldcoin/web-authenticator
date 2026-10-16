@@ -9,8 +9,9 @@ import type { WalletKit } from "../lib/walletkit";
 let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); });
 const signal = () => new AbortController().signal;
-async function fixture() {
+async function fixture(returnToUrl?: string) {
   const { payload, registry } = await signedRequest();
+  if (returnToUrl !== undefined) payload.return_to_url = returnToUrl;
   const encrypted = await encryptedRequest(payload);
   const sent: unknown[] = [];
   const requests: string[] = [];
@@ -39,6 +40,23 @@ test("fetches, decrypts and validates a real-format RP request; encrypts the mat
   await incoming!.cancel(signal());
   expect(f.sent[1]).toEqual({ error_code: "verification_rejected" });
   await expect(incoming!.deliver(JSON.stringify({ ...response, id: "wrong" }), signal())).rejects.toThrow("mismatched");
+});
+test.each([
+  { name: "no callback", payloadUrl: undefined, queryUrl: undefined },
+  { name: "an injected query-only callback", payloadUrl: undefined, queryUrl: "https://attacker.example/" },
+  { name: "a payload-only callback", payloadUrl: "https://app.example/done", queryUrl: undefined },
+  { name: "matching callbacks", payloadUrl: "https://app.example/done", queryUrl: "https://app.example/done" },
+])("return navigation uses only the encrypted payload with $name", async ({ payloadUrl, queryUrl }) => {
+  const f = await fixture(payloadUrl);
+  const query = f.encrypted.query + (queryUrl ? `&return_to=${encodeURIComponent(queryUrl)}` : "");
+  const incoming = await loadIncomingRequest("http://localhost" + query, signal(), () => {});
+  expect(incoming).not.toBeNull();
+  expect(incoming!.returnUrl).toBe(payloadUrl);
+});
+test("conflicting connector and payload callbacks reject the request", async () => {
+  const f = await fixture("https://app.example/done");
+  const query = f.encrypted.query + `&return_to=${encodeURIComponent("https://attacker.example/")}`;
+  await expect(loadIncomingRequest("http://localhost" + query, signal(), () => {})).rejects.toThrow("return URLs disagree");
 });
 test("invalid signer and OPRF binding stop a request before wallet access", async () => {
   const f = await fixture(); f.registry.oprfKeyId = "0x2";
