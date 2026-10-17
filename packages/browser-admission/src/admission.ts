@@ -1,5 +1,6 @@
 import {
   PRF_INPUT_V1_SHA256,
+  PRF_OUTPUT_MAPPING_V1,
   WEB_AUTHN_PRF_AUTHENTICATOR_V1,
   type WebAuthnPrfAuthenticatorPolicyV1,
 } from "../../contracts/src";
@@ -123,7 +124,7 @@ function hasFrozenAuthenticatorPolicy(
     policy.version === WEB_AUTHN_PRF_AUTHENTICATOR_V1 &&
     policy.userVerification === "required" &&
     policy.prfInputSha256 === PRF_INPUT_V1_SHA256 &&
-    policy.prfOutputMapping === "verbatim_32_byte_first_result_to_world_id_4_signer_seed" &&
+    policy.prfOutputMapping === PRF_OUTPUT_MAPPING_V1 &&
     policy.secretLifecycle === "browser_memory_only" &&
     Array.isArray(policy.allowedOrigins)
   );

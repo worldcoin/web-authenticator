@@ -10,7 +10,9 @@ import { prfBytes } from "./prf-result";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
 
 const PROFILE_KEY = "world-id-wallet-v1";
-const PRF_INPUT = new TextEncoder().encode("world-id/web-authenticator/prf/v1");
+/** Passkey PRF input label; must equal the contract's `PRF_INPUT_V1_LABEL`. */
+export const PRF_INPUT_LABEL = "world-id/web-authenticator/prf/v1";
+const PRF_INPUT = new TextEncoder().encode(PRF_INPUT_LABEL);
 const KEY_SALT = new TextEncoder().encode("world-id/web-authenticator/keys/v1");
 
 export interface WalletProfile {

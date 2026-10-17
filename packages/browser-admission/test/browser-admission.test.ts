@@ -9,6 +9,7 @@ import {
 } from "../src";
 import {
   PRF_INPUT_V1_SHA256,
+  PRF_OUTPUT_MAPPING_V1,
   WEB_AUTHN_PRF_AUTHENTICATOR_V1,
   type WebAuthnPrfAuthenticatorPolicyV1,
 } from "../../contracts/src";
@@ -19,7 +20,7 @@ const policy: WebAuthnPrfAuthenticatorPolicyV1 = {
   allowedOrigins: ["https://auth.example.test"],
   userVerification: "required",
   prfInputSha256: PRF_INPUT_V1_SHA256,
-  prfOutputMapping: "verbatim_32_byte_first_result_to_world_id_4_signer_seed",
+  prfOutputMapping: PRF_OUTPUT_MAPPING_V1,
   secretLifecycle: "browser_memory_only",
 };
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { deriveWalletKeys, parseWalletProfile } from "../lib/wallet-session";
+import { deriveWalletKeys, parseWalletProfile, PRF_INPUT_LABEL } from "../lib/wallet-session";
+import { PRF_INPUT_V1_LABEL, PRF_INPUT_V1_SHA256 } from "../../packages/contracts/src";
 
 describe("passkey wallet key boundary", () => {
   test("rejects malformed metadata instead of silently creating a replacement wallet", () => {
@@ -22,4 +23,10 @@ describe("passkey wallet key boundary", () => {
     expect(first.databaseKey).not.toEqual(other.databaseKey);
     await expect(deriveWalletKeys(new Uint8Array(31))).rejects.toThrow();
   });
+});
+
+test("the passkey PRF input is the exported v1 contract input", async () => {
+  expect(PRF_INPUT_LABEL).toBe(PRF_INPUT_V1_LABEL);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(PRF_INPUT_LABEL)));
+  expect(Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("")).toBe(PRF_INPUT_V1_SHA256);
 });
