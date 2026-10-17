@@ -210,8 +210,8 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
         {wallet && !incoming && screen === "review" && <button className="secondary-action" disabled={busy} onClick={closeWallet}>Lock wallet</button>}
       </>}
       {screen === "delivery" && <button className="primary-action" disabled={busy || expired} onClick={() => void run(deliver)}>{busy && !expired ? "Sending…" : "Retry sending proof"}</button>}
-      {finished && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl}>Return to requesting app</a>}
-      {(finished || loadFailed || deliveryExpired || screen === "wallet-timeout" || screen === "wallet-error") && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
+      {(finished || expired) && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl} onClick={deliveryExpired ? leaveDelivery : undefined}>Return to requesting app</a>}
+      {(finished || loadFailed || expired || screen === "wallet-timeout" || screen === "wallet-error") && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
     </div>
     </main>
     {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}

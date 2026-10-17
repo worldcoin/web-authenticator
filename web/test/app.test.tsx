@@ -245,3 +245,18 @@ test("unconfirmed vault deletion locks the wallet and hides internal errors", as
   expect(view.queryByText("private worker error")).toBeNull();
   expect(view.getByText("Unlock your wallet to inspect its credentials.")).toBeTruthy();
 });
+
+test("a request that expires on the review screen offers a local exit and the return link", async () => {
+  const f = await fixture(1, true);
+  f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
+  f.incoming.returnUrl = "https://rp.example/done";
+  const view = render(<AuthenticatorAppV1 services={f.services} />);
+  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
+  await view.findByRole("button", { name: "Approve and share proof" });
+  expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
+  expect(await view.findByText(/This request expired\. Start a new request/, undefined, { timeout: 3000 })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Approve and share proof" })).toBeNull();
+  expect(view.getByRole("link", { name: "Open authenticator" }).getAttribute("href")).toBe("/");
+  expect(view.getByRole("link", { name: "Return to requesting app" }).getAttribute("href")).toBe("https://rp.example/done");
+  expect(f.calls.prove).toBe(0);
+});
