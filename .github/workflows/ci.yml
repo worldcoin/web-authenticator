@@ -10,7 +10,17 @@ permissions:
 
 jobs:
     ci:
-        runs-on: ubuntu-latest
+        name: ci (${{ matrix.browser }})
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      browser: chromium
+                    # Linux WebKit stalls on the canvas-backed camera fixture before playback starts.
+                    - os: macos-latest
+                      browser: webkit
+        runs-on: ${{ matrix.os }}
         permissions:
             contents: read
 
@@ -39,12 +49,13 @@ jobs:
               run: bun run build
 
             - name: Install test browsers
-              run: bunx playwright install --with-deps chromium webkit
+              run: bunx playwright install --with-deps ${{ matrix.browser }}
 
             - name: Browser regression tests
-              run: bunx playwright test -c tests/e2e/playwright.config.ts
+              run: bunx playwright test -c tests/e2e/playwright.config.ts --project=desktop-${{ matrix.browser }}
 
             - name: Build and smoke-test container
+              if: runner.os == 'Linux'
               run: |
                   docker build -t web-authenticator:test .
                   docker run --detach --name authenticator-test -p 127.0.0.1:4195:4173 web-authenticator:test
