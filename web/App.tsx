@@ -9,7 +9,7 @@ import { credentialAvailability, credentialRequirementsLabel } from "./lib/proof
 import { createProof } from "./lib/prove";
 
 // Dev-mode only: local camera capture, loaded on demand so the detector runtime stays out of the main bundle.
-const SelfieCheck = lazy(() => import("./components/selfie-check/SelfieCheck"));
+const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled" | "wallet-timeout" | "wallet-error";

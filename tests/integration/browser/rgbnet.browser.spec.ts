@@ -46,20 +46,6 @@ if (!("bun" in process.versions)) {
       await expect(page.locator("video")).toHaveCount(0);
     });
 
-    test("diagnostic pair captures in order and clears the images on close", async ({ page }) => {
-      await openSelfie(page);
-      await page.getByText("Capture diagnostics", { exact: true }).click();
-      await page.getByLabel("Capture mode").selectOption("lightguard");
-      await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
-      await expect(page.locator(".selfie-frames img")).toHaveCount(2);
-      await expect(page.locator(".selfie-frames img").first()).toHaveAttribute("alt", "illuminated candidate frame");
-      const metadata = JSON.parse(await page.locator(".selfie-debug pre").textContent() ?? "{}");
-      expect(metadata.frames[1].presentedFrames).toBeGreaterThan(metadata.frames[0].presentedFrames);
-      expect(metadata.frames.map((frame: { width: number; height: number }) => [frame.width, frame.height])).toEqual([[640, 480], [640, 480]]);
-      await page.getByRole("button", { name: "Back to authenticator" }).first().click();
-      await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
-    });
-
     test("losing alignment resets the hold", async ({ page }) => {
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
@@ -90,25 +76,6 @@ if (!("bun" in process.versions)) {
       await page.evaluate(() => { (window as any).cameraTest.deny = false; });
       await page.getByRole("button", { name: "Try again" }).click();
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
-    });
-
-    test("closing during the black phase discards partial captures", async ({ page }) => {
-      await openSelfie(page);
-      await page.getByText("Capture diagnostics", { exact: true }).click();
-      await page.evaluate(() => {
-        const root = document.querySelector(".selfie-check")!;
-        const observer = new MutationObserver(() => {
-          if (root.getAttribute("data-phase") === "unilluminated") {
-            observer.disconnect();
-            (root.querySelector(".selfie-close") as HTMLButtonElement).click();
-          }
-        });
-        observer.observe(root, { attributes: true, attributeFilter: ["data-phase"] });
-      });
-      await page.getByLabel("Capture mode").selectOption("lightguard");
-      await expect(page.locator(".selfie-check")).toHaveCount(0);
-      await expect(page.locator("video")).toHaveCount(0);
-      expect(await page.evaluate(() => (window as any).cameraTest.stopped)).toBeGreaterThan(0);
     });
 
     test("permission deadline stops a stream that arrives late", async ({ page }) => {

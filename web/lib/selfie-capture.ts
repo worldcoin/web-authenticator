@@ -1,7 +1,9 @@
-import { startFaceDetector } from "../../lib/face-detector";
-import { CAPTURE_HOLD_DURATION_MS_V1 } from "../../lib/hold-steady-progress";
-import { faceGuidance } from "../../lib/rgbnet";
-import { CAMERA_CAPTURE_CONFIG, captureCameraFrames, withCaptureAbort, type CapturedFrame, type CapturePhase } from "./capture";
+import { startFaceDetector } from "./face-detector";
+import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
+import { faceGuidance } from "./rgbnet";
+
+/** Local capture only: one frame, taken once the face has held still in the oval. Nothing is uploaded. */
+export const CAPTURE_TIMEOUT_MS = 30_000;
 
 export type CaptureState = {
   phase: "starting" | "framing" | "holding" | "capturing" | "complete" | "paused" | "error";
@@ -9,6 +11,11 @@ export type CaptureState = {
   hint: string;
   progress: number;
   cameraReady: boolean;
+};
+
+export type CaptureResult = {
+  image: Blob;
+  timing: { guidanceMs: number; totalMs: number; width: number; height: number };
 };
 
 export const INITIAL_CAPTURE_STATE: CaptureState = {
@@ -43,17 +50,34 @@ export function captureFailure(error: unknown): CaptureState {
   return { phase: "error", title, hint, progress: 0, cameraReady: false };
 }
 
-/** Owns one attempt. The caller owns returned blobs; camera/worker/canvas cleanup is unconditional. */
-export async function captureSelfie(
-  video: HTMLVideoElement,
-  lightGuard: boolean,
-  signal: AbortSignal,
-  update: (state: CaptureState) => void,
-  showPhase: (phase?: CapturePhase) => void,
-) {
+/** Rejects as soon as `signal` aborts, even if `promise` never settles. */
+export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException("Capture cancelled", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+/** Copies the current camera frame. The detector has just confirmed the framing. */
+export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
+  const { videoWidth: width, videoHeight: height } = video;
+  if (width < 1 || height < 1 || width > 4096 || height > 4096) throw new Error("Camera frame dimensions are unsupported.");
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create the capture canvas.");
+  context.drawImage(video, 0, 0);
+  return canvas;
+}
+
+/** Owns one attempt. The caller owns the returned blob; camera and detector cleanup is unconditional. */
+export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void): Promise<CaptureResult> {
   let stream: MediaStream | undefined;
   let stopDetector: (() => void) | undefined;
-  let frames: CapturedFrame[] = [];
+  let canvas: HTMLCanvasElement | undefined;
   const started = performance.now();
   const releaseCamera = () => {
     stopDetector?.();
@@ -66,9 +90,10 @@ export async function captureSelfie(
   try {
     signal.throwIfAborted();
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Open this page in a browser with camera access over HTTPS or localhost.");
-    const media = await withCaptureAbort<MediaStream>(navigator.mediaDevices.getUserMedia({
+    const media = await withAbort<MediaStream>(navigator.mediaDevices.getUserMedia({
       audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
     }).then(media => {
+      // A stream granted after cancellation must still be stopped.
       if (signal.aborted) {
         media.getTracks().forEach(track => track.stop());
         signal.throwIfAborted();
@@ -82,13 +107,11 @@ export async function captureSelfie(
       track.addEventListener("ended", () => disconnected.abort(new Error("Your camera disconnected. Check the connection, then try again.")), { once: true });
     }
     const attempt = AbortSignal.any([signal, disconnected.signal]);
-    // Disconnects also interrupt a pending inference, frame callback, or image encoding.
     attempt.addEventListener("abort", releaseCamera, { once: true });
     try {
-      await withCaptureAbort(video.play(), attempt);
-      const cameraReadyAt = performance.now();
+      await withAbort(video.play(), attempt);
       update({ phase: "framing", title: "Find your light", hint: "Look at the camera. We're getting ready.", progress: 0, cameraReady: true });
-      await withCaptureAbort(new Promise<void>((resolve, reject) => {
+      await withAbort(new Promise<void>((resolve, reject) => {
         let alignedSince: number | undefined;
         let lastResultAt = 0;
         stopDetector = startFaceDetector(video, attempt, false, (faces, width, height) => {
@@ -102,7 +125,7 @@ export async function captureSelfie(
             alignedSince ??= now;
             const progress = Math.min(1, (now - alignedSince) / CAPTURE_HOLD_DURATION_MS_V1);
             update({ phase: "holding", title: "Looking good. Hold still", hint: "Just a moment. Your selfie is taken automatically.", progress, cameraReady: true });
-            if (progress === 1 && now - cameraReadyAt >= CAMERA_CAPTURE_CONFIG.processingDelayMs) resolve();
+            if (progress === 1) resolve();
           } else {
             alignedSince = undefined;
             const [title, hint] = framingMessages[message] ?? ["Getting your camera ready", "Look at the camera and keep your face in the oval."];
@@ -110,30 +133,17 @@ export async function captureSelfie(
           }
         }, () => { /* Routine detector diagnostics are omitted; failures reject below. */ }, failure => reject(new Error(`Face guidance couldn't start. ${failure}`)));
       }), attempt);
-      stopDetector?.();
-      stopDetector = undefined;
       const alignedAt = performance.now();
-      frames = await captureCameraFrames(video, lightGuard, attempt, phase => {
-        if (lightGuard) showPhase(phase);
-        update({ phase: "capturing", title: "Perfect. Stay right there", hint: "Finishing your selfie…", progress: 1, cameraReady: true });
-      });
-      const capturedAt = performance.now();
+      update({ phase: "capturing", title: "Perfect. Stay right there", hint: "Finishing your selfie…", progress: 1, cameraReady: true });
+      canvas = grabFrame(video);
       releaseCamera();
-      showPhase();
-      const images = [];
-      for (const frame of frames) {
-        const blob = await withCaptureAbort(new Promise<Blob>((resolve, reject) => {
-          frame.canvas.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
-        }), attempt);
-        attempt.throwIfAborted();
-        images.push({ phase: frame.phase, blob });
-      }
+      const frame = canvas;
+      const image = await withAbort(new Promise<Blob>((resolve, reject) => {
+        frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
+      }), attempt);
       return {
-        images,
-        timing: {
-          guidanceMs: Math.round(alignedAt - started), captureMs: Math.round(capturedAt - alignedAt), totalMs: Math.round(performance.now() - started),
-          frames: frames.map(({ canvas, ...metadata }) => ({ ...metadata, width: canvas.width, height: canvas.height })),
-        },
+        image,
+        timing: { guidanceMs: Math.round(alignedAt - started), totalMs: Math.round(performance.now() - started), width: frame.width, height: frame.height },
       };
     } finally {
       attempt.removeEventListener("abort", releaseCamera);
@@ -141,6 +151,6 @@ export async function captureSelfie(
   } finally {
     signal.removeEventListener("abort", releaseCamera);
     releaseCamera();
-    for (const frame of frames) frame.canvas.width = frame.canvas.height = 0;
+    if (canvas) canvas.width = canvas.height = 0;
   }
 }
