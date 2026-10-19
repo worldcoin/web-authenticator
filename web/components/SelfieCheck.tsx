@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import "./SelfieCheck.css";
 
 /** Local capture only. Completion does not issue a credential or satisfy an RP request. */
-export default function SelfieCheck({ onClose, backLabel, diagnostics = false, footerActions }: {
+export default function SelfieCheck({ onClose, backLabel, diagnostics = false }: {
   onClose: () => void;
   backLabel: string;
   diagnostics?: boolean;
-  footerActions?: ReactNode;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
@@ -95,7 +94,6 @@ export default function SelfieCheck({ onClose, backLabel, diagnostics = false, f
     <footer className="selfie-footer">
       <p className="selfie-privacy"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8.5" width="10" height="8" rx="2" stroke="currentColor" strokeWidth="1.3" /><path d="M7 8.5v-3a3 3 0 0 1 6 0v3M10 12v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Your selfie stays on this device.</p>
       <details className="selfie-about"><summary>About this check</summary><p>This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
-      {footerActions}
     </footer>
     {diagnostics && <details className="selfie-debug"><summary>Capture diagnostics</summary><pre>{timing || "No capture yet."}</pre></details>}
   </section>;
