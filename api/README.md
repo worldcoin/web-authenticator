@@ -10,15 +10,16 @@ run `bun run build` followed by `bun run start`.
 ## Layout
 
 ```
-main.ts          Bun.serve listener settings
-server.ts        wires the route table, static fallback and error handler
-routes/index.ts  every server route, using Bun's built-in router
-routes/*.ts      one file per endpoint, exporting GET/POST like Next.js route.ts
-lib/             config, security headers, static serving, registry client
-test/            runs against a real server on an ephemeral port
+main.ts                    Bun.serve listener settings
+server.ts                  wires the route table, static fallback and error handler
+routes/index.ts            every server route, using Bun's built-in router
+routes/<url-path>/index.ts one folder per endpoint, named after its URL
+lib/                       config, security headers, static serving, registry client
+test/                      runs against a real server on an ephemeral port
 ```
 
-To add an endpoint, create `routes/<name>.ts` and register it in
+To add an endpoint, create `routes/<url-path>/index.ts` (for example
+`routes/api/health/live/index.ts`) and register it in
 [`routes/index.ts`](routes/index.ts). Security headers are applied to every route
 centrally in [`lib/http.ts`](lib/http.ts). Unmatched `/api/*` paths and methods
 return JSON 404; everything else falls through to the web build.
