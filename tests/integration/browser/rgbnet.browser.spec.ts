@@ -19,7 +19,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
     await page.getByRole("switch", { name: "Dev mode" }).click();
-    await expect(page.getByText("Local only, nothing uploaded", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Selfie Check" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
     expect(modelRequests).toEqual([]);
   });
@@ -114,13 +114,15 @@ if (!("bun" in process.versions)) {
       await page.getByRole("button", { name: "Back to authenticator" }).click();
     });
 
-    test("capture is white, responsive, and accessible", async ({ page }, info) => {
+    test("capture uses the page background, is responsive, and accessible", async ({ page }, info) => {
       await page.addInitScript({ content: axe.source });
       await openSelfie(page, "?deny");
       await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
-        await expect(page.locator(".selfie-check")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+        // No colour of its own: the camera screen sits on the same page background as the rest of the site.
+        await expect(page.locator(".selfie-check")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });
       }

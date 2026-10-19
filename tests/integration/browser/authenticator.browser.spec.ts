@@ -32,7 +32,6 @@ if (!("bun" in process.versions)) {
     await toggle.click();
     await expect(page.getByRole("complementary", { name: "Developer tools" })).toBeVisible();
     await expect(page.getByText("Unlock your wallet to inspect its credentials.")).toBeVisible();
-    await page.getByText("What is stored here?", { exact: true }).click();
     for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

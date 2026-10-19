@@ -192,8 +192,8 @@ test("dev mode is opt-in, inspects metadata and refreshes without issuing", asyn
   expect(f.calls.listed).toBe(0);
   fireEvent.click(await view.findByRole("button", { name: "Start check" }));
   expect(await view.findByText("Credential ID")).toBeTruthy();
-  expect(view.getByText(/Schema 11. A proof can disclose/)).toBeTruthy();
-  expect(view.getByText("Local only, nothing uploaded")).toBeTruthy();
+  expect(view.getByText("Selfie Check", { selector: "summary" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Open Selfie Check" })).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Refresh vault" }));
   await waitFor(() => expect(f.calls.listed).toBe(2));
   expect(f.calls.prove).toBe(0);
