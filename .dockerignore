@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/dist
+**/dist-server
+**/dist-static
+**/.env
+**/.env.*
+**/*.pem
+**/*.tsbuildinfo
+**/test
+**/tests
+.artifacts
+.runtime
+experiments
+playwright-report
+test-results

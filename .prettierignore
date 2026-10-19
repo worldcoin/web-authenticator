@@ -1,1 +1,6 @@
 relyance-sci.yml
+/demo/
+/.codex-visualizations/
+/src/server/**/target/
+/dist/
+/.next/
