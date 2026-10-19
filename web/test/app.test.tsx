@@ -1,12 +1,10 @@
-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { CameraPreview } from "../components/CameraPreview";
 import { AuthenticatorAppV1 } from "../App";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
-import type { DetectorResponse } from "../lib/rgbnet.worker";
 import { WalletRegistrationError } from "../lib/wallet-errors";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
@@ -150,48 +148,28 @@ for (const pending of [false, true]) {
   });
 }
 
-test("missing camera APIs show an actionable failure without crashing the flow", async () => {
+test("the camera opens only from dev mode and closes with it", async () => {
+  const f = await fixture(1);
   const original = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
   Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });
   try {
-    const view = render(<CameraPreview />);
-    expect(await view.findByText("Camera unavailable. Allow camera access, then reopen the preview.")).toBeTruthy();
+    const view = render(<AuthenticatorAppV1 services={f.services} />);
+    expect(await view.findByRole("heading", { name: "Review your request" })).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Open Selfie Check" })).toBeNull();
+    fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+    fireEvent.click(view.getByRole("button", { name: "Open Selfie Check" }));
+    expect(await view.findByText("Open this page in a browser with camera access over HTTPS or localhost.")).toBeTruthy();
+    expect((view.getByRole("button", { name: "Open Selfie Check" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "Back to authenticator" }));
+    expect(await view.findByRole("heading", { name: "Review your request" })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Open Selfie Check" }));
+    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+    fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.getByRole("heading", { name: "Review your request" })).toBeTruthy();
   } finally {
     if (original) Object.defineProperty(navigator, "mediaDevices", original);
     else Reflect.deleteProperty(navigator, "mediaDevices");
-  }
-});
-
-test("camera preview consumes ONNX results and releases camera and worker on close", async () => {
-  let stopped = 0, terminated = 0, time = 0;
-  const media = new MediaStream();
-  Object.defineProperty(media, "getTracks", { value: () => [{ stop: () => { stopped++; } }] });
-  const worker = {
-    onmessage: undefined as ((event: { data: DetectorResponse }) => void) | undefined,
-    postMessage: (request: { type: string; id?: number }) => queueMicrotask(() => worker.onmessage?.({ data: request.type === "init"
-      ? { type: "ready" }
-      : { type: "result", id: request.id!, width: 640, height: 480, timings: "inference 1ms", faces: [{ box: [0.35, 0.2, 0.65, 0.8], landmarks: [], score: 0.99 }] } })),
-    terminate: () => { terminated++; },
-  };
-  const replacements = [
-    [globalThis, "Worker", function () { return worker; }],
-    [globalThis, "createImageBitmap", async () => ({ close: () => {} })],
-    [navigator, "mediaDevices", { getUserMedia: async () => media }],
-  ] as const;
-  const saved = replacements.map(([object, key]) => Object.getOwnPropertyDescriptor(object, key));
-  replacements.forEach(([object, key, value]) => Object.defineProperty(object, key, { value, configurable: true }));
-  const play = spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) {
-    Object.defineProperties(this, { readyState: { value: 2 }, currentTime: { get: () => ++time }, clientWidth: { value: 260 }, clientHeight: { value: 364 } });
-    return Promise.resolve();
-  });
-  try {
-    const view = render(<CameraPreview />);
-    expect(await view.findByText("Face positioned")).toBeTruthy();
-    view.unmount();
-    expect(terminated).toBe(1); expect(stopped).toBe(1);
-  } finally {
-    cleanup(); play.mockRestore();
-    replacements.forEach(([object, key], i) => { const descriptor = saved[i]; if (descriptor) Object.defineProperty(object, key, descriptor); else Reflect.deleteProperty(object, key); });
   }
 });
 
@@ -205,7 +183,7 @@ test("dev mode is opt-in, inspects metadata and refreshes without issuing", asyn
   fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
   expect(await view.findByText("Credential ID")).toBeTruthy();
   expect(view.getByText(/Schema 11. A proof can disclose/)).toBeTruthy();
-  expect(view.getByText("Not available in this app")).toBeTruthy();
+  expect(view.getByText("Local only, nothing uploaded")).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Refresh vault" }));
   await waitFor(() => expect(f.calls.listed).toBe(2));
   expect(f.calls.prove).toBe(0);

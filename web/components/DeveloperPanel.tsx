@@ -12,13 +12,14 @@ function credentialDescription(schema: bigint) {
 
 function date(value: bigint) { return new Date(Number(value) * 1000).toLocaleString(); }
 
-export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete }: {
+export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete, onOpenCamera }: {
   records: CredentialMetadata[];
   unlocked: boolean;
   disabled: boolean;
   incoming: IncomingRequest | null;
   onRefresh: () => void;
   onDelete: (id: bigint) => void;
+  onOpenCamera?: () => void;
 }) {
   const [selected, setSelected] = useState<bigint | null>(null);
   const pending = records.find(record => record.credentialId === selected);
@@ -50,7 +51,8 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefres
       {incoming ? <dl><dt>Requesting RP</dt><dd>{incoming.label}</dd><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd><dt>Accepted credentials</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd><dt>Expires</dt><dd>{date(BigInt(incoming.proof.expires_at))}</dd></dl> : <p>No RP request loaded. Open a request from the separate demo app.</p>}
     </section>
     <section aria-labelledby="runtime-title"><h3 id="runtime-title">Selfie Check</h3>
-      <dl><dt>Camera preview</dt><dd>Not available in this app</dd><dt>Staging issuance</dt><dd>Not implemented</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
+      <dl><dt>Camera capture</dt><dd>Local only, nothing uploaded</dd><dt>Staging issuance</dt><dd>Not implemented</dd><dt>TEE face verification</dt><dd>Not connected</dd></dl>
+      <button disabled={!onOpenCamera} onClick={onOpenCamera}>Open Selfie Check</button>
     </section>
   </aside>;
 }

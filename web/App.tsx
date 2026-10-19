@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { DeveloperPanel } from "./components/DeveloperPanel";
 import { openAuthenticator } from "./lib/wallet-session";
 import { WalletRegistrationError, walletOpenErrorMessage } from "./lib/wallet-errors";
@@ -7,6 +7,9 @@ import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { credentialAvailability, credentialRequirementsLabel } from "./lib/proof-request";
 import { createProof } from "./lib/prove";
+
+// Dev-mode only: local camera capture, loaded on demand so the detector runtime stays out of the main bundle.
+const SelfieCheck = lazy(() => import("./components/selfie-check/SelfieCheck"));
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled" | "wallet-timeout" | "wallet-error";
@@ -23,6 +26,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const [loadFailed, setLoadFailed] = useState(false);
   const [expired, setExpired] = useState(false);
   const [devMode, setDevMode] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const activeWallet = useRef<WalletKit | null>(null);
   const retainedProof = useRef<string | null>(null);
@@ -165,9 +169,13 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     setProgress("Local credential deleted.");
   });
 
+  // The camera exists only behind dev mode; turning dev mode off closes it.
+  const camera = devMode && cameraOpen;
+
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => setDevMode(value => !value)}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
-    <div className="authenticator-layout"><main className="app-main">
+    <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => { setDevMode(value => !value); setCameraOpen(false); }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
+    <div className="authenticator-layout"><main className={`app-main${camera ? " app-main--capture" : ""}`}>
+    {camera ? <Suspense fallback={<p role="status">Opening Selfie Check…</p>}><SelfieCheck onClose={() => setCameraOpen(false)} backLabel="Back to authenticator" diagnostics /></Suspense> : <>
     <div className="screen-content"><div className="centered-layout">
       <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "human-emblem"}.svg`} alt="" />
       <div className="message-block">
@@ -213,8 +221,9 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
       {(finished || expired) && incoming?.returnUrl && <a className="primary-action return-link" href={incoming.returnUrl} onClick={deliveryExpired ? leaveDelivery : undefined}>Return to requesting app</a>}
       {(finished || loadFailed || expired || screen === "wallet-timeout" || screen === "wallet-error") && <a className="secondary-action return-link" href="/" onClick={deliveryExpired ? leaveDelivery : undefined}>Open authenticator</a>}
     </div>
+    </>}
     </main>
-    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} />}
+    {devMode && <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} onOpenCamera={camera || busy ? undefined : () => setCameraOpen(true)} />}
     </div>
   </div>;
 }
