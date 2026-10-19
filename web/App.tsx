@@ -1,20 +1,24 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { DeveloperPanel } from "./components/DeveloperPanel";
-import { openAuthenticator } from "./lib/wallet-session";
+import { ConsentScreen } from "./components/ConsentScreen";
+import { Landing } from "./components/Landing";
+import { RequestIntro, type RequestIntroState } from "./components/RequestIntro";
+import { hasConnector } from "./lib/connector";
+import { consentClient, type ConsentChoice, type ConsentClient, type ConsentState } from "./lib/consent";
+import { hasSavedWallet, openAuthenticator } from "./lib/wallet-session";
 import { WalletRegistrationError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
 import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
-import { credentialAvailability, credentialRequirementsLabel } from "./lib/proof-request";
+import { credentialAvailability, credentialRequirementsLabel, RequestExpiredError } from "./lib/proof-request";
 import { createProof } from "./lib/prove";
 
+const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 // Dev-mode only: local camera capture, loaded on demand so the detector runtime stays out of the main bundle.
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-
-const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled" | "wallet-timeout" | "wallet-error";
 
-export function AuthenticatorAppV1({ services = defaults }: { services?: typeof defaults }) {
+export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [wallet, setWallet] = useState<WalletKit | null>(null);
@@ -27,10 +31,38 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
   const [expired, setExpired] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // null until the server answers; analytics stays off unless the state is "granted".
+  const [consentState, setConsentState] = useState<ConsentState | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  // Read before the effect strips the query: was this page opened from a request link?
+  const [requestLink] = useState(() => hasConnector(window.location.href));
+  const [loadExpired, setLoadExpired] = useState(false);
+  const [started, setStarted] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const activeWallet = useRef<WalletKit | null>(null);
   const retainedProof = useRef<string | null>(null);
   const source = useRef<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // An unreachable consent endpoint shows the choice again rather than assuming one.
+    consent.read(controller.signal).then(setConsentState, () => { if (!controller.signal.aborted) setConsentState("unset"); });
+    return () => controller.abort();
+  }, [consent]);
+
+  const chooseConsent = async (choice: ConsentChoice) => {
+    setConsentBusy(true); setConsentError(null);
+    try {
+      setConsentState(await consent.save(choice));
+      setConsentOpen(false);
+    } catch {
+      setConsentError("Your choice couldn’t be saved. Try again.");
+    } finally {
+      setConsentBusy(false);
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,6 +75,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     }).catch(cause => {
       if (!controller.signal.aborted) {
         setError(cause instanceof Error ? cause.message : "Could not validate the incoming request.");
+        setLoadExpired(cause instanceof RequestExpiredError);
         setLoadFailed(true);
         setLoading(false);
       }
@@ -94,7 +127,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
 
   const unlock = () => run(async signal => {
     setScreen("review");
-    setProgress("Use your passkey to open your wallet…");
+    setProgress("Waiting for your passkey…");
     let current: WalletKit;
     try { current = await services.open(signal, setProgress); }
     catch (cause) {
@@ -106,7 +139,7 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     activeWallet.current = current; setWallet(current);
     const next = await refresh(current, signal);
     if (incoming && credentialAvailability(incoming.proof, next).needsSelfieEnrollment && supported) setScreen("enroll");
-    setProgress("Wallet unlocked.");
+    setProgress("");
   });
 
   async function deliver(signal: AbortSignal) {
@@ -148,6 +181,20 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     : screen === "delivery" ? "Sending your proof" : screen === "enroll" ? "Set up Selfie Check"
     : incoming ? "Review your request" : wallet ? "Your World ID wallet" : "World ID authenticator";
   const finished = screen === "done" || screen === "cancelled";
+  const landing = !loading && !loadFailed && !incoming && !wallet && screen === "review";
+  // A request link opens on the intro until the user starts the check; failed or expired requests never leave it.
+  const intro = (requestLink || !!incoming || loadFailed) && !started && !wallet && screen === "review";
+  const introState: RequestIntroState = loading ? "verifying"
+    : loadExpired || expired ? "expired"
+    : loadFailed || !incoming ? "invalid"
+    : incoming.unsupportedReason ? "unsupported" : "ready";
+  const start = () => {
+    if (!incoming || introState !== "ready") return;
+    // The expiry timer may lag a suspended tab; re-check against the signed expiry at the moment of the click.
+    if (Date.now() >= incoming.proof.expires_at * 1000) { setExpired(true); return; }
+    setStarted(true);
+    void unlock();
+  };
   const vaultDisabled = busy || screen === "delivery" || finished;
 
   const refreshVault = () => run(async signal => {
@@ -169,38 +216,48 @@ export function AuthenticatorAppV1({ services = defaults }: { services?: typeof 
     setProgress("Local credential deleted.");
   });
 
+  const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => { setDevMode(value => !value); setCameraOpen(false); }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button>;
+  const footerActions = <span className="footer-actions">
+    <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Privacy choices</button>
+    {devToggle}
+  </span>;
+
+  // A first visit (no recorded choice) sees the consent screen before anything else. Request
+  // validation keeps running behind it, so the request link is ready once the user chooses.
+  const consentScreen = consentState === "unset" || consentOpen;
   // The camera exists only behind dev mode; turning dev mode off closes it.
-  const camera = devMode && cameraOpen;
+  const camera = devMode && cameraOpen && !consentScreen && consentState !== null;
+  const fullPage = consentState === null || consentScreen || (landing && !camera);
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p><button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => { setDevMode(value => !value); setCameraOpen(false); }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button></header>
-    <div className="authenticator-layout"><main className={`app-main${camera ? " app-main--capture" : ""}`}>
-    {camera ? <Suspense fallback={<p role="status">Opening Selfie Check…</p>}><SelfieCheck onClose={() => setCameraOpen(false)} backLabel="Back to authenticator" diagnostics /></Suspense> : <>
+    {!fullPage && <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>}
+    <div className="authenticator-layout"><main className={`app-main${fullPage ? " app-main--landing" : ""}${camera ? " app-main--capture" : ""}`}>
+    {consentState === null ? null
+    : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} footerActions={devToggle} onChoose={choice => void chooseConsent(choice)} />
+    : camera ? <Suspense fallback={<p role="status">Opening Selfie Check…</p>}><SelfieCheck onClose={() => setCameraOpen(false)} backLabel="Back to authenticator" diagnostics /></Suspense>
+    : intro ? <RequestIntro state={introState} rp={incoming?.label} reason={incoming?.unsupportedReason} detail={devMode ? error : null} returnUrl={incoming?.returnUrl} busy={busy} onStart={start} onCancel={() => { setStarted(true); void cancel(); }} />
+    : landing ? <Landing devMode={devMode} saved={hasSavedWallet()} busy={busy} progress={progress} error={error} footerActions={footerActions} onOpen={() => void unlock()} /> : <>
     <div className="screen-content"><div className="centered-layout">
-      <img className="hero-icon" src={`/assets/figma/${screen === "done" ? "success-emblem" : "human-emblem"}.svg`} alt="" />
+      <img className="hero-icon" src="/assets/brand/human-badge.svg" alt="" />
       <div className="message-block">
         <h1>{title}</h1>
         {screen === "done" && <p>Your proof reached the bridge. The requesting app verifies it.</p>}
         {screen === "cancelled" && <p>No proof was sent. You can return to the requesting app.</p>}
         {!incoming && !loading && !loadFailed && !finished && <p>Open a request from your app, or unlock your wallet to manage your credentials.</p>}
-        {incoming && !finished && <section className="request-details" aria-label="Request details">
-          <p><strong>Requesting RP</strong><br />{incoming.label}</p>
-          <p><strong>Action</strong><br />{incoming.actionLabel || "No action label"}</p>
-          <p><strong>Accepted credentials</strong><br />{credentialRequirementsLabel(incoming.proof)}</p>
-          <p className="detail-copy">RP signature checked against the staging registry. Your passkey and secret keys stay in your wallet.</p>
-          {incoming.proof.proof_requests.some(item => item.issuer_schema_id === 11) && <p className="detail-copy">A Selfie Check proof also shares the credential’s uniqueness score.</p>}
-        </section>}
+        {incoming && !finished && <dl className="request-summary" aria-label="Request details">
+          <div><dt>Requesting app</dt><dd>{incoming.label}</dd></div>
+          <div><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd></div>
+          <div><dt>Accepts</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd></div>
+        </dl>}
         {incoming?.unsupportedReason && <p role="alert">{incoming.unsupportedReason}</p>}
         {expired && !finished && <p role="alert">{deliveryExpired
           ? "This request expired. Proof delivery is unconfirmed. Check the requesting app before starting a new request."
           : "This request expired. Start a new request at the requesting app."}</p>}
-        {wallet && screen === "review" && <section className="request-details" aria-label="Wallet credentials">
-          <p>{records.length ? `${records.length} credential${records.length === 1 ? "" : "s"} in your encrypted wallet.` : "No credentials in your encrypted wallet yet."}</p>
-          {availability && !availability.satisfied && <p>{availability.canEnrollSelfie
+        {wallet && screen === "review" && !incoming && <p className="request-note">{records.length ? `${records.length} credential${records.length === 1 ? "" : "s"} in your encrypted wallet.` : "No credentials in your encrypted wallet yet."}</p>}
+        {wallet && screen === "review" && availability && !availability.satisfied && <p className="request-note">{availability.canEnrollSelfie
             ? availability.needsSelfieEnrollment ? "This request needs Selfie Check." : "Choose Selfie Check, or use another accepted credential from the requesting app."
             : availability.requiresOrb ? "This request needs an eligible Orb credential. Orb enrollment and transfer are not available here."
             : "Your wallet does not meet the requested credential and date requirements."}</p>}
-        </section>}
         {screen === "enroll" && <p className="detail-copy">Selfie Check enrollment is not available in this app yet.</p>}
       </div>
       {progress && !finished && !deliveryExpired && <p className="progress-copy" role="status">{progress}</p>}

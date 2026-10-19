@@ -1,10 +1,19 @@
+/* Variable font, wght 300–800; same file as developer-portal/web/app/fonts. */
+@font-face {
+  font-family: "World Pro MVP";
+  src: url("/fonts/WorldProMVP.ttf") format("truetype");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color: #1f1f1f;
-  background: #fff;
+  background: #f9f9f8;
   font-family: "World Pro MVP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --surface-page: #fff;
+  --surface-page: #f9f9f8;
   --foreground-primary: #1f1f1f;
   --foreground-secondary: #707070;
   --foreground-disabled: #767676;
@@ -174,8 +183,8 @@ h1:focus {
 
 .hero-icon {
   display: block;
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
 }
 
 .hero-icon--progress {
@@ -506,7 +515,7 @@ h1:focus {
 .dev-mode-switch[aria-checked="true"] span { background: #1f1f1f; color: #fff; }
 .authenticator-shell .app-main { min-height: calc(100svh - 68px); min-height: calc(100dvh - 68px); }
 .authenticator-layout { max-width: 1440px; margin: 0 auto; }
-.developer-panel { min-width: 0; margin: 24px 0 0; padding: 24px; border-top: 1px solid #e5e5e5; background: #fff; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.developer-panel { min-width: 0; margin: 24px 0 0; padding: 24px; border-top: 1px solid #e5e5e5; background: transparent; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .developer-panel h2 { font-size: 24px; margin: 0 0 8px; }
 .developer-panel h3 { font-size: 16px; margin: 0 0 8px; }
 .developer-panel p { margin: 8px 0 16px; }
@@ -552,9 +561,12 @@ h1:focus {
   }
 }
 
-.request-details { width: 100%; display: grid; gap: 16px; text-align: left; overflow-wrap: anywhere; }
-.request-details strong { font-size: 14px; color: var(--foreground-secondary); }
-.request-details p { line-height: 1.4; }
+/* Request review: centered label/value pairs on one even rhythm, matching the heading. */
+.request-summary { display: grid; width: 100%; max-width: 360px; margin: 8px 0 0; padding: 20px 24px; gap: 16px; border: 1px solid #edece9; border-radius: 16px; background: #fff; text-align: center; overflow-wrap: anywhere; }
+.request-summary div { display: grid; gap: 2px; }
+.request-summary dt { color: #75726f; font-size: 13px; line-height: 1.4; }
+.request-summary dd { margin: 0; color: var(--foreground-primary); font-size: 17px; line-height: 1.35; }
+.message-block > p.request-note { max-width: 340px; color: #75726f; font-size: 15px; line-height: 1.45; }
 .progress-copy, .error-copy { width: 100%; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .error-copy { color: #a32424; padding: 12px; background: #fff1f1; border-radius: 12px; }
 .return-link { display: block; text-align: center; text-decoration: none; }
@@ -564,5 +576,73 @@ h1:focus {
 .camera-oval video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); clip-path: ellipse(46% 47% at 50% 49%); }
 .camera-oval img { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-/* Dev-mode camera capture owns its white, full-height surface. */
-.app-main.app-main--capture { padding: 0; background: #fff; }
+/* Direct-open sign-in page, following browser sign-in conventions (Ramp, Vercel, Stripe):
+   top bar, one left-aligned column near the top, compact controls, footer links. */
+.app-main--landing { padding: 0; background: #f9f9f8; }
+.authenticator-shell .app-main--landing { min-height: 100svh; min-height: 100dvh; }
+.signin { --ink: #181818; --ink-muted: #75726f; --line: #e1dfda; --brand-blue: #0a5cfe; display: flex; flex: 1; flex-direction: column; width: 100%; color: var(--ink); }
+.signin-badge { width: 72px; height: 72px; margin-bottom: 20px; }
+.signin-body { display: flex; flex: 1; padding: 64px 24px; align-items: center; justify-content: center; }
+.signin-form { display: flex; width: 100%; max-width: 520px; flex-direction: column; align-items: center; text-align: center; }
+.signin-form > .signin-primary, .signin-form > .signin-error { max-width: 360px; }
+.signin h1 { color: var(--ink); font-size: 32px; font-weight: 450; line-height: 1.15; letter-spacing: -0.02em; }
+.signin-primary { display: flex; width: 100%; min-height: 52px; margin-top: 32px; padding: 0 24px; border: 0; border-radius: 999px; align-items: center; justify-content: center; gap: 10px; color: #fff; background: var(--ink); font-size: 16px; font-weight: 500; transition: background-color 120ms ease; }
+.signin-primary:hover:not(:disabled) { background: #333; }
+a.signin-primary { text-decoration: none; }
+.request-skeleton { display: inline-block; width: 3.5em; height: 0.9em; border-radius: 6px; vertical-align: -0.05em; background: linear-gradient(90deg, #ecebe8 0%, #f6f5f3 50%, #ecebe8 100%) 0 0 / 200% 100%; animation: request-shimmer 1.2s linear infinite; }
+@keyframes request-shimmer { to { background-position: -200% 0; } }
+.signin-icon { width: 20px; height: 20px; }
+.signin-error { margin-top: 16px; padding: 12px 16px; border: 1px solid #f3c7c7; border-radius: 16px; color: #a32424; background: #fff6f6; font-size: 14px; line-height: 1.5; }
+.signin-footer { display: flex; padding: 20px 24px max(20px, env(safe-area-inset-bottom)); align-items: center; justify-content: space-between; gap: 16px; color: var(--ink-muted); font-size: 13px; }
+.signin-footer a { color: inherit; text-decoration: none; }
+.signin-footer a:hover { color: var(--ink); text-decoration: underline; }
+.signin-footer .dev-mode-switch { min-height: 32px; padding: 0 4px 0 10px; border-color: var(--line); color: var(--ink-muted); background: transparent; font-size: 12px; gap: 8px; }
+.signin-footer .dev-mode-switch span { padding: 2px 8px; color: var(--ink); background: #edece9; }
+.signin-footer .dev-mode-switch[aria-checked="true"] span { color: #fff; background: var(--ink); }
+.signin :is(button, a):focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 2px; }
+@media (min-width: 768px) {
+  .authenticator-shell .app-main--landing { padding: 0; justify-content: flex-start; }
+  .signin-body { padding: 72px 24px; }
+  .signin h1 { font-size: 40px; }
+  .signin-footer { padding: 24px 32px; }
+}
+
+/* Home (no request): hero with the World ID badge, then cards linking to World apps. */
+.home-hero { display: flex; padding: 96px 24px 56px; flex-direction: column; align-items: center; gap: 28px; text-align: center; }
+.home-badge { width: 88px; height: 88px; }
+.signin.home h1 { max-width: 760px; font-size: clamp(40px, 6vw, 72px); font-weight: 450; line-height: 1.05; letter-spacing: -0.03em; }
+.home-apps { display: grid; width: 100%; max-width: 920px; margin: 0 auto; padding: 0 24px 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-card { display: flex; min-height: 200px; padding: 28px; flex-direction: column; justify-content: space-between; gap: 40px; border: 1px solid #edece9; border-radius: 16px; color: var(--ink); background: #fff; text-decoration: none; transition: border-color 150ms ease; }
+.home-card:hover { border-color: #d6d3cd; }
+.home-card-title { display: flex; justify-content: space-between; gap: 16px; font-size: 24px; font-weight: 450; letter-spacing: -0.02em; }
+.home-card-arrow { color: var(--ink-muted); transition: transform 150ms ease, color 150ms ease; }
+.home-card:hover .home-card-arrow { color: var(--ink); transform: translate(2px, -2px); }
+.home-card-text { max-width: 38ch; color: var(--ink-muted); font-size: 16px; line-height: 1.45; }
+.home .signin-footer { margin-top: auto; }
+@media (max-width: 640px) {
+  .home-hero { padding: 64px 24px 40px; gap: 24px; }
+  .home-badge { width: 72px; height: 72px; }
+  .home-apps { grid-template-columns: 1fr; padding-bottom: 48px; }
+  .home-card { min-height: 0; padding: 24px; gap: 24px; }
+  .home-card-title { font-size: 21px; }
+}
+@media (prefers-reduced-motion: reduce) { .home-card, .home-card-arrow { transition: none; } }
+
+/* Analytics consent: first-visit screen in the sign-in frame; both choices carry equal weight. */
+.consent-screen { display: flex; width: 100%; flex-direction: column; align-items: center; }
+.consent-copy { max-width: 400px; margin-top: 16px; color: var(--ink-muted); font-size: 16px; line-height: 1.5; }
+.consent-actions { display: grid; width: 100%; max-width: 360px; margin-top: 32px; gap: 12px; }
+.consent-actions .signin-primary { margin-top: 0; }
+.signin-secondary { display: flex; width: 100%; min-height: 52px; padding: 0 24px; border: 1px solid var(--line); border-radius: 999px; align-items: center; justify-content: center; color: var(--ink); background: #fff; font-size: 16px; font-weight: 500; transition: background-color 120ms ease; }
+.signin-secondary:hover:not(:disabled) { background: #f1f0ee; }
+.consent-screen .signin-error { max-width: 360px; }
+.consent-note { margin-top: 20px; color: var(--ink-muted); font-size: 13px; }
+.footer-actions { display: inline-flex; align-items: center; gap: 12px; }
+.footer-link { min-height: 32px; padding: 0; border: 0; color: inherit; background: none; font-size: 13px; }
+.footer-link:hover { color: #181818; text-decoration: underline; }
+
+/* The capture feature owns its white, full-height surface and navigation. */
+.app-main.app-main--capture {
+  padding: 0;
+  background: #fff;
+}

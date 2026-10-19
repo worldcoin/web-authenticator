@@ -7,8 +7,8 @@ if (!("bun" in process.versions)) {
     const external: string[] = [];
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Create or unlock with passkey" })).toBeEnabled();
+    await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start check|Cancel request/ })).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
     expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
@@ -16,7 +16,7 @@ if (!("bun" in process.versions)) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
-      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
     }
@@ -25,7 +25,7 @@ if (!("bun" in process.versions)) {
   test("dev tools are opt-in, responsive and accessible without opening a wallet", async ({ page }, info) => {
     await page.addInitScript({ content: axe.source });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
     const toggle = page.getByRole("switch", { name: "Dev mode" });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(page.getByRole("complementary")).toHaveCount(0);
@@ -50,7 +50,7 @@ if (!("bun" in process.versions)) {
     await expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
-  test("signed external request shows its requirements and sends encrypted rejection", async ({ page }, info) => {
+  test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
     const { payload, registry } = await signedRequest(1);
     const encrypted = await encryptedRequest(payload);
     let rejected: unknown;
@@ -63,10 +63,10 @@ if (!("bun" in process.versions)) {
       rejected = JSON.parse(new TextDecoder().decode(bytes));
       await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } });
     });
-    await page.goto("/" + encrypted.query);
-    await expect(page.getByRole("heading", { name: "Review your request" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Request details" }).getByText(/Accepted credentials.*Orb/)).toBeVisible();
-    await expect(page.getByRole("region", { name: "Request details" }).getByText(/Requesting RP.*rp_1/)).toBeVisible();
+    await page.goto("/verify" + encrypted.query);
+    await expect(page.getByRole("heading", { name: /rp_1 is requesting your World ID Presence Credential/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start check" })).toBeEnabled();
+    expect(new URL(page.url()).pathname).toBe("/verify");
     expect(new URL(page.url()).search).toBe("");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-request-mobile.png`, fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -82,15 +82,66 @@ if (!("bun" in process.versions)) {
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
-    await page.goto("/" + encrypted.query);
-    await expect(page.getByRole("heading", { name: "Request unavailable" })).toBeVisible();
+    await page.goto("/verify" + encrypted.query);
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start check" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create or unlock with passkey" })).toHaveCount(0);
+  });
+
+  test("expired request link ends on the intro without a way to continue", async ({ page }) => {
+    const { payload, registry } = await signedRequest(1, { age: 700, ttl: 600 });
+    const encrypted = await encryptedRequest(payload);
+    await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
+    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await page.goto("/verify" + encrypted.query);
+    await expect(page.getByRole("heading", { name: "This request has expired" })).toBeVisible();
+    await expect(page.getByText("Close this tab and return to the app to start again.")).toBeVisible();
+    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start check|Cancel request/ })).toHaveCount(0);
+  });
+
+  test.describe("first visit without a consent choice", () => {
+    test.use({ extraHTTPHeaders: {} });
+
+    test("the consent screen comes first, is accessible, and is recorded in an HttpOnly cookie", async ({ page, context, browserName }, info) => {
+      await page.addInitScript({ content: axe.source });
+      await page.goto("/");
+      await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toHaveCount(0);
+      const violations = await page.evaluate(async () => {
+        const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
+        return (await runtime.run()).violations;
+      });
+      expect(violations).toEqual([]);
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
+      await page.getByRole("button", { name: "Accept" }).click();
+      await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
+      // WebKit refuses Secure cookies on plain-http loopback; production is HTTPS.
+      if (browserName !== "chromium") return;
+      const cookie = (await context.cookies()).find(c => c.name === "__Host-wid_consent");
+      expect(cookie).toMatchObject({ value: "v1.granted", httpOnly: true, secure: true, sameSite: "Lax" });
+      expect(await page.evaluate(() => document.cookie)).toBe("");
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
+    });
+
+    test("a request link shows the consent screen, then its intro", async ({ page }) => {
+      const { payload, registry } = await signedRequest(1);
+      const encrypted = await encryptedRequest(payload);
+      await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
+      await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+      await page.goto("/verify" + encrypted.query);
+      await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
+      await page.getByRole("button", { name: "Decline" }).click();
+      await expect(page.getByRole("heading", { name: /rp_1 is requesting your World ID Presence Credential/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Start check" })).toBeEnabled();
+    });
   });
 
   test("built app passes automated accessibility checks", async ({ page }) => {
     await page.addInitScript({ content: axe.source });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
     const violations = await page.evaluate(async () => {
       const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
       return (await runtime.run()).violations;
@@ -123,7 +174,8 @@ if (!("bun" in process.versions)) {
       await route.fulfill({ status: 503, body: "test dependency unavailable", headers: { "access-control-allow-origin": "*" } });
     });
     await page.goto("http://localhost:4194/");
-    await page.getByRole("button", { name: "Create or unlock with passkey" }).click();
+    await page.getByRole("switch", { name: "Dev mode" }).click();
+    await page.getByRole("button", { name: "Continue with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("No automatic resubmission", { timeout: 90_000 });
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
@@ -131,7 +183,8 @@ if (!("bun" in process.versions)) {
     const before = registrations;
     expect(before).toBe(1);
     await page.reload();
-    await page.getByRole("button", { name: "Create or unlock with passkey" }).click();
+    await page.getByRole("switch", { name: "Dev mode" }).click();
+    await page.getByRole("button", { name: "Sign in with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("No automatic resubmission", { timeout: 90_000 });
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);

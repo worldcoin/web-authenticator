@@ -1,5 +1,5 @@
 /* Camera screen only. Colours, focus, disabled and reduced-motion styles come from app.css. */
-.selfie-check { display: flex; flex-direction: column; width: 100%; background: var(--surface-page); max-width: 480px; min-height: 100svh; margin: auto; padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
+.selfie-check { display: flex; flex-direction: column; width: 100%; background: #fff; max-width: 480px; min-height: 100svh; margin: auto; padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
 .selfie-header { position: relative; display: flex; align-items: center; justify-content: center; min-height: 44px; }
 .selfie-brand { display: flex; align-items: center; gap: 7px; font-size: 17px; font-weight: 450; }
 .selfie-close { position: absolute; left: 0; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; color: var(--foreground-primary); background: var(--background-secondary); }

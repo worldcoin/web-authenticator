@@ -17,7 +17,7 @@ if (!("bun" in process.versions)) {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
     await page.getByRole("switch", { name: "Dev mode" }).click();
     await expect(page.getByText("Local only, nothing uploaded", { exact: true })).toBeVisible();
     await expect(page.locator("video")).toHaveCount(0);
@@ -42,7 +42,8 @@ if (!("bun" in process.versions)) {
       await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
       await page.getByRole("button", { name: "Back to authenticator" }).first().click();
-      await expect(page.getByRole("heading", { name: "World ID authenticator" })).toBeVisible();
+      // Dev mode is still on, so the root shows the dev sign-in page rather than the public home page.
+      await expect(page.getByRole("heading", { name: "Create your World ID" })).toBeVisible();
       await expect(page.locator("video")).toHaveCount(0);
     });
 

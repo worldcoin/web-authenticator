@@ -10,6 +10,7 @@ import { prfBytes } from "./prf-result";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
 
 const PROFILE_KEY = "world-id-wallet-v1";
+const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
 /** Passkey PRF input label; must equal the contract's `PRF_INPUT_V1_LABEL`. */
 export const PRF_INPUT_LABEL = "world-id/web-authenticator/prf/v1";
 const PRF_INPUT = new TextEncoder().encode(PRF_INPUT_LABEL);
@@ -28,6 +29,16 @@ export interface WalletSession {
 type PrfOutputs = AuthenticationExtensionsClientOutputs & {
   prf?: { results?: { first?: unknown; second?: unknown } };
 };
+
+/** Whether this browser already holds a wallet, so opening it unlocks instead of creating one. */
+export function hasSavedWallet(): boolean {
+  try {
+    return window.localStorage.getItem(PROFILE_KEY) !== null || window.localStorage.getItem(LEGACY_PROFILE_KEY) !== null;
+  } catch {
+    // Blocked storage: openAuthenticator reports the actual failure when the user continues.
+    return false;
+  }
+}
 
 export function parseWalletProfile(raw: string): WalletProfile {
   const value: unknown = JSON.parse(raw);
@@ -91,7 +102,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   signal.throwIfAborted();
   const saved = window.localStorage.getItem(PROFILE_KEY);
   let profile = saved === null ? undefined : parseWalletProfile(saved);
-  const legacyRaw = window.localStorage.getItem('world-id-passkey-registration-v1');
+  const legacyRaw = window.localStorage.getItem(LEGACY_PROFILE_KEY);
   const legacy = legacyRaw === null ? undefined : parseLegacyProfile(legacyRaw);
   const useLegacy = legacy !== undefined && (profile === undefined || profile.credentialId === legacy.credentialId);
   if (useLegacy && legacy) {

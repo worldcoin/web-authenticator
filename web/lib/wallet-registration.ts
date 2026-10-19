@@ -19,7 +19,7 @@ export async function activateStagingWallet(
       // Persist before the remote mutation: an ambiguous result must never trigger a second registration.
       saveRegistrationState(credentialId, "submitting");
       stage = "confirm staging registration; it may already have been submitted";
-      progress("Registering your World ID account on staging…");
+      progress("Setting up your World ID…");
       await logFlowStep("registration.submit", () => abortable(wallet.register(seed), AbortSignal.any([signal, AbortSignal.timeout(30_000)])));
       for (;;) {
         const status = await logFlowStep("registration.poll", () => abortable(wallet.pollRegistration(), AbortSignal.any([signal, AbortSignal.timeout(30_000)])));
