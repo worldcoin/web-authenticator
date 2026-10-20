@@ -6,6 +6,8 @@
 .selfie-close svg { width: 24px; height: 24px; }
 .selfie-close img { display: block; width: 24px; height: 24px; }
 .selfie-design-ring { display: none; }
+.selfie-design-ring circle { fill: #e3e3e3; }
+.selfie-design-ring circle[data-filled="true"] { fill: #d4af37; }
 .selfie-content { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding-block: 24px; text-align: center; }
 .selfie-content h1 { margin: 0 0 28px; font-size: 27px; font-weight: 400; letter-spacing: -.4px; }
 
@@ -30,8 +32,9 @@
 
 /* States set on the root by SelfieCheck.tsx. */
 .selfie-check[data-camera-ready="true"] video { opacity: 1; }
-.selfie-check[data-camera-ready="true"] .selfie-placeholder, .selfie-check[data-state="complete"] .selfie-placeholder, .selfie-check[data-state="complete"] video { display: none; }
+.selfie-check[data-camera-ready="true"] .selfie-placeholder, .selfie-check[data-state="complete"] .selfie-placeholder, .selfie-check[data-state="complete"]:not([data-transitioning="true"]) video { display: none; }
 .selfie-check[data-state="paused"] .selfie-placeholder, .selfie-check[data-state="error"] .selfie-placeholder, .selfie-check[data-state="complete"] .selfie-complete { display: grid; }
+.selfie-check[data-transitioning="true"][data-camera-ready="false"] video { display: none; }
 .selfie-check[data-state="complete"] .selfie-ring-progress { stroke-dashoffset: 0 !important; }
 
 .selfie-actions { display: flex; width: 100%; justify-content: center; gap: 8px; }

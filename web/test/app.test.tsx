@@ -388,8 +388,9 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
-    expect(await view.findByRole("heading", { name: "Capture completed" })).toBeTruthy();
-    expect(view.getByAltText("Your captured selfie")).toBeTruthy();
+    await waitFor(() => expect(view.container.querySelector('[data-stage="capture-exit"]')).toBeTruthy());
+    expect(view.queryByRole("heading", { name: "Capture completed" })).toBeNull();
+    expect(view.queryByAltText("Your captured selfie")).toBeNull();
     expect(view.queryByRole("button")).toBeNull();
     expect(await view.findByRole("heading", { name: "Selfie captured" }, { timeout: 2000 })).toBeTruthy();
     expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();

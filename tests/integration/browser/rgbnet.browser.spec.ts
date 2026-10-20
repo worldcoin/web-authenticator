@@ -54,6 +54,7 @@ if (!("bun" in process.versions)) {
       await page.evaluate(() => { (window as any).cameraTest.aligned = false; });
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible();
       await expect(page.locator(".selfie-ring-progress")).toHaveAttribute("style", "stroke-dashoffset: 100;");
+      await expect(page.locator('.selfie-design-ring circle[data-filled="true"]')).toHaveCount(0);
       await page.evaluate(() => { (window as any).cameraTest.aligned = true; });
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
       expect(await page.locator(".selfie-ring-progress").evaluate(el => Number((el as SVGElement).style.strokeDashoffset))).toBeGreaterThan(70);

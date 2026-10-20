@@ -20,8 +20,11 @@ saved access are directed to start from an app request; this button never opens
 the camera or creates an account.
 
 The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The captured face remains in its oval for 800 ms, fades
-out, and is cleared from memory. A button-free sigil confirmation holds for
+verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
+continuous hold and reset when alignment is lost. Once captured, the live camera
+fades out directly; there is no still-photo/checkmark screen or completed-oval
+pause. The camera stops when the fade ends, or immediately when the tab is hidden
+or closed. A button-free sigil confirmation holds for
 1.5 seconds, then automatically opens the one-time **Save with passkey / Not now**
 decision. These timed stages pause while the tab is hidden and stop on exit;
 reduced-motion users skip the movement. Shared footer controls are hidden during

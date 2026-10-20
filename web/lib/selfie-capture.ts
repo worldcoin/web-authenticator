@@ -73,13 +73,17 @@ export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
   return canvas;
 }
 
-/** Owns one attempt. The caller owns the returned blob; camera and detector cleanup is unconditional. */
-export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void): Promise<CaptureResult> {
+/** Owns one attempt. A retained live preview must be released by aborting the caller’s signal. */
+export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean } = {}): Promise<CaptureResult> {
   let stream: MediaStream | undefined;
   let stopDetector: (() => void) | undefined;
   let canvas: HTMLCanvasElement | undefined;
+  let previewRetained = false;
+  let stopHoldProgress: (() => void) | undefined;
   const started = performance.now();
   const releaseCamera = () => {
+    signal.removeEventListener("abort", releaseCamera);
+    stopHoldProgress?.();
     stopDetector?.();
     stopDetector = undefined;
     stream?.getTracks().forEach(track => track.stop());
@@ -114,6 +118,20 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
       await withAbort(new Promise<void>((resolve, reject) => {
         let alignedSince: number | undefined;
         let lastResultAt = 0;
+        let progressFrame: number | undefined;
+        stopHoldProgress = () => {
+          if (progressFrame !== undefined) cancelAnimationFrame(progressFrame);
+          progressFrame = undefined;
+        };
+        const showHoldProgress = () => {
+          progressFrame = undefined;
+          if (attempt.aborted || alignedSince === undefined) return;
+          const now = performance.now();
+          if (now - lastResultAt > 1_500) { alignedSince = undefined; return; }
+          const progress = Math.min(1, (now - alignedSince) / CAPTURE_HOLD_DURATION_MS_V1);
+          update({ phase: "holding", title: "Looking good. Hold still", hint: "Just a moment. Your selfie is taken automatically.", progress, cameraReady: true });
+          if (progress < 1) progressFrame = requestAnimationFrame(showHoldProgress);
+        };
         stopDetector = startFaceDetector(video, attempt, false, (faces, width, height) => {
           if (attempt.aborted) return;
           const message = faceGuidance(faces, width, height, video.clientWidth, video.clientHeight);
@@ -123,24 +141,27 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
           lastResultAt = now;
           if (message === "Face positioned") {
             alignedSince ??= now;
-            const progress = Math.min(1, (now - alignedSince) / CAPTURE_HOLD_DURATION_MS_V1);
-            update({ phase: "holding", title: "Looking good. Hold still", hint: "Just a moment. Your selfie is taken automatically.", progress, cameraReady: true });
-            if (progress === 1) resolve();
+            if (progressFrame === undefined) showHoldProgress();
+            // Only a fresh, aligned detector result can complete the hold.
+            if (now - alignedSince >= CAPTURE_HOLD_DURATION_MS_V1) resolve();
           } else {
             alignedSince = undefined;
+            stopHoldProgress?.();
             const [title, hint] = framingMessages[message] ?? ["Getting your camera ready", "Look at the camera and keep your face in the oval."];
             update({ phase: "framing", title, hint, progress: 0, cameraReady: true });
           }
         }, () => { /* Routine detector diagnostics are omitted; failures reject below. */ }, failure => reject(new Error(`Face guidance couldn't start. ${failure}`)));
       }), attempt);
       const alignedAt = performance.now();
-      update({ phase: "capturing", title: "Perfect. Stay right there", hint: "Finishing your selfie…", progress: 1, cameraReady: true });
+      stopHoldProgress?.();
+      stopDetector?.(); stopDetector = undefined;
+      update({ phase: "capturing", title: "Looking good. Hold still", hint: "Just a moment. Your selfie is taken automatically.", progress: 1, cameraReady: true });
       canvas = grabFrame(video);
-      releaseCamera();
       const frame = canvas;
       const image = await withAbort(new Promise<Blob>((resolve, reject) => {
         frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
       }), attempt);
+      previewRetained = options.retainPreviewUntilAbort === true;
       return {
         image,
         timing: { guidanceMs: Math.round(alignedAt - started), totalMs: Math.round(performance.now() - started), width: frame.width, height: frame.height },
@@ -149,8 +170,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
       attempt.removeEventListener("abort", releaseCamera);
     }
   } finally {
-    signal.removeEventListener("abort", releaseCamera);
-    releaseCamera();
+    if (!previewRetained) releaseCamera();
     if (canvas) canvas.width = canvas.height = 0;
   }
 }
