@@ -212,7 +212,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     setDevMode(value => !value); setCameraOpen(false);
   }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button>;
   const footerActions = <span className="footer-actions">
-    <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Privacy choices</button>
+    <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
     {devToggle}
   </span>;
 

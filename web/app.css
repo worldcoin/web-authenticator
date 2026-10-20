@@ -312,18 +312,20 @@ a.signin-primary { text-decoration: none; }
 .home-hero { display: flex; padding: 96px 24px 56px; flex-direction: column; align-items: center; gap: 28px; text-align: center; }
 .home-badge { width: 88px; height: 88px; }
 .signin.home h1 { max-width: 760px; font-size: clamp(40px, 6vw, 72px); font-weight: 450; line-height: 1.05; letter-spacing: -0.03em; }
-.home-apps { display: grid; width: 100%; max-width: 920px; margin: 0 auto; padding: 0 24px 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-apps { display: grid; width: 100%; max-width: 920px; margin: 0 auto; padding: 0 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-card { display: flex; min-height: 200px; padding: 28px; flex-direction: column; justify-content: space-between; gap: 40px; border: 1px solid #edece9; border-radius: 16px; color: var(--ink); background: #fff; text-decoration: none; transition: border-color 150ms ease; }
 .home-card:hover { border-color: #d6d3cd; }
 .home-card-title { display: flex; justify-content: space-between; gap: 16px; font-size: 24px; font-weight: 450; letter-spacing: -0.02em; }
 .home-card-arrow { color: var(--ink-muted); transition: transform 150ms ease, color 150ms ease; }
 .home-card:hover .home-card-arrow { color: var(--ink); transform: translate(2px, -2px); }
 .home-card-text { max-width: 38ch; color: var(--ink-muted); font-size: 16px; line-height: 1.45; }
+.home-actions { display: flex; padding: 32px 24px 80px; flex-direction: column; align-items: center; }
 .home .signin-footer { margin-top: auto; }
 @media (max-width: 640px) {
   .home-hero { padding: 64px 24px 40px; gap: 24px; }
   .home-badge { width: 72px; height: 72px; }
-  .home-apps { grid-template-columns: 1fr; padding-bottom: 48px; }
+  .home-apps { grid-template-columns: 1fr; }
+  .home-actions { padding-bottom: 48px; }
   .home-card { min-height: 0; padding: 24px; gap: 24px; }
   .home-card-title { font-size: 21px; }
 }

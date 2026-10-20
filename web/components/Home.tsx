@@ -16,8 +16,6 @@ export function Home({ footerActions, onOpen, busy = false, error }: { footerAct
     <section className="home-hero">
       <img className="home-badge" src="/assets/brand/human-badge.svg" alt="" />
       <h1>Download World ID</h1>
-      {onOpen && <button className="signin-primary home-authenticator" disabled={busy} onClick={onOpen}><span aria-live="polite">{busy ? "Opening authenticator…" : "Go to authenticator"}</span></button>}
-      {error && <p className="signin-error" role="alert">{error}</p>}
     </section>
     <nav className="home-apps" aria-label="World apps">
       {apps.map(app => <a key={app.name} className="home-card" href={app.href}>
@@ -25,6 +23,10 @@ export function Home({ footerActions, onOpen, busy = false, error }: { footerAct
         <span className="home-card-text">{app.text}</span>
       </a>)}
     </nav>
+    <div className="home-actions">
+      {onOpen && <button className="signin-primary home-authenticator" disabled={busy} onClick={onOpen}><span aria-live="polite">{busy ? "Opening authenticator…" : "Go to authenticator"}</span></button>}
+      {error && <p className="signin-error" role="alert">{error}</p>}
+    </div>
     <SiteFooter footerActions={footerActions} />
   </div>;
 }

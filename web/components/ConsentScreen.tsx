@@ -21,7 +21,7 @@ export function ConsentScreen({ busy, error, footerActions, onChoose }: {
         <button className="signin-secondary" disabled={busy} onClick={() => onChoose("denied")}>Decline</button>
       </div>
       {error && <p className="signin-error" role="alert">{error}</p>}
-      <p className="consent-note">Change this anytime from Privacy choices.</p>
+      <p className="consent-note">Change this anytime from Cookie settings.</p>
     </section>
   </SigninPage>;
 }
