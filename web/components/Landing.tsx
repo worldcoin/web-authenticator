@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Home } from "./Home";
 import { PasskeyIcon, SigninPage } from "./SigninPage";
 
@@ -9,18 +8,17 @@ import { PasskeyIcon, SigninPage } from "./SigninPage";
  * whether this browser already holds a wallet, because the same passkey action
  * creates a new World ID when it does not.
  */
-export function Landing({ devMode, saved, busy, progress, error, footerActions, onOpen }: {
+export function Landing({ devMode, saved, busy, progress, error, onOpen }: {
   devMode: boolean;
   saved: boolean;
   busy: boolean;
   progress: string;
   error: string | null;
-  footerActions: ReactNode;
   onOpen: () => void;
 }) {
-  if (!devMode) return <Home footerActions={footerActions} onOpen={onOpen} />;
+  if (!devMode) return <Home onOpen={onOpen} />;
 
-  return <SigninPage footerActions={footerActions}>
+  return <SigninPage>
     <h1>{saved ? "Welcome back" : "Create your World ID"}</h1>
     <button className="signin-primary" disabled={busy} onClick={onOpen}>
       <PasskeyIcon /><span aria-live="polite">{busy ? progress || "Waiting for your passkey…" : saved ? "Sign in with passkey" : "Continue with passkey"}</span>

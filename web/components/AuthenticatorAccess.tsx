@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { abortable } from "../lib/async";
 import { hasSavedWallet } from "../lib/wallet-session";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
 
 /** Explicit access to an existing saved authenticator. No camera or account creation. */
-export function AuthenticatorAccess({ devToggle, onOpen, onBack }: {
-  devToggle: ReactNode;
+export function AuthenticatorAccess({ onOpen, onBack }: {
   onOpen: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
   onBack: () => void;
 }) {
@@ -42,7 +41,6 @@ export function AuthenticatorAccess({ devToggle, onOpen, onBack }: {
     }
   };
   return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <div className="screen-content"><div className="centered-layout">
       <img className="request-passkey-emblem" src="/assets/figma/request-passkey-emblem.svg" alt="" />
       <div className="message-block"><h1>Your authenticator</h1>

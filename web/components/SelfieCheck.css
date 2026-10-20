@@ -59,7 +59,7 @@
 }
 
 /* Public capture uses the design's mobile aperture, centered inside a browser. */
-.public-request-flow .selfie-check { max-width: 393px; min-height: min(852px, 100svh); padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
+.public-request-flow .selfie-check { max-width: 393px; min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height))); padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
 .public-request-flow .selfie-brand { font-size: 15px; }
 .public-request-flow .selfie-content { padding-block: 64px 24px; }
 .public-request-flow .selfie-content > h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }

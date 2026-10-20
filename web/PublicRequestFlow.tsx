@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Home } from "./components/Home";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
@@ -13,14 +13,12 @@ const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Completion = { state: "complete" | "cancelled" | "expired"; returnUrl?: string; offerSave?: boolean };
 
 /** A public visit holds only a temporary capture; wallet management belongs to Dev mode. */
-export function PublicRequestFlow({ incoming, requested, loading, failed, expired, footerActions, devToggle, onDispose, onSave }: {
+export function PublicRequestFlow({ incoming, requested, loading, failed, expired, onDispose, onSave }: {
   incoming: IncomingRequest | null;
   requested: boolean;
   loading: boolean;
   failed: boolean;
   expired: boolean;
-  footerActions: ReactNode;
-  devToggle: ReactNode;
   onDispose: () => void;
   onSave: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
 }) {
@@ -100,19 +98,16 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   };
 
   if (saveDecision) return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(); }} />
   </div>;
 
   if (completion) return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <RequestCompletion state={completion.state} returnUrl={completion.returnUrl} detail={cancelError}
       onContinue={completion.offerSave ? () => setSaveDecision({ returnUrl: completion.returnUrl }) : undefined} />
   </div>;
 
   // Expiry unmounts the camera immediately; no image or camera track survives this state.
   if (capturing && expired) return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
   </div>;
 
@@ -123,11 +118,10 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   </div>;
 
   if (!requested && !incoming && !failed && !loading) return accessOpen
-    ? <AuthenticatorAccess devToggle={devToggle} onOpen={onSave} onBack={() => setAccessOpen(false)} />
-    : <Home footerActions={footerActions} onOpen={() => setAccessOpen(true)} />;
+    ? <AuthenticatorAccess onOpen={onSave} onBack={() => setAccessOpen(false)} />
+    : <Home onOpen={() => setAccessOpen(true)} />;
 
   return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <RequestIntro
       selfieOnly
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}

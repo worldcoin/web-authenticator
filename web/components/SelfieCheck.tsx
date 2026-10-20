@@ -76,7 +76,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   return <section className="selfie-check" data-state={state.phase} data-camera-ready={state.cameraReady} aria-label="Selfie capture">
     <header className="selfie-header">
       <button className="selfie-close" type="button" aria-label={backLabel} onClick={close}><img src="/assets/figma/close.svg" alt="" /></button>
-      <span className="selfie-brand"><img src="/assets/brand/human-badge.svg" width="24" height="24" alt="" />World ID</span>
     </header>
     <div className="selfie-content">
       <h1>Selfie check</h1>

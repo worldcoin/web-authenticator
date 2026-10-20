@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { AppLayout } from "./components/AppLayout";
 import { DeveloperPanel } from "./components/DeveloperPanel";
 import { ConsentScreen } from "./components/ConsentScreen";
 import { hasConnector } from "./lib/connector";
@@ -204,7 +205,11 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     setProgress("Local credential deleted.");
   });
 
-  const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => {
+  // A first visit (no recorded choice) sees the consent screen before anything else. Request
+  // validation keeps running behind it, so the request link is ready once the user chooses.
+  const consentScreen = consentState === "unset" || consentOpen;
+
+  const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode && !consentScreen && consentState !== null ? "developer-panel" : undefined} onClick={() => {
     operation.current?.abort(); operation.current = null;
     closeWallet();
     retainedProof.current = null;
@@ -212,29 +217,19 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     setDevMode(value => !value); setCameraOpen(false);
   }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button>;
   const footerActions = <span className="footer-actions">
-    <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
+    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
     {devToggle}
   </span>;
 
-  // A first visit (no recorded choice) sees the consent screen before anything else. Request
-  // validation keeps running behind it, so the request link is ready once the user chooses.
-  const consentScreen = consentState === "unset" || consentOpen;
   // The camera exists only behind dev mode; turning dev mode off closes it.
   const camera = devMode && cameraOpen && !consentScreen && consentState !== null;
 
-  if (!devMode) return <div className="authenticator-shell authenticator-shell--public">
-    <div className="authenticator-layout"><main className="app-main app-main--landing">
-      {consentState === null ? null
-        : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} footerActions={devToggle} onChoose={choice => void chooseConsent(choice)} />
-        : <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-          footerActions={footerActions} devToggle={devToggle} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
-    </main></div>
-  </div>;
-
-  return <div className="authenticator-shell authenticator-shell--dev developer-workspace">
-    {consentState !== null && !consentScreen && <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>}
-    <main className="developer-main">
-      {consentState === null ? null : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} footerActions={devToggle} onChoose={choice => void chooseConsent(choice)} /> : <>
+  return <AppLayout developer={devMode && !consentScreen} footerActions={footerActions}>
+    {consentState === null ? null
+      : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
+      : !devMode ? <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+        onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />
+      : <div className="developer-main">
         <header className="developer-heading"><h1>Developer tools</h1><p>Inspect your local vault and test credentials on staging.</p></header>
         <section className="developer-account" aria-labelledby="account-title">
           <h2 id="account-title">Authenticator access</h2>
@@ -266,7 +261,6 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
           </section> : null}
           {camera && <section className="developer-camera"><Suspense fallback={<p role="status">Opening Selfie Check…</p>}><SelfieCheck onClose={() => setCameraOpen(false)} backLabel="Back to authenticator" diagnostics /></Suspense></section>}
         </DeveloperPanel>
-      </>}
-    </main>
-  </div>;
+      </div>}
+  </AppLayout>;
 }

@@ -50,6 +50,42 @@ if (!("bun" in process.versions)) {
     expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   });
 
+  test("shared chrome keeps the developer switch in place across screens", async ({ page }, info) => {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/");
+      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      const toggle = page.getByRole("switch", { name: "Dev mode" });
+      const position = await toggle.boundingBox();
+      expect(position).not.toBeNull();
+      expect(position!.y).toBeGreaterThan(viewport.height - 100);
+      expect(position!.x).toBeGreaterThan(viewport.width - 160);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      expect(await toggle.boundingBox()).toEqual(position);
+      await toggle.focus();
+      await toggle.press("Space");
+      await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
+      expect(await toggle.boundingBox()).toEqual(position);
+      await expect(toggle).toBeFocused();
+      await expect(page.getByRole("banner")).toHaveCount(1);
+      await expect(page.getByRole("contentinfo")).toHaveCount(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-global-dev-${viewport.width}.png`, fullPage: true });
+      await toggle.click();
+      expect(await toggle.boundingBox()).toEqual(position);
+      await page.getByRole("button", { name: "Go to authenticator" }).click();
+      await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+      expect(await toggle.boundingBox()).toEqual(position);
+      await page.getByRole("button", { name: "Cookie settings" }).click();
+      await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
+      expect(await toggle.boundingBox()).toEqual(position);
+      await toggle.click();
+      expect(await toggle.boundingBox()).toEqual(position);
+      await expect(page.getByRole("banner")).toHaveCount(1);
+      await expect(page.getByRole("contentinfo")).toHaveCount(1);
+    }
+  });
+
   test("dev tools are opt-in, responsive and accessible without opening a wallet", async ({ page }, info) => {
     await page.addInitScript({ content: axe.source });
     await page.goto("/");
