@@ -10,7 +10,7 @@ import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "capture-exit" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
+type Flow = { stage: "intro" | "home" | "access" | "capture" | "capture-exit" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
 const COMPLETION_STEPS = {
   "capture-exit": { duration: 350, next: "confirmation", motion: true },
   confirmation: { duration: 1500, next: "confirmation-exit", motion: false },
@@ -33,7 +33,6 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   const [cancelError, setCancelError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
-  const [accessOpen, setAccessOpen] = useState(false);
   const savingController = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
@@ -142,12 +141,14 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     }
   };
 
+  if (flow.stage === "access") return <AuthenticatorAccess onOpen={onSave} onBack={() => setFlow({ stage: "home" })} />;
+
   if (flow.stage === "save") return <div className="public-request-flow public-request-flow--save">
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(false); }} />
   </div>;
 
   if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className="public-request-flow">
-    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} />
+    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={() => setFlow({ stage: "access" })} />
   </div>;
 
   if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className="public-request-flow completion-sequence" data-stage={flow.stage} data-paused={paused}>
@@ -165,9 +166,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     </Suspense>
   </div>;
 
-  if (!requested && !incoming && !failed && !loading) return accessOpen
-    ? <AuthenticatorAccess onOpen={onSave} onBack={() => setAccessOpen(false)} />
-    : <Home onOpen={() => setAccessOpen(true)} />;
+  if (flow.stage === "home" || (!requested && !incoming && !failed && !loading)) return <Home onOpen={() => setFlow({ stage: "access" })} />;
 
   return <div className="public-request-flow">
     <RequestIntro

@@ -1,8 +1,9 @@
-export function RequestCompletion({ state, returnUrl, detail, onRetry, transient = false, saved = false }: {
+export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, transient = false, saved = false }: {
   state: "complete" | "cancelled" | "expired" | "error";
   returnUrl?: string;
   detail?: string;
   onRetry?: () => void;
+  onOpen?: () => void;
   transient?: boolean;
   saved?: boolean;
 }) {
@@ -16,6 +17,8 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, transient
     : state === "expired" ? "Return to the app to start a new check."
     : "The check could not be completed. Please try again.";
 
+  const showAuthenticator = state === "complete" && saved && onOpen;
+
   return <>
     <div className="screen-content request-completion" role="status">
       <div className="centered-layout">
@@ -24,8 +27,9 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, transient
       </div>
     </div>
     {!transient && <div className="actions">
+      {showAuthenticator && <button className="signin-primary home-authenticator" onClick={onOpen}>Go to authenticator</button>}
       {onRetry && <button className="primary-action" onClick={onRetry}>Try again</button>}
-      {returnUrl && <a className={onRetry ? "secondary-action return-link" : "primary-action return-link"} href={returnUrl}>Return to the app</a>}
+      {returnUrl && <a className={onRetry || showAuthenticator ? "secondary-action return-link" : "primary-action return-link"} href={returnUrl}>Return to the app</a>}
     </div>}
   </>;
 }

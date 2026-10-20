@@ -455,7 +455,20 @@ for (const fails of [false, true]) {
       expect(f.calls.prove).toBe(0);
       expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
       expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
-    } finally { captureMock.mockRestore(); }
+      if (fails) {
+        expect(view.queryByRole("button", { name: "Go to authenticator" })).toBeNull();
+      } else {
+        localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+        fireEvent.click(view.getByRole("button", { name: "Go to authenticator" }));
+        expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+        expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+        expect(opened).toBe(1);
+        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+        fireEvent.click(view.getByRole("button", { name: "Back to home" }));
+        expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+        expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      }
+    } finally { captureMock.mockRestore(); localStorage.clear(); }
   });
 }
 
