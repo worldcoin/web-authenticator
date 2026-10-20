@@ -7,7 +7,7 @@ import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/inco
 import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
-import { hasSavedWallet } from "./lib/wallet-session";
+import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Completion = { state: "complete" | "cancelled" | "expired"; returnUrl?: string };
@@ -30,8 +30,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   const [saveDecision, setSaveDecision] = useState<{ returnUrl?: string }>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
-  const [opening, setOpening] = useState(false);
-  const [openError, setOpenError] = useState<string>();
+  const [accessOpen, setAccessOpen] = useState(false);
   const savingController = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
@@ -84,23 +83,6 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
       if (!controller.signal.aborted) setSaving(false);
     }
   };
-  const openFromLanding = async () => {
-    if (savingController.current) return;
-    if (!hasSavedWallet()) { setCapturing(true); return; }
-    const controller = new AbortController();
-    savingController.current = controller;
-    setOpening(true); setOpenError(undefined);
-    try {
-      const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
-      await abortable(onSave(deadline, () => {}).then(wallet => { wallet.terminate(); }), deadline);
-      if (!controller.signal.aborted) setCapturing(true);
-    } catch {
-      if (!controller.signal.aborted) setOpenError("Your authenticator couldn’t be opened. Try again with your saved passkey.");
-    } finally {
-      if (savingController.current === controller) savingController.current = null;
-      if (!controller.signal.aborted) setOpening(false);
-    }
-  };
   const cancel = async () => {
     if (cancelling.current) return;
     const request = incoming;
@@ -139,7 +121,9 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     </Suspense>
   </div>;
 
-  if (!requested && !incoming && !failed && !loading) return <Home footerActions={footerActions} busy={opening} error={openError} onOpen={() => void openFromLanding()} />;
+  if (!requested && !incoming && !failed && !loading) return accessOpen
+    ? <AuthenticatorAccess devToggle={devToggle} onOpen={onSave} onBack={() => setAccessOpen(false)} />
+    : <Home footerActions={footerActions} onOpen={() => setAccessOpen(true)} />;
 
   return <div className="public-request-flow">
     <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>

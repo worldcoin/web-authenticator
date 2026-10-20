@@ -50,7 +50,7 @@ test("definitive wallet setup failure offers retry", async () => {
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
-  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
+  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0, issued: [] as number[], failIssue: false };
   const incoming: IncomingRequest = {
     proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {},
@@ -65,14 +65,18 @@ async function fixture(schema: number, available = false) {
     load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
+    issue: async (_wallet: WalletKit, schema: 128 | 11) => {
+      calls.issued.push(schema); if (calls.failIssue) throw new Error("Staging issuer unavailable.");
+      records.push({ credentialId: BigInt(schema), issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata);
+    },
   };
-  return { services, calls, incoming };
+  return { services, calls, incoming, wallet };
 }
 test("missing Selfie credentials say enrollment is unavailable and keep the request and proof gate", async () => {
   const f = await fixture(11); const view = await renderDev(f.services);
   fireEvent.click(await view.findByRole("button", { name: "Start check" }));
   expect(await view.findByRole("heading", { name: "Set up Selfie Check" })).toBeTruthy();
-  expect(view.getByText("Selfie Check enrollment is not available in this app yet.")).toBeTruthy();
+  expect(view.getByText("Real Selfie Check enrollment is not connected. Use the staging Selfie issuer above for synthetic test credentials.")).toBeTruthy();
   expect(view.container.querySelector("video")).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Back to wallet" }));
   expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
@@ -268,9 +272,9 @@ test("home page offers intentional authenticator entry; only dev mode can create
   expect(opened).toBe(0);
   expect(view.getByRole("button", { name: "Go to authenticator" })).toBeTruthy();
   fireEvent.click(await view.findByRole("switch", { name: "Dev mode" }));
-  expect(view.getByRole("heading", { name: "Create your World ID" })).toBeTruthy();
+  expect(view.getByRole("heading", { name: "Developer tools" })).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Continue with passkey" }));
-  expect(await view.findByRole("heading", { name: "Your World ID wallet" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "Developer tools" })).toBeTruthy();
   expect(opened).toBe(1);
 });
 test("in dev mode, a browser with a saved wallet offers unlock, and locking returns to it", async () => {
@@ -279,11 +283,11 @@ test("in dev mode, a browser with a saved wallet offers unlock, and locking retu
     const f = await fixture(1); f.services.load = async () => null;
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("switch", { name: "Dev mode" }));
-    expect(await view.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(await view.findByRole("heading", { name: "Developer tools" })).toBeTruthy();
     expect(view.queryByRole("button", { name: "Continue with passkey" })).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
     fireEvent.click(await view.findByRole("button", { name: "Lock wallet" }));
-    expect(await view.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(await view.findByRole("heading", { name: "Developer tools" })).toBeTruthy();
   } finally { localStorage.clear(); }
 });
 
@@ -338,6 +342,10 @@ test("a first visit sees the consent screen before the home page, and the choice
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
   expect(view.getByText(/Never photos, face data, or account identifiers/)).toBeTruthy();
   expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
+  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+  expect(view.getAllByRole("switch", { name: "Dev mode" })).toHaveLength(1);
+  expect(view.queryByRole("heading", { name: "Developer tools" })).toBeNull();
+  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
   fireEvent.click(view.getByRole("button", { name: "Accept" }));
   expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
   expect(saved).toEqual(["granted"]);
@@ -452,20 +460,24 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
-test("landing entry captures locally and a fresh visit returns to the landing", async () => {
+test("landing entry explains request-first setup without opening camera or creating a wallet", async () => {
+  localStorage.clear();
   const f = await fixture(11);
   f.services.load = async () => null;
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   fireEvent.click(await view.findByRole("button", { name: "Go to authenticator" }));
-  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+  expect(view.getByText(/Complete a Selfie Check from an app request/)).toBeTruthy();
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
   expect(view.queryByRole("button", { name: /passkey/ })).toBeNull();
+  expect(f.calls.listed).toBe(0);
   view.unmount();
   const reopened = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   expect(await reopened.findByRole("button", { name: "Go to authenticator" })).toBeTruthy();
   expect(reopened.queryByRole("region", { name: "Selfie capture" })).toBeNull();
 });
 
-test("saved access is opened only by the landing button and never exposes wallet management", async () => {
+test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   try {
     const f = await fixture(11);
@@ -477,9 +489,79 @@ test("saved access is opened only by the landing button and never exposes wallet
     const button = await view.findByRole("button", { name: "Go to authenticator" });
     expect(opened).toBe(0);
     fireEvent.click(button);
-    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+    expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+    expect(opened).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
     expect(opened).toBe(1);
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
     expect(f.calls.terminated).toBe(1);
-    expect(view.queryByRole("heading", { name: "Your World ID wallet" })).toBeNull();
+    expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
   } finally { localStorage.clear(); }
+});
+
+test("developer workspace issues both synthetic schemas and refreshes the vault", async () => {
+  const f = await fixture(11); f.services.load = async () => null;
+  const view = await renderDev(f.services);
+  expect(view.getAllByRole("heading", { name: "Developer tools" })).toHaveLength(1);
+  expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  await view.findByRole("button", { name: "Lock wallet" });
+  await waitFor(() => expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(view.getByRole("button", { name: "Issue Faux credential" }));
+  await view.findByText(/Faux/, { selector: "summary" });
+  await waitFor(() => expect((view.getByRole("button", { name: "Issue staging Selfie credential" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(view.getByRole("button", { name: "Issue staging Selfie credential" }));
+  await view.findByText(/Selfie Check/, { selector: "summary" });
+  expect(f.calls.issued).toEqual([128, 11]);
+  expect(f.calls.listed).toBe(3);
+  expect(view.container.querySelector("video")).toBeNull();
+  expect(window.location.pathname).toBe("/");
+});
+
+test("issuer failure is surfaced and closes the failed vault session", async () => {
+  const f = await fixture(11); f.services.load = async () => null; f.calls.failIssue = true;
+  const view = await renderDev(f.services);
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  await waitFor(() => expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(view.getByRole("button", { name: "Issue Faux credential" }));
+  expect((await view.findByRole("alert")).textContent).toContain("Staging issuer unavailable.");
+  expect(f.calls.terminated).toBe(1);
+  expect(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ })).toBeTruthy();
+});
+
+test("switching modes ignores a stale unlock failure while another unlock is pending", async () => {
+  const f = await fixture(11); f.services.load = async () => null;
+  let rejectFirst!: (error: Error) => void; let resolveSecond!: (wallet: WalletKit) => void; let opens = 0;
+  f.services.open = () => ++opens === 1 ? new Promise((_resolve, reject) => { rejectFirst = reject; }) : new Promise(resolve => { resolveSecond = resolve; });
+  const view = await renderDev(f.services);
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+  fireEvent.click(await view.findByRole("switch", { name: "Dev mode" }));
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  rejectFirst(new Error("Stale unlock failed"));
+  await waitFor(() => expect((view.getByRole("button", { name: "Opening wallet…" }) as HTMLButtonElement).disabled).toBe(true));
+  expect(view.queryByRole("alert")).toBeNull();
+  resolveSecond(f.wallet);
+  await view.findByRole("button", { name: "Lock wallet" });
+});
+
+test("a stale vault refresh cannot close a new wallet after mode toggling", async () => {
+  const f = await fixture(11); f.services.load = async () => null;
+  let rejectRead!: (error: Error) => void;
+  f.wallet.listCredentials = () => new Promise((_resolve, reject) => { rejectRead = reject; });
+  const view = await renderDev(f.services);
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  await view.findByRole("button", { name: "Lock wallet" });
+  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
+  const next = { listCredentials: async () => [], terminate: () => { throw new Error("New wallet must remain open"); } } as unknown as WalletKit;
+  f.services.open = async () => next;
+  fireEvent.click(await view.findByRole("switch", { name: "Dev mode" }));
+  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
+  await waitFor(() => expect((view.getByRole("button", { name: "Lock wallet" }) as HTMLButtonElement).disabled).toBe(false));
+  rejectRead(new Error("Old worker stopped"));
+  await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
+  expect(view.getByRole("button", { name: "Lock wallet" })).toBeTruthy();
+  next.terminate = () => {};
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { CredentialMetadata } from "../lib/walletkit";
 import type { IncomingRequest } from "../lib/incoming-request";
 import { credentialRequirementsLabel } from "../lib/proof-request";
@@ -8,7 +8,7 @@ const credentialName = (schema: bigint) => SCHEMA_NAMES[schema.toString()] ?? "C
 
 function date(value: bigint) { return new Date(Number(value) * 1000).toLocaleString(); }
 
-export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete, onOpenCamera }: {
+export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete, onOpenCamera, onIssue, children }: {
   records: CredentialMetadata[];
   unlocked: boolean;
   disabled: boolean;
@@ -16,11 +16,12 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefres
   onRefresh: () => void;
   onDelete: (id: bigint) => void;
   onOpenCamera?: () => void;
+  onIssue: (schema: 128 | 11) => void;
+  children?: ReactNode;
 }) {
   const [selected, setSelected] = useState<bigint | null>(null);
   const pending = records.find(record => record.credentialId === selected);
-  return <aside id="developer-panel" className="developer-panel" aria-label="Developer tools">
-    <header><h2>Developer tools</h2></header>
+  return <div id="developer-panel" className="developer-panel">
     <section aria-labelledby="vault-title">
       <h3 id="vault-title">Credential vault</h3>
       {!unlocked ? <p className="dev-notice">Unlock your wallet to inspect its credentials.</p> : <>
@@ -39,11 +40,17 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefres
         </div>}
       </>}
     </section>
+    <section aria-labelledby="issuer-title"><h3 id="issuer-title">Staging issuers</h3>
+      <p>Issue synthetic staging credentials for development. These issuers do not use the camera or verify a real person.</p>
+      <div className="dev-toolbar"><button disabled={!unlocked || disabled} onClick={() => onIssue(128)}>Issue Faux credential</button><button disabled={!unlocked || disabled} onClick={() => onIssue(11)}>Issue staging Selfie credential</button></div>
+    </section>
     <section aria-labelledby="request-title"><h3 id="request-title">Current request</h3>
       {incoming ? <dl><dt>Requesting RP</dt><dd>{incoming.label}</dd><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd><dt>Accepted credentials</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd><dt>Expires</dt><dd>{date(BigInt(incoming.proof.expires_at))}</dd></dl> : <p>No request loaded.</p>}
     </section>
     <section aria-labelledby="runtime-title"><h3 id="runtime-title">Selfie Check</h3>
+      <p>Local camera diagnostics. Capturing a selfie does not issue a credential.</p>
       <button disabled={!onOpenCamera} onClick={onOpenCamera}>Open Selfie Check</button>
     </section>
-  </aside>;
+    {children}
+  </div>;
 }

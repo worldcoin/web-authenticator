@@ -30,8 +30,11 @@ if (!("bun" in process.versions)) {
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(page.getByRole("complementary")).toHaveCount(0);
     await toggle.click();
-    await expect(page.getByRole("complementary", { name: "Developer tools" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
     await expect(page.getByText("Unlock your wallet to inspect its credentials.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Issue Faux credential" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Issue staging Selfie credential" })).toBeDisabled();
+    expect(new URL(page.url()).pathname).toBe("/");
     for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -47,6 +50,27 @@ if (!("bun" in process.versions)) {
     expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
     await page.reload();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("landing authenticator entry never starts camera or creates a passkey", async ({ page }) => {
+    let cameraCalls = 0;
+    await page.exposeFunction("recordCameraCall", () => { cameraCalls++; });
+    await page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = async () => {
+        await (window as typeof window & { recordCameraCall(): Promise<void> }).recordCameraCall();
+        throw new Error("Camera must not open from landing");
+      };
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Go to authenticator" }).click();
+    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+    await expect(page.getByText(/Complete a Selfie Check from an app request/)).toBeVisible();
+    await expect(page.locator("video")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
+    expect(cameraCalls).toBe(0);
+    expect(new URL(page.url()).pathname).toBe("/");
+    await page.getByRole("button", { name: "Back to home" }).click();
+    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
   });
 
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {

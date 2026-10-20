@@ -17,7 +17,7 @@ if (!("bun" in process.versions)) {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Prove you’re human, anywhere online" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
     await page.getByRole("switch", { name: "Dev mode" }).click();
     await expect(page.getByRole("button", { name: "Open Selfie Check" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
@@ -42,8 +42,8 @@ if (!("bun" in process.versions)) {
       await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
       await page.getByRole("button", { name: "Back to authenticator" }).first().click();
-      // Dev mode is still on, so the root shows the dev sign-in page rather than the public home page.
-      await expect(page.getByRole("heading", { name: "Create your World ID" })).toBeVisible();
+      // Closing diagnostics returns to the same developer workspace.
+      await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
       await expect(page.locator("video")).toHaveCount(0);
     });
 
@@ -120,8 +120,8 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
-        // No colour of its own: the camera screen sits on the same page background as the rest of the site.
-        await expect(page.locator(".selfie-check")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        // Camera diagnostics sit within the developer workspace surface.
+        await expect(page.locator(".selfie-check")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });

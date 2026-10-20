@@ -375,6 +375,26 @@ a.signin-primary { text-decoration: none; }
 .public-request-flow a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .public-request-flow--capture { padding: 0; }
 .home-authenticator { max-width: 345px; margin-top: 0; }
+.access-credentials { display: grid; width: 100%; gap: 12px; padding: 0; margin: 8px 0; list-style: none; text-align: left; }
+.access-credentials li { display: flex; justify-content: space-between; gap: 16px; padding: 12px; border: 1px solid var(--stroke-secondary); border-radius: 12px; }
+.access-credentials span { color: var(--foreground-secondary); }
+
+/* Development is one workspace in the current document, never a companion sidebar. */
+.developer-workspace { min-height: 100svh; }
+.developer-main { width: 100%; max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+.developer-heading { margin-bottom: 28px; }
+.developer-heading h1 { font-size: 32px; }
+.developer-heading p { margin-top: 12px; color: var(--foreground-secondary); }
+.developer-account, .developer-workspace .developer-panel section { padding: 24px; margin: 0 0 20px; border: 1px solid #e5e5e5; border-radius: 16px; background: #fff; }
+.developer-account h2 { font-size: 20px; margin-bottom: 12px; }
+.developer-account p { margin-block: 12px; }
+.developer-account button { border: 1px solid #ccc; border-radius: 10px; padding: 8px 16px; background: #fff; }
+.developer-workspace .developer-panel { max-width: none; padding: 0; margin: 0; border: 0; }
+.developer-workspace .developer-panel h3 { font-size: 20px; }
+.developer-workspace .dev-toolbar { justify-content: flex-start; }
+.developer-workspace .developer-request h2 { font-size: 20px; }
+.developer-workspace .developer-camera { padding: 0; overflow: hidden; }
+.developer-camera .selfie-check { min-height: 720px; background: #fff; }
 @media (min-width: 600px) {
   .authenticator-shell--public .app-main { justify-content: center; }
   .public-request-flow { margin-block: max(0px, calc((100svh - 852px) / 2)); }

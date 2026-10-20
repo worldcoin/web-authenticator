@@ -14,8 +14,10 @@ The browser fetches and decrypts the request and checks its RP signature. Outsid
 Dev mode, only Selfie requests (schema 11 in every requirement) can start the
 temporary camera flow. Mixed requests, user-presence requirements and identity
 attributes remain unsupported. Direct visits show the landing page, whose
-**Go to authenticator** button explicitly opens a local capture (unlocking with
-the saved passkey first when this browser already has an authenticator).
+**Go to authenticator** button opens a saved-authenticator access screen. The user
+explicitly signs in with their saved passkey to view credentials. Browsers without
+saved access are directed to start from an app request; this button never opens
+the camera or creates an account.
 
 The public flow currently ends with **Selfie captured**, not a verified IDKit
 response. Capture is discarded on completion or exit. A one-time **Save with
@@ -25,7 +27,15 @@ immediately closes the wallet; failures allow retry or closing. An interrupted
 save can retain a passkey profile for recovery. This does not
 issue a credential or a successful proof response. The RP continues waiting until
 its request expires. Cancellation attempts to notify the RP and reports failure.
-Wallet inspection and the existing proof-generation flow remain in Dev mode.
+Dev mode replaces the public screen in place, without changing the URL. Its
+single workspace contains passkey access, the credential vault, synthetic staging
+Faux/Selfie issuers, request proof tools, and optional camera diagnostics. Turning
+it off aborts operations and locks the developer wallet.
+
+Synthetic issuer endpoints are disabled by default. Run the localhost API with
+`ENABLE_STAGING_ISSUERS=1` to use them. Selfie issuance additionally needs the
+[staging helper](../services/staging-issuance/face-enrollment-helper/README.md).
+These development issuers are separate from real camera enrollment.
 
 The app removes the key from the address bar; reloading loses the in-memory
 request and does not reopen a camera or wallet. Start a fresh request at the RP.
