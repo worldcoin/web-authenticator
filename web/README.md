@@ -21,7 +21,9 @@ the camera or creates an account.
 
 The public flow currently ends with **Selfie captured**, not a verified IDKit
 response. Capture is discarded on completion or exit. A one-time **Save with
-passkey / Not now** decision follows capture. Declining ends the session without
+passkey / Not now** decision follows the completion screen, opened by **Continue**.
+The completion screen appears immediately after capture, before any wallet setup.
+Declining ends the session without
 opening or creating a wallet. Saving uses the existing passkey/account setup and
 immediately closes the wallet; failures allow retry or closing. An interrupted
 save can retain a passkey profile for recovery. This does not

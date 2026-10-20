@@ -388,6 +388,11 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+    expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(opened).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Continue" }));
     expect(await view.findByRole("heading", { name: "Save your authenticator?" })).toBeTruthy();
     expect(opened).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Not now" }));
@@ -395,6 +400,7 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
     expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
     expect(opened).toBe(0);
     expect(f.calls.prove).toBe(0);
     expect(f.calls.deliver).toHaveLength(0);
@@ -427,6 +433,9 @@ for (const fails of [false, true]) {
     try {
       const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
       fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+      expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      fireEvent.click(view.getByRole("button", { name: "Continue" }));
       const save = await view.findByRole("button", { name: "Save with passkey" });
       expect(opened).toBe(0);
       expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
@@ -441,6 +450,7 @@ for (const fails of [false, true]) {
       expect(f.calls.terminated).toBe(fails ? 0 : 1);
       expect(f.calls.prove).toBe(0);
       expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
     } finally { captureMock.mockRestore(); }
   });
 }

@@ -10,7 +10,7 @@ import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Completion = { state: "complete" | "cancelled" | "expired"; returnUrl?: string };
+type Completion = { state: "complete" | "cancelled" | "expired"; returnUrl?: string; offerSave?: boolean };
 
 /** A public visit holds only a temporary capture; wallet management belongs to Dev mode. */
 export function PublicRequestFlow({ incoming, requested, loading, failed, expired, footerActions, devToggle, onDispose, onSave }: {
@@ -57,7 +57,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     }
     // Capture is local only. Do not manufacture a proof response or mark the RP request verified.
     setCapturing(false);
-    setSaveDecision({ returnUrl: incoming?.returnUrl });
+    setCompletion({ state: "complete", returnUrl: incoming?.returnUrl, offerSave: true });
     onDispose();
   };
   const finishDecision = () => {
@@ -99,14 +99,15 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     }
   };
 
-  if (completion) return <div className="public-request-flow">
-    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
-    <RequestCompletion state={completion.state} returnUrl={completion.returnUrl} detail={cancelError} />
-  </div>;
-
   if (saveDecision) return <div className="public-request-flow">
     <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(); }} />
+  </div>;
+
+  if (completion) return <div className="public-request-flow">
+    <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>
+    <RequestCompletion state={completion.state} returnUrl={completion.returnUrl} detail={cancelError}
+      onContinue={completion.offerSave ? () => setSaveDecision({ returnUrl: completion.returnUrl }) : undefined} />
   </div>;
 
   // Expiry unmounts the camera immediately; no image or camera track survives this state.

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import axe from "axe-core";
+import { installCamera } from "../fixtures/camera";
 import { signedRequest, encryptedRequest } from "../fixtures/request";
 
 if (!("bun" in process.versions)) {
@@ -20,6 +21,33 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
     }
+  });
+
+  test("public capture retries camera failure and shows success before optional saving", async ({ page }, info) => {
+    await installCamera(page);
+    const { payload, registry } = await signedRequest(11);
+    const encrypted = await encryptedRequest(payload);
+    await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
+    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await page.goto("/verify" + encrypted.query + "&deny");
+    await page.getByRole("button", { name: "Start selfie check" }).click();
+    await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
+    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
+    await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    await expect(page.locator("video")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
+    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-capture-success.png`, fullPage: true });
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
+    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-save-choice.png`, fullPage: true });
+    await page.getByRole("button", { name: "Not now" }).click();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   });
 
   test("dev tools are opt-in, responsive and accessible without opening a wallet", async ({ page }, info) => {

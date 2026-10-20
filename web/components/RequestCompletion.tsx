@@ -1,8 +1,9 @@
-export function RequestCompletion({ state, returnUrl, detail, onRetry }: {
+export function RequestCompletion({ state, returnUrl, detail, onRetry, onContinue }: {
   state: "complete" | "cancelled" | "expired" | "error";
   returnUrl?: string;
   detail?: string;
   onRetry?: () => void;
+  onContinue?: () => void;
 }) {
   const title = state === "complete" ? "Selfie captured"
     : state === "cancelled" ? "Check cancelled"
@@ -22,8 +23,9 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry }: {
       </div>
     </div>
     <div className="actions">
+      {onContinue && <button className="primary-action" onClick={onContinue}>Continue</button>}
       {onRetry && <button className="primary-action" onClick={onRetry}>Try again</button>}
-      {returnUrl && <a className={onRetry ? "secondary-action return-link" : "primary-action return-link"} href={returnUrl}>Return to the app</a>}
+      {returnUrl && <a className={onRetry || onContinue ? "secondary-action return-link" : "primary-action return-link"} href={returnUrl}>Return to the app</a>}
     </div>
   </>;
 }
