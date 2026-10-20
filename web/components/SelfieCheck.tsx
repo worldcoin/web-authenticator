@@ -12,6 +12,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
   const completion = useRef(onComplete);
+  const publicCompleted = useRef(false);
+  const imageUrl = useRef<string | undefined>(undefined);
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
@@ -19,9 +21,13 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const [image, setImage] = useState<string>();
   const [timing, setTiming] = useState("");
 
+  const clearImage = () => {
+    if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
+    imageUrl.current = undefined;
+  };
   const restart = () => {
     controller.current?.abort();
-    setImage(undefined); setTiming("");
+    clearImage(); setImage(undefined); setTiming("");
     setState(INITIAL_CAPTURE_STATE); setAttempt(value => value + 1);
   };
   const close = () => { controller.current?.abort(); onClose(); };
@@ -33,14 +39,16 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
       setState({ phase: "paused", title: "Your camera is off", hint: "Return to this page to start fresh.", progress: 0, cameraReady: false });
     };
     const visibility = () => {
+      if (publicCompleted.current) return;
       if (document.hidden) pause();
       else { setState(INITIAL_CAPTURE_STATE); setVisible(true); setAttempt(value => value + 1); }
     };
+    const leave = () => { clearImage(); pause(); };
     document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("pagehide", pause);
+    window.addEventListener("pagehide", leave);
     return () => {
       document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("pagehide", pause);
+      window.removeEventListener("pagehide", leave);
     };
   }, []);
 
@@ -51,15 +59,15 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     const timeout = new AbortController();
     const deadline = setTimeout(() => timeout.abort(new DOMException("Capture timed out", "TimeoutError")), CAPTURE_TIMEOUT_MS);
     const signal = AbortSignal.any([active.signal, timeout.signal]);
-    let url: string | undefined;
     void captureSelfie(video.current, signal, next => {
       if (!signal.aborted) setState(next);
     }).then(result => {
       if (signal.aborted) return;
-      if (completion.current) { completion.current(); return; }
-      url = URL.createObjectURL(result.image);
-      setImage(url); setTiming(JSON.stringify(result.timing, null, 2));
-      setState({ phase: "complete", title: "Selfie captured", hint: "Saved for this preview only. No verification was submitted.", progress: 1, cameraReady: false });
+      imageUrl.current = URL.createObjectURL(result.image);
+      setImage(imageUrl.current); setTiming(JSON.stringify(result.timing, null, 2));
+      publicCompleted.current = !!completion.current;
+      setState({ phase: "complete", title: publicCompleted.current ? "Capture completed" : "Selfie captured", hint: publicCompleted.current ? "" : "Saved for this preview only. No verification was submitted.", progress: 1, cameraReady: false });
+      completion.current?.();
     }).catch(error => {
       if (active.signal.aborted) return;
       setImage(undefined); setState(captureFailure(error));
@@ -68,13 +76,14 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
       clearTimeout(deadline);
       active.abort();
       if (controller.current === active) controller.current = null;
-      if (url) URL.revokeObjectURL(url);
+      clearImage();
     };
   }, [attempt, visible]);
 
   const complete = state.phase === "complete";
+  const transitioning = complete && !!onComplete;
   return <section className="selfie-check" data-state={state.phase} data-camera-ready={state.cameraReady} aria-label="Selfie capture">
-    <header className="selfie-header">
+    <header className="selfie-header" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <button className="selfie-close" type="button" aria-label={backLabel} onClick={close}><img src="/assets/figma/close.svg" alt="" /></button>
     </header>
     <div className="selfie-content">
@@ -90,12 +99,12 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         <img className="selfie-design-ring" src="/assets/figma/capture-ring-ready.svg" alt="" />
         <div className="selfie-feedback" role="status" aria-live="polite" aria-atomic="true"><div className="selfie-guidance"><h2>{state.title}</h2></div><p className="selfie-hint">{state.hint}</p></div>
       </div>
-      {(complete || state.phase === "error") && <div className="selfie-actions">
+      {(!transitioning && (complete || state.phase === "error")) && <div className="selfie-actions">
         <button className="selfie-retry" type="button" onClick={restart}>{complete ? "Retake selfie" : "Try again"}</button>
         {complete && <button className="selfie-retry" type="button" onClick={close}>{backLabel}</button>}
       </div>}
     </div>
-    <footer className="selfie-footer">
+    <footer className="selfie-footer" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <p className="selfie-privacy"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8.5" width="10" height="8" rx="2" stroke="currentColor" strokeWidth="1.3" /><path d="M7 8.5v-3a3 3 0 0 1 6 0v3M10 12v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Your selfie stays on this device.</p>
       <details className="selfie-about"><summary>About this check</summary><p>This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
     </footer>

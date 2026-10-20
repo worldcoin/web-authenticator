@@ -19,16 +19,17 @@ explicitly signs in with their saved passkey to view credentials. Browsers witho
 saved access are directed to start from an app request; this button never opens
 the camera or creates an account.
 
-The public flow currently ends with **Selfie captured**, not a verified IDKit
-response. Capture is discarded on completion or exit. A one-time **Save with
-passkey / Not now** decision follows the completion screen, opened by **Continue**.
-The completion screen appears immediately after capture, before any wallet setup.
-Declining ends the session without
-opening or creating a wallet. Saving uses the existing passkey/account setup and
-immediately closes the wallet; failures allow retry or closing. An interrupted
-save can retain a passkey profile for recovery. This does not
-issue a credential or a successful proof response. The RP continues waiting until
-its request expires. Cancellation attempts to notify the RP and reports failure.
+The public flow uses local capture as its completion signal; it does not send a
+verified IDKit response. The captured face remains in its oval for 800 ms, fades
+out, and is cleared from memory. A button-free sigil confirmation holds for
+1.5 seconds, then automatically opens the one-time **Save with passkey / Not now**
+decision. These timed stages pause while the tab is hidden and stop on exit;
+reduced-motion users skip the movement. Shared footer controls are hidden during
+the sequence without changing the layout. Declining ends the session; saving
+uses the existing passkey setup and immediately closes the wallet. Both outcomes
+are terminal. Interrupted setup may retain a passkey profile for recovery.
+The RP continues waiting until expiry; cancellation attempts to notify it and
+reports failures. Real camera enrollment remains disconnected.
 Dev mode replaces the public screen in place, without changing the URL. Its
 single workspace contains passkey access, the credential vault, request proof
 tools, and optional camera diagnostics. Turning it off aborts operations and

@@ -388,12 +388,15 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
-    expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+    expect(await view.findByRole("heading", { name: "Capture completed" })).toBeTruthy();
+    expect(view.getByAltText("Your captured selfie")).toBeTruthy();
+    expect(view.queryByRole("button")).toBeNull();
+    expect(await view.findByRole("heading", { name: "Selfie captured" }, { timeout: 2000 })).toBeTruthy();
     expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     expect(opened).toBe(0);
-    fireEvent.click(view.getByRole("button", { name: "Continue" }));
-    expect(await view.findByRole("heading", { name: "Save your authenticator?" })).toBeTruthy();
+    expect(view.queryByRole("button")).toBeNull();
+    expect(await view.findByRole("heading", { name: "Save your authenticator?" }, { timeout: 2500 })).toBeTruthy();
     expect(opened).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Not now" }));
     expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
@@ -433,10 +436,10 @@ for (const fails of [false, true]) {
     try {
       const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
       fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
-      expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+      expect(await view.findByRole("heading", { name: "Selfie captured" }, { timeout: 2000 })).toBeTruthy();
       expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
-      fireEvent.click(view.getByRole("button", { name: "Continue" }));
-      const save = await view.findByRole("button", { name: "Save with passkey" });
+      expect(view.queryByRole("button")).toBeNull();
+      const save = await view.findByRole("button", { name: "Save with passkey" }, { timeout: 2500 });
       expect(opened).toBe(0);
       expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
       fireEvent.click(save);
@@ -445,7 +448,7 @@ for (const fails of [false, true]) {
         expect(view.getByText(/Setup didn’t finish. A passkey may already have been saved/)).toBeTruthy();
         fireEvent.click(view.getByRole("button", { name: "Not now" }));
       }
-      expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+      expect(await view.findByRole("heading", { name: fails ? "Selfie captured" : "Authenticator saved" })).toBeTruthy();
       expect(opened).toBe(1);
       expect(f.calls.terminated).toBe(fails ? 0 : 1);
       expect(f.calls.prove).toBe(0);

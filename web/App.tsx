@@ -31,6 +31,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [expired, setExpired] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [completionAnimating, setCompletionAnimating] = useState(false);
   // null until the server answers; analytics stays off unless the state is "granted".
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
@@ -224,11 +225,11 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   // The camera exists only behind dev mode; turning dev mode off closes it.
   const camera = devMode && cameraOpen && !consentScreen && consentState !== null;
 
-  return <AppLayout developer={devMode && !consentScreen} footerActions={footerActions}>
+  return <AppLayout developer={devMode && !consentScreen} footerActions={footerActions} hideControls={completionAnimating}>
     {consentState === null ? null
       : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
       : !devMode ? <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-        onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />
+        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />
       : <div className="developer-main">
         <header className="developer-heading"><h1>Developer tools</h1><p>Inspect your local vault and test credentials on staging.</p></header>
         <section className="developer-account" aria-labelledby="account-title">
