@@ -11,11 +11,13 @@ const apps = [
 ];
 
 /** Home page with no request: what World is, linking out to its apps. */
-export function Home({ footerActions }: { footerActions: ReactNode }) {
+export function Home({ footerActions, onOpen, busy = false, error }: { footerActions: ReactNode; onOpen?: () => void; busy?: boolean; error?: string }) {
   return <div className="signin home">
     <section className="home-hero">
       <img className="home-badge" src="/assets/brand/human-badge.svg" alt="" />
-      <h1>Prove you’re human, anywhere online</h1>
+      <h1>Download World ID</h1>
+      {onOpen && <button className="signin-primary home-authenticator" disabled={busy} onClick={onOpen}><span aria-live="polite">{busy ? "Opening authenticator…" : "Go to authenticator"}</span></button>}
+      {error && <p className="signin-error" role="alert">{error}</p>}
     </section>
     <nav className="home-apps" aria-label="World apps">
       {apps.map(app => <a key={app.name} className="home-card" href={app.href}>

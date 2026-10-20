@@ -4,7 +4,7 @@ import { PasskeyIcon, SigninPage } from "./SigninPage";
 
 /**
  * Direct-open page (no app request, wallet closed). Without a request there is
- * nothing to approve, so it shows the home page with no wallet action. Dev mode adds the passkey
+ * nothing to approve, so it shows the home page with an explicit authenticator entry. Dev mode adds the passkey
  * button so the wallet can be opened for inspection; its label depends on
  * whether this browser already holds a wallet, because the same passkey action
  * creates a new World ID when it does not.
@@ -18,7 +18,7 @@ export function Landing({ devMode, saved, busy, progress, error, footerActions, 
   footerActions: ReactNode;
   onOpen: () => void;
 }) {
-  if (!devMode) return <Home footerActions={footerActions} />;
+  if (!devMode) return <Home footerActions={footerActions} onOpen={onOpen} />;
 
   return <SigninPage footerActions={footerActions}>
     <h1>{saved ? "Welcome back" : "Create your World ID"}</h1>

@@ -21,6 +21,14 @@ export type IncomingRequest = {
 	deliver: (proof: string, signal: AbortSignal) => Promise<void>
 	cancel: (signal: AbortSignal) => Promise<void>
 }
+
+/** The public flow currently supports only Selfie credentials, including every OR branch. */
+export function publicRequestUnsupportedReason(request: IncomingRequest): string | undefined {
+	if (request.unsupportedReason) return request.unsupportedReason
+	if (!request.proof.proof_requests.length || request.proof.proof_requests.some(item => item.issuer_schema_id !== 11))
+		return 'This authenticator currently supports Selfie Check requests only. Return to the requesting app to choose Selfie Check.'
+}
+
 export async function loadIncomingRequest(
 	href: string,
 	signal: AbortSignal,

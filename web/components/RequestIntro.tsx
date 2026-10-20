@@ -7,7 +7,7 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * confirmed. Expired, invalid and unsupported requests end here: there is no
  * way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel }: {
+export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
@@ -16,6 +16,7 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
   busy: boolean;
   onStart: () => void;
   onCancel: () => void;
+  selfieOnly?: boolean;
 }) {
   const open = state === "verifying" || state === "ready";
   const title = state === "expired" ? "This request has expired"
@@ -25,9 +26,13 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
 
   return <>
     <div className="screen-content"><div className="centered-layout">
-      <img className="hero-icon" src="/assets/brand/human-badge.svg" alt="" />
+      <img className={selfieOnly ? "request-selfie-emblem" : "hero-icon"} src={selfieOnly ? "/assets/figma/request-selfie-emblem.svg" : "/assets/brand/human-badge.svg"} alt="" />
       <div className="message-block">
-        {open ? <h1>
+        {open && selfieOnly ? <>
+          <h1>Complete a Selfie Check</h1>
+          <p>{state === "ready" ? `${rp} is requesting a Selfie Check.` : "Checking the app’s request…"}</p>
+          <p className="request-preview-note">Use your camera to capture a selfie. This preview does not submit a verification.</p>
+        </> : open ? <h1>
           {state === "ready"
             ? rp
             : <span className="request-skeleton"><span className="sr-only">An app</span></span>}
@@ -42,7 +47,7 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
     <div className="actions">
       {open && <>
         <button className="primary-action" disabled={state !== "ready" || busy} onClick={onStart}>
-          <span aria-live="polite">{state === "ready" ? "Start check" : "Verifying request…"}</span>
+          <span aria-live="polite">{state === "ready" ? selfieOnly ? "Start selfie check" : "Start check" : "Verifying request…"}</span>
         </button>
         {state === "ready" && <button className="secondary-action" disabled={busy} onClick={onCancel}>Cancel request</button>}
       </>}

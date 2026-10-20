@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
-import { loadIncomingRequest } from "../lib/incoming-request";
+import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload } from "../lib/proof-request";
 import { createProof } from "../lib/prove";
@@ -40,6 +40,19 @@ test("fetches, decrypts and validates a real-format RP request; encrypts the mat
   await incoming!.cancel(signal());
   expect(f.sent[1]).toEqual({ error_code: "verification_rejected" });
   await expect(incoming!.deliver(JSON.stringify({ ...response, id: "wrong" }), signal())).rejects.toThrow("mismatched");
+});
+test("the public flow accepts Selfie requests but rejects other schemas, mixed alternatives and unsupported requirements", async () => {
+  const f = await fixture();
+  const incoming = (await loadIncomingRequest("http://localhost" + f.encrypted.query, signal(), () => {}))!;
+  expect(publicRequestUnsupportedReason(incoming)).toBeUndefined();
+  incoming.proof.proof_requests.push({ identifier: "orb", issuer_schema_id: 1 });
+  incoming.proof.constraints = { any: [incoming.proof.proof_requests[0]!.identifier, "orb"] };
+  expect(publicRequestUnsupportedReason(incoming)).toContain("Selfie Check requests only");
+  incoming.proof.proof_requests = [{ identifier: "orb", issuer_schema_id: 1 }];
+  expect(publicRequestUnsupportedReason(incoming)).toContain("Selfie Check requests only");
+  incoming.proof.proof_requests = [{ identifier: "selfie", issuer_schema_id: 11 }];
+  incoming.unsupportedReason = "User presence is not implemented.";
+  expect(publicRequestUnsupportedReason(incoming)).toBe(incoming.unsupportedReason);
 });
 test.each([
   { name: "no callback", payloadUrl: undefined, queryUrl: undefined },

@@ -12,6 +12,7 @@ import type { WalletKit, CredentialMetadata } from "./lib/walletkit";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { credentialAvailability, credentialRequirementsLabel, RequestExpiredError } from "./lib/proof-request";
 import { createProof } from "./lib/prove";
+import { PublicRequestFlow } from "./PublicRequestFlow";
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 // Dev-mode only: local camera capture, loaded on demand so the detector runtime stays out of the main bundle.
@@ -71,9 +72,10 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     // Keep the response capability in memory; remove the bridge key from browser history immediately.
     if (url.searchParams.has("k")) window.history.replaceState(null, "", window.location.pathname);
     void services.load(source.current, controller.signal, setProgress).then(request => {
-      if (!controller.signal.aborted) { setIncoming(request); setLoading(false); setProgress(""); }
+      if (!controller.signal.aborted) { source.current = null; setIncoming(request); setLoading(false); setProgress(""); }
     }).catch(cause => {
       if (!controller.signal.aborted) {
+        source.current = null;
         setError(cause instanceof Error ? cause.message : "Could not validate the incoming request.");
         setLoadExpired(cause instanceof RequestExpiredError);
         setLoadFailed(true);
@@ -216,7 +218,13 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     setProgress("Local credential deleted.");
   });
 
-  const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => { setDevMode(value => !value); setCameraOpen(false); }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button>;
+  const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => {
+    operation.current?.abort();
+    closeWallet();
+    retainedProof.current = null;
+    setBusy(false); setProgress(""); if (!loadFailed) setError(null); setScreen("review"); setStarted(false);
+    setDevMode(value => !value); setCameraOpen(false);
+  }}>Dev mode <span aria-hidden="true">{devMode ? "On" : "Off"}</span></button>;
   const footerActions = <span className="footer-actions">
     <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Privacy choices</button>
     {devToggle}
@@ -228,6 +236,15 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   // The camera exists only behind dev mode; turning dev mode off closes it.
   const camera = devMode && cameraOpen && !consentScreen && consentState !== null;
   const fullPage = consentState === null || consentScreen || (landing && !camera);
+
+  if (!devMode) return <div className="authenticator-shell authenticator-shell--public">
+    <div className="authenticator-layout"><main className="app-main app-main--landing">
+      {consentState === null ? null
+        : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} footerActions={devToggle} onChoose={choice => void chooseConsent(choice)} />
+        : <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+          footerActions={footerActions} devToggle={devToggle} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
+    </main></div>
+  </div>;
 
   return <div className={`authenticator-shell${devMode ? " authenticator-shell--dev" : ""}`}>
     {!fullPage && <header className="dev-mode-bar"><p className="brand-label">World ID</p>{devToggle}</header>}

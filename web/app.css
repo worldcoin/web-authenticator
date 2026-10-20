@@ -346,3 +346,36 @@ a.signin-primary { text-decoration: none; }
 .app-main.app-main--capture {
   padding: 0;
 }
+
+/* The public request keeps the 393 × 852 Figma frame on larger browsers.
+   Short viewports scroll; no app controls are positioned under browser chrome. */
+.authenticator-shell--public { min-height: 100svh; background: #fff; }
+.authenticator-shell--public .app-main { padding: 0; background: #fff; }
+.public-request-flow { display: flex; flex-direction: column; width: 100%; max-width: 393px; min-height: min(852px, 100svh); margin: auto; padding: 0 24px max(24px, env(safe-area-inset-bottom)); background: #fff; }
+.public-request-flow .dev-mode-bar { width: 100%; padding: max(16px, env(safe-area-inset-top)) 0 16px; }
+.public-request-flow .brand-label { background: transparent; font-size: 13px; }
+.public-request-flow .dev-mode-switch { min-height: 36px; gap: 6px; padding: 0 8px; font-size: 12px; }
+.public-request-flow .dev-mode-switch span { padding: 3px 8px; }
+.public-request-flow .screen-content { flex: 1; padding: 64px 0; }
+.public-request-flow .centered-layout { max-width: 345px; padding-inline: 8px; gap: 32px; }
+.public-request-flow h1 { font-size: 27px; font-weight: 400; line-height: 1.2; letter-spacing: -.405px; overflow-wrap: anywhere; }
+.public-request-flow .message-block { gap: 16px; }
+.public-request-flow .message-block > p { max-width: 313px; font-size: 17px; font-weight: 350; line-height: 1.3; letter-spacing: -.085px; overflow-wrap: anywhere; }
+.public-request-flow .message-block > .request-preview-note { color: var(--foreground-secondary); font-size: 15px; }
+.request-selfie-emblem { display: block; width: 56.0035px; height: 56px; }
+.request-completion-emblem { display: block; width: 88px; height: 88px; }
+.request-passkey-emblem { display: block; width: 56px; height: 56px; }
+.public-request-flow .actions { flex: 0; margin: 0; padding-top: 0; }
+.public-request-flow .primary-action, .public-request-flow .secondary-action { font-weight: 500; }
+.public-request-flow .request-completion .centered-layout { gap: 24px; }
+.public-request-flow .request-completion .message-block { gap: 12px; }
+.public-request-flow .request-completion h1 { font-size: 24px; letter-spacing: -.36px; }
+.public-request-flow .request-completion p { color: var(--foreground-secondary); }
+.public-request-flow .actions:empty { display: none; }
+.public-request-flow a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.public-request-flow--capture { padding: 0; }
+.home-authenticator { max-width: 345px; margin-top: 0; }
+@media (min-width: 600px) {
+  .authenticator-shell--public .app-main { justify-content: center; }
+  .public-request-flow { margin-block: max(0px, calc((100svh - 852px) / 2)); }
+}

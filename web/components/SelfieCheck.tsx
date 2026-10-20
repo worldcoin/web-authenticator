@@ -3,13 +3,16 @@ import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STAT
 import "./SelfieCheck.css";
 
 /** Local capture only. Completion does not issue a credential or satisfy an RP request. */
-export default function SelfieCheck({ onClose, backLabel, diagnostics = false }: {
+export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostics = false }: {
   onClose: () => void;
+  onComplete?: () => void;
   backLabel: string;
   diagnostics?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
+  const completion = useRef(onComplete);
+  useEffect(() => { completion.current = onComplete; }, [onComplete]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
   const [visible, setVisible] = useState(() => !document.hidden);
@@ -53,6 +56,7 @@ export default function SelfieCheck({ onClose, backLabel, diagnostics = false }:
       if (!signal.aborted) setState(next);
     }).then(result => {
       if (signal.aborted) return;
+      if (completion.current) { completion.current(); return; }
       url = URL.createObjectURL(result.image);
       setImage(url); setTiming(JSON.stringify(result.timing, null, 2));
       setState({ phase: "complete", title: "Selfie captured", hint: "Saved for this preview only. No verification was submitted.", progress: 1, cameraReady: false });
@@ -71,7 +75,7 @@ export default function SelfieCheck({ onClose, backLabel, diagnostics = false }:
   const complete = state.phase === "complete";
   return <section className="selfie-check" data-state={state.phase} data-camera-ready={state.cameraReady} aria-label="Selfie capture">
     <header className="selfie-header">
-      <button className="selfie-close" type="button" aria-label={backLabel} onClick={close}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
+      <button className="selfie-close" type="button" aria-label={backLabel} onClick={close}><img src="/assets/figma/close.svg" alt="" /></button>
       <span className="selfie-brand"><img src="/assets/brand/human-badge.svg" width="24" height="24" alt="" />World ID</span>
     </header>
     <div className="selfie-content">
@@ -84,6 +88,7 @@ export default function SelfieCheck({ onClose, backLabel, diagnostics = false }:
           {complete && <div className="selfie-complete" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="m13 24 7 7 15-15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
         </div>
         <svg className="selfie-camera-ring" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="selfie-ring-track" cx="140" cy="175" rx="133" ry="168" /><path className="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
+        <img className="selfie-design-ring" src="/assets/figma/capture-ring-ready.svg" alt="" />
         <div className="selfie-feedback" role="status" aria-live="polite" aria-atomic="true"><div className="selfie-guidance"><h2>{state.title}</h2></div><p className="selfie-hint">{state.hint}</p></div>
       </div>
       {(complete || state.phase === "error") && <div className="selfie-actions">
