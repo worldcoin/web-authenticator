@@ -28,14 +28,9 @@ save can retain a passkey profile for recovery. This does not
 issue a credential or a successful proof response. The RP continues waiting until
 its request expires. Cancellation attempts to notify the RP and reports failure.
 Dev mode replaces the public screen in place, without changing the URL. Its
-single workspace contains passkey access, the credential vault, synthetic staging
-Faux/Selfie issuers, request proof tools, and optional camera diagnostics. Turning
-it off aborts operations and locks the developer wallet.
-
-Synthetic issuer endpoints are disabled by default. Run the localhost API with
-`ENABLE_STAGING_ISSUERS=1` to use them. Selfie issuance additionally needs the
-[staging helper](../services/staging-issuance/face-enrollment-helper/README.md).
-These development issuers are separate from real camera enrollment.
+single workspace contains passkey access, the credential vault, request proof
+tools, and optional camera diagnostics. Turning it off aborts operations and
+locks the developer wallet. Synthetic credential issuers are not part of this app.
 
 The app removes the key from the address bar; reloading loses the in-memory
 request and does not reopen a camera or wallet. Start a fresh request at the RP.

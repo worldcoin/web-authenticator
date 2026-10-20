@@ -50,7 +50,7 @@ test("definitive wallet setup failure offers retry", async () => {
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
-  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0, issued: [] as number[], failIssue: false };
+  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
     proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {},
@@ -65,10 +65,6 @@ async function fixture(schema: number, available = false) {
     load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
-    issue: async (_wallet: WalletKit, schema: 128 | 11) => {
-      calls.issued.push(schema); if (calls.failIssue) throw new Error("Staging issuer unavailable.");
-      records.push({ credentialId: BigInt(schema), issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata);
-    },
   };
   return { services, calls, incoming, wallet };
 }
@@ -76,7 +72,7 @@ test("missing Selfie credentials say enrollment is unavailable and keep the requ
   const f = await fixture(11); const view = await renderDev(f.services);
   fireEvent.click(await view.findByRole("button", { name: "Start check" }));
   expect(await view.findByRole("heading", { name: "Set up Selfie Check" })).toBeTruthy();
-  expect(view.getByText("Real Selfie Check enrollment is not connected. Use the staging Selfie issuer above for synthetic test credentials.")).toBeTruthy();
+  expect(view.getByText("Selfie Check enrollment is not connected yet.")).toBeTruthy();
   expect(view.container.querySelector("video")).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Back to wallet" }));
   expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
@@ -501,34 +497,17 @@ test("saved access requires explicit sign-in and shows credentials without start
   } finally { localStorage.clear(); }
 });
 
-test("developer workspace issues both synthetic schemas and refreshes the vault", async () => {
-  const f = await fixture(11); f.services.load = async () => null;
+test("developer workspace retains the vault without synthetic issuers", async () => {
+  const f = await fixture(11, true); f.services.load = async () => null;
   const view = await renderDev(f.services);
   expect(view.getAllByRole("heading", { name: "Developer tools" })).toHaveLength(1);
-  expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(view.queryByRole("heading", { name: "Staging issuers" })).toBeNull();
+  expect(view.queryByRole("button", { name: /Issue.*credential/ })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
-  await view.findByRole("button", { name: "Lock wallet" });
-  await waitFor(() => expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(view.getByRole("button", { name: "Issue Faux credential" }));
-  await view.findByText(/Faux/, { selector: "summary" });
-  await waitFor(() => expect((view.getByRole("button", { name: "Issue staging Selfie credential" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(view.getByRole("button", { name: "Issue staging Selfie credential" }));
   await view.findByText(/Selfie Check/, { selector: "summary" });
-  expect(f.calls.issued).toEqual([128, 11]);
-  expect(f.calls.listed).toBe(3);
-  expect(view.container.querySelector("video")).toBeNull();
+  expect(view.queryByRole("button", { name: /Issue.*credential/ })).toBeNull();
+  expect(f.calls.listed).toBe(1);
   expect(window.location.pathname).toBe("/");
-});
-
-test("issuer failure is surfaced and closes the failed vault session", async () => {
-  const f = await fixture(11); f.services.load = async () => null; f.calls.failIssue = true;
-  const view = await renderDev(f.services);
-  fireEvent.click(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ }));
-  await waitFor(() => expect((view.getByRole("button", { name: "Issue Faux credential" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(view.getByRole("button", { name: "Issue Faux credential" }));
-  expect((await view.findByRole("alert")).textContent).toContain("Staging issuer unavailable.");
-  expect(f.calls.terminated).toBe(1);
-  expect(view.getByRole("button", { name: /Continue with passkey|Sign in with passkey/ })).toBeTruthy();
 });
 
 test("switching modes ignores a stale unlock failure while another unlock is pending", async () => {

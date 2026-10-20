@@ -64,16 +64,3 @@ before building if camera guidance is needed.
 
 This packages the app; AWS hosting, Redis and secrets belong in deployment
 configuration and are not provisioned by this Dockerfile.
-
-## Local staging issuers
-
-`ENABLE_STAGING_ISSUERS=1` registers `POST /api/faux-credential` (schema 128) and
-`POST /api/selfie-credential` (schema 11). They are absent by default and require
-same-origin localhost requests even when enabled. Keep the server bound to
-loopback; these are synthetic development fixtures, not public enrollment APIs.
-
-Faux proxies the staging Faux issuer with a fixed upstream and a bounded timeout.
-Selfie restores the original synthetic staging enrollment adapter and requires
-the [native helper](../services/staging-issuance/face-enrollment-helper/README.md).
-It preserves retry state and validates the issuer signature before returning a
-credential. Neither endpoint receives camera images or account seeds.

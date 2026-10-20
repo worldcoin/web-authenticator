@@ -17,9 +17,6 @@ const get = (path: string, init?: RequestInit) => fetch(origin + path, { redirec
 const expectSecurityHeaders = (response: Response) => {
   for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) expect(response.headers.get(name)).toBe(value);
 };
-const post = (body: unknown, headerOrigin = origin) => get("/api/selfie-credential", {
-  method: "POST", headers: { origin: headerOrigin, "content-type": "application/json" }, body: JSON.stringify(body),
-});
 test("serves web assets and HEAD responses with security headers", async () => {
   const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-assets-"));
   try {
@@ -67,8 +64,15 @@ test("embedded demo routes and simulated endpoints are gone", async () => {
 });
 test("synthetic enrollment is absent even for valid localhost requests", async () => {
   const body = { sub: "0x" + "a".repeat(64), token: "b".repeat(64) };
-  expect((await post(body)).status).toBe(404);
-  expect((await post(body, "https://other.example")).status).toBe(404);
+  for (const path of ["/api/faux-credential", "/api/selfie-credential"]) {
+    for (const headerOrigin of [origin, "https://other.example"]) {
+      const response = await get(path, {
+        method: "POST", headers: { origin: headerOrigin, "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "Not found" });
+    }
+  }
   expect((await get("/api/capabilities")).status).toBe(404);
 });
 test("RP lookup rejects malformed identifiers without a remote call", async () => {

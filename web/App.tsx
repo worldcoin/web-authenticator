@@ -11,14 +11,13 @@ import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-reques
 import { credentialAvailability, RequestExpiredError } from "./lib/proof-request";
 import { createProof } from "./lib/prove";
 import { PublicRequestFlow } from "./PublicRequestFlow";
-import { issueStagingCredential } from "./lib/staging-issuance";
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest, prove: createProof };
 // Dev-mode only: local camera capture, loaded on demand so the detector runtime stays out of the main bundle.
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Screen = "review" | "enroll" | "delivery" | "done" | "cancelled" | "wallet-timeout" | "wallet-error";
 
-export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults & { issue?: typeof issueStagingCredential }; consent?: ConsentClient }) {
+export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [wallet, setWallet] = useState<WalletKit | null>(null);
@@ -205,15 +204,6 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     setProgress("Local credential deleted.");
   });
 
-  const issue = (schema: 128 | 11) => run(async signal => {
-    if (!wallet || vaultDisabled || !devMode) return;
-    try { await (services.issue ?? issueStagingCredential)(wallet, schema, signal, message => { if (!signal.aborted) setProgress(message); }); }
-    catch (cause) { if (!signal.aborted && activeWallet.current === wallet) { closeWallet(); setProgress(""); } throw cause; }
-    signal.throwIfAborted();
-    await refresh(wallet, signal);
-    setScreen("review"); setProgress(`${schema === 128 ? "Faux" : "Staging Selfie"} credential issued.`);
-  });
-
   const devToggle = <button className="dev-mode-switch" role="switch" aria-checked={devMode} aria-controls={devMode ? "developer-panel" : undefined} onClick={() => {
     operation.current?.abort(); operation.current = null;
     closeWallet();
@@ -255,7 +245,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
           {error && !deliveryExpired && <p className="error-copy" role="alert">{error}</p>}
           {!incoming && (screen === "wallet-timeout" || screen === "wallet-error") && <h3>{title}</h3>}
         </section>
-        <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} onIssue={schema => void issue(schema)} onOpenCamera={camera || busy ? undefined : () => setCameraOpen(true)}>
+        <DeveloperPanel key={wallet ? "unlocked" : "locked"} records={records} unlocked={!!wallet} disabled={vaultDisabled} incoming={incoming} onRefresh={() => void refreshVault()} onDelete={id => void deleteCredential(id)} onOpenCamera={camera || busy ? undefined : () => setCameraOpen(true)}>
           {incoming || loadFailed ? <section className="developer-request" aria-label="Request proof tools">
             <h2>{title}</h2>
             {screen === "done" && <p>Your proof reached the bridge. The requesting app verifies it.</p>}
@@ -263,7 +253,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
             {incoming?.unsupportedReason && <p role="alert">{incoming.unsupportedReason}</p>}
             {expired && !finished && <p role="alert">{deliveryExpired ? "This request expired. Proof delivery is unconfirmed. Check the requesting app before starting a new request." : "This request expired. Start a new request at the requesting app."}</p>}
             {wallet && screen === "review" && availability && !availability.satisfied && <p>{availability.canEnrollSelfie ? availability.needsSelfieEnrollment ? "This request needs Selfie Check." : "Choose Selfie Check, or use another accepted credential from the requesting app." : availability.requiresOrb ? "This request needs an eligible Orb credential. Orb enrollment and transfer are not available here." : "Your wallet does not meet the requested credential and date requirements."}</p>}
-            {screen === "enroll" && <p>Real Selfie Check enrollment is not connected. Use the staging Selfie issuer above for synthetic test credentials.</p>}
+            {screen === "enroll" && <p>Selfie Check enrollment is not connected yet.</p>}
             <div className="dev-toolbar">
               {wallet && screen === "review" && incoming && supported && <button disabled={busy || !availability?.satisfied} onClick={() => void approve()}>Approve and share proof</button>}
               {wallet && screen === "review" && supported && availability?.canEnrollSelfie && <button disabled={busy} onClick={() => { setScreen("enroll"); setError(null); }}>Set up Selfie Check</button>}

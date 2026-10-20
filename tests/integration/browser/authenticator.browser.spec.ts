@@ -32,8 +32,8 @@ if (!("bun" in process.versions)) {
     await toggle.click();
     await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
     await expect(page.getByText("Unlock your wallet to inspect its credentials.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Issue Faux credential" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Issue staging Selfie credential" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Issue Faux credential" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Issue staging Selfie credential" })).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe("/");
     for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);

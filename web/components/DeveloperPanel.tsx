@@ -8,7 +8,7 @@ const credentialName = (schema: bigint) => SCHEMA_NAMES[schema.toString()] ?? "C
 
 function date(value: bigint) { return new Date(Number(value) * 1000).toLocaleString(); }
 
-export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete, onOpenCamera, onIssue, children }: {
+export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefresh, onDelete, onOpenCamera, children }: {
   records: CredentialMetadata[];
   unlocked: boolean;
   disabled: boolean;
@@ -16,7 +16,6 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefres
   onRefresh: () => void;
   onDelete: (id: bigint) => void;
   onOpenCamera?: () => void;
-  onIssue: (schema: 128 | 11) => void;
   children?: ReactNode;
 }) {
   const [selected, setSelected] = useState<bigint | null>(null);
@@ -39,10 +38,6 @@ export function DeveloperPanel({ records, unlocked, disabled, incoming, onRefres
           <div className="dev-toolbar"><button disabled={disabled} onClick={() => { setSelected(null); onDelete(pending.credentialId); }}>Confirm deletion</button><button disabled={disabled} onClick={() => setSelected(null)}>Keep credential</button></div>
         </div>}
       </>}
-    </section>
-    <section aria-labelledby="issuer-title"><h3 id="issuer-title">Staging issuers</h3>
-      <p>Issue synthetic staging credentials for development. These issuers do not use the camera or verify a real person.</p>
-      <div className="dev-toolbar"><button disabled={!unlocked || disabled} onClick={() => onIssue(128)}>Issue Faux credential</button><button disabled={!unlocked || disabled} onClick={() => onIssue(11)}>Issue staging Selfie credential</button></div>
     </section>
     <section aria-labelledby="request-title"><h3 id="request-title">Current request</h3>
       {incoming ? <dl><dt>Requesting RP</dt><dd>{incoming.label}</dd><dt>Action</dt><dd>{incoming.actionLabel || "No action label"}</dd><dt>Accepted credentials</dt><dd>{credentialRequirementsLabel(incoming.proof)}</dd><dt>Expires</dt><dd>{date(BigInt(incoming.proof.expires_at))}</dd></dl> : <p>No request loaded.</p>}
