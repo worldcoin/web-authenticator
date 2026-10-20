@@ -67,10 +67,10 @@
 .public-request-flow .selfie-content { padding-block: 64px 24px; }
 .public-request-flow .selfie-content > h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .public-request-flow .selfie-camera-stage { width: 345px; max-width: 100%; aspect-ratio: 345.005 / 481.637; margin-bottom: 76px; }
-.public-request-flow .selfie-camera-surface { inset: 11px 8.5px; }
+/* 11 units inside the ring viewBox, scaling with the aperture on narrow screens. */
+.public-request-flow .selfie-camera-surface, .public-request-flow .selfie-feedback { inset: calc(11 / 481.637 * 100%) calc(11 / 345.005 * 100%); }
 .public-request-flow .selfie-camera-ring { display: none; }
 .public-request-flow .selfie-design-ring { display: block; position: absolute; top: 0; left: 0; width: 345.005px; max-width: 100%; height: auto; pointer-events: none; }
-.public-request-flow .selfie-feedback { inset: 11px 8.5px; }
 .public-request-flow .selfie-guidance { top: 12.2%; min-height: 36px; display: flex; align-items: center; padding: 8px 12px; background: rgb(24 24 24 / 60%); backdrop-filter: blur(10px); }
 .public-request-flow .selfie-guidance h2 { font-size: 15px; line-height: 1.3; font-weight: 350; letter-spacing: -.075px; }
 .public-request-flow .selfie-hint { top: calc(100% + 26px); font-size: 14px; }

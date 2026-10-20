@@ -1,26 +1,40 @@
-// Dot positions retain the Figma capture aperture, ordered clockwise from the top.
-const DOTS = [
-  [166.956, 3.05022], [187.209, 3.5616], [207.537, 6.56787], [227.187, 11.98],
-  [246.022, 19.7243], [263.881, 29.7558], [280.154, 41.6947], [295.347, 55.877],
-  [308.631, 71.6872], [319.792, 88.8303], [328.78, 107.144], [335.51, 126.453],
-  [339.877, 146.555], [341.794, 167.298], [342.043, 187.75], [341.922, 208.16],
-  [341.981, 228.798], [341.628, 249.16], [340.513, 269.461], [337.826, 289.846],
-  [333.625, 309.765], [328.054, 329.394], [321.094, 348.915], [312.984, 367.649],
-  [303.595, 385.827], [292.915, 403.233], [280.729, 419.864], [267.152, 435.165],
-  [252.079, 448.855], [235.328, 460.605], [217.011, 469.808], [197.495, 475.876],
-  [176.52, 478.537], [156.116, 477.526], [136.258, 472.741], [117.472, 464.747],
-  [100.032, 454.051], [84.2476, 441.132], [69.9137, 426.317], [57.0768, 410.283],
-  [45.7101, 393.295], [35.7973, 375.629], [27.069, 356.985], [19.7636, 338.034],
-  [13.662, 318.327], [8.99311, 298.714], [5.55288, 278.216], [3.61374, 258.237],
-  [3.07809, 236.915], [2.99353, 216.527], [3.05253, 195.894], [2.97663, 175.43],
-  [3.99323, 155.144], [7.34097, 134.894], [13.0642, 115.326], [21.0639, 96.6448],
-  [31.4853, 78.6848], [43.5932, 62.6351], [58.1285, 47.5107], [74.0145, 34.5785],
-  [91.1657, 23.7718], [109.408, 15.1346], [129.203, 8.5657], [149.248, 4.54787],
-] as const;
+const WIDTH = 345.005;
+const HEIGHT = 481.637;
+const DOT_COUNT = 64;
+const SURFACE_INSET = 11;
+const RING_GAP = 8;
+
+// Match the camera ellipse, offset along its normal for a constant edge gap.
+// Equal angles crowd dots near the tips, so distribute them by arc length instead.
+const samples = Array.from({ length: 1025 }, (_, index) => {
+  const angle = index / 1024 * Math.PI * 2;
+  const rx = WIDTH / 2 - SURFACE_INSET;
+  const ry = HEIGHT / 2 - SURFACE_INSET;
+  const nx = Math.sin(angle) / rx;
+  const ny = -Math.cos(angle) / ry;
+  const normal = Math.hypot(nx, ny);
+  return { x: WIDTH / 2 + rx * Math.sin(angle) + RING_GAP * nx / normal,
+    y: HEIGHT / 2 - ry * Math.cos(angle) + RING_GAP * ny / normal, length: 0 };
+});
+for (let index = 1; index < samples.length; index++) {
+  const previous = samples[index - 1]!;
+  const point = samples[index]!;
+  point.length = previous.length + Math.hypot(point.x - previous.x, point.y - previous.y);
+}
+const perimeter = samples[samples.length - 1]!.length;
+let segment = 1;
+const DOTS = Array.from({ length: DOT_COUNT }, (_, index) => {
+  const distance = index / DOT_COUNT * perimeter;
+  while (samples[segment]!.length < distance) segment++;
+  const start = samples[segment - 1]!;
+  const end = samples[segment]!;
+  const fraction = (distance - start.length) / (end.length - start.length);
+  return { x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction };
+});
 
 export function CaptureProgressRing({ progress }: { progress: number }) {
-  const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOTS.length);
-  return <svg className="selfie-design-ring" viewBox="0 0 345.005 481.637" fill="none" aria-hidden="true">
-    {DOTS.map(([cx, cy], index) => <circle key={index} cx={cx} cy={cy} r="2.94866" data-filled={index < filled} />)}
+  const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOT_COUNT);
+  return <svg className="selfie-design-ring" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fill="none" aria-hidden="true">
+    {DOTS.map(({ x, y }, index) => <circle key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
   </svg>;
 }
