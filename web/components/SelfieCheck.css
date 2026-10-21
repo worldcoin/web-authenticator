@@ -78,3 +78,11 @@
 @media (max-height: 740px) {
   .public-request-flow .selfie-content { padding-top: 32px; }
 }
+
+/* Complete in the same aperture, then cut to the sigil without moving the frame. */
+.selfie-success-fill { position: absolute; inset: 0; background: #28a86b; opacity: 0; pointer-events: none; }
+.selfie-check[data-transitioning="true"] .selfie-success-fill { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .selfie-check[data-transitioning="true"] .selfie-success-fill { animation: selfie-fill-success 400ms ease-in-out both; }
+}
+@keyframes selfie-fill-success { from { opacity: 0; } to { opacity: 1; } }

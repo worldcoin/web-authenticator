@@ -388,15 +388,10 @@ a.signin-primary { text-decoration: none; }
 /* Completion is automatic; hiding controls preserves the shared footer geometry. */
 .site-footer[data-hidden="true"] { visibility: hidden; }
 @media (prefers-reduced-motion: no-preference) {
-  .completion-sequence[data-stage="capture-exit"] .selfie-camera-stage { animation: capture-complete-out 350ms ease-in both; }
-  .completion-sequence[data-stage="confirmation"] .request-completion { animation: completion-in 350ms ease-out both; }
   .completion-sequence[data-stage="confirmation-exit"] .request-completion { animation: completion-out 250ms ease-in both; }
   .public-request-flow--save { animation: completion-in 250ms ease-out both; }
 }
 .completion-sequence[data-paused="true"] * { animation-play-state: paused; }
-@keyframes capture-complete-out {
-  to { opacity: 0; transform: scale(.88); }
-}
 @keyframes completion-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
