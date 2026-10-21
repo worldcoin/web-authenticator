@@ -1,7 +1,20 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
 import { signedRequest, encryptedRequest, openSelfieRequest } from "../fixtures/request";
+
+// Pause when React commits the stage, before polling can skip a short animation.
+async function hideAtStage(page: Page, stage: string) {
+  await page.evaluate(stage => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(".completion-sequence")?.getAttribute("data-stage") !== stage) return;
+      observer.disconnect();
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+  }, stage);
+}
 
 if (!("bun" in process.versions)) {
   test("root is an authenticator, with no implicit RP or network registration", async ({ page }, info) => {
@@ -92,20 +105,17 @@ if (!("bun" in process.versions)) {
       test(`pauses hidden stages, clears the face, and finishes once (${reducedMotion})`, async ({ page }) => {
         await page.emulateMedia({ reducedMotion });
         const footerPosition = await page.getByRole("button", { name: "Cookie settings" }).boundingBox();
+        await hideAtStage(page, reducedMotion === "no-preference" ? "capture-exit" : "confirmation");
         await page.getByRole("button", { name: "Start selfie check" }).click();
         if (reducedMotion === "no-preference") {
           await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-exit");
-          await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
-          await page.evaluate(() => {
-            Object.defineProperty(document, "hidden", { configurable: true, value: true });
-            document.dispatchEvent(new Event("visibilitychange"));
-          });
           const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
           await page.clock.runFor(10_000);
           await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-exit");
           await expect(page.getByAltText("Your captured selfie")).toBeVisible();
           expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);
           await expect(page.getByRole("button")).toHaveCount(0);
+          await hideAtStage(page, "confirmation");
           await page.evaluate(() => {
             Object.defineProperty(document, "hidden", { configurable: true, value: false });
             document.dispatchEvent(new Event("visibilitychange"));
@@ -120,10 +130,6 @@ if (!("bun" in process.versions)) {
           await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
         }
         if (reducedMotion === "reduce") await expect(page.locator(".request-completion")).toHaveCSS("animation-name", "none");
-        await page.evaluate(() => {
-          Object.defineProperty(document, "hidden", { configurable: true, value: true });
-          document.dispatchEvent(new Event("visibilitychange"));
-        });
         await page.clock.runFor(10_000);
         await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "confirmation");
         await expect(page.getByRole("button")).toHaveCount(0);
@@ -144,12 +150,9 @@ if (!("bun" in process.versions)) {
     }
 
     test("leaving during completion cancels advancement and clears the image", async ({ page }) => {
+      await hideAtStage(page, "capture-exit");
       await page.getByRole("button", { name: "Start selfie check" }).click();
       await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-exit");
-      await page.evaluate(() => {
-        Object.defineProperty(document, "hidden", { configurable: true, value: true });
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
       const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
       await page.clock.runFor(10_000);
