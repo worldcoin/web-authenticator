@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
-import { signedRequest, encryptedRequest } from "../fixtures/request";
+import { signedRequest, encryptedRequest, openSelfieRequest } from "../fixtures/request";
 
 if (!("bun" in process.versions)) {
   test("root is an authenticator, with no implicit RP or network registration", async ({ page }, info) => {
@@ -91,7 +91,7 @@ if (!("bun" in process.versions)) {
     for (const reducedMotion of ["no-preference", "reduce"] as const) {
       test(`pauses hidden stages, clears the face, and finishes once (${reducedMotion})`, async ({ page }) => {
         await page.emulateMedia({ reducedMotion });
-        const footerPosition = await page.getByRole("switch", { name: "Dev mode" }).boundingBox();
+        const footerPosition = await page.getByRole("button", { name: "Cookie settings" }).boundingBox();
         await page.getByRole("button", { name: "Start selfie check" }).click();
         if (reducedMotion === "no-preference") {
           await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-exit");
@@ -133,7 +133,7 @@ if (!("bun" in process.versions)) {
         });
         await page.clock.runFor(2000);
         await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
-        expect(await page.getByRole("switch", { name: "Dev mode" }).boundingBox()).toEqual(footerPosition);
+        expect(await page.getByRole("button", { name: "Cookie settings" }).boundingBox()).toEqual(footerPosition);
         await page.getByRole("button", { name: "Not now" }).click();
         await page.clock.runFor(10_000);
         await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
@@ -162,70 +162,29 @@ if (!("bun" in process.versions)) {
     });
   });
 
-  test("shared chrome keeps the developer switch in place across screens", async ({ page }, info) => {
+  test("shared chrome stays in place across public screens without developer controls", async ({ page }, info) => {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-      const toggle = page.getByRole("switch", { name: "Dev mode" });
-      const position = await toggle.boundingBox();
+      const privacy = page.getByRole("link", { name: "Privacy", exact: true });
+      const position = await privacy.boundingBox();
       expect(position).not.toBeNull();
       expect(position!.y).toBeGreaterThan(viewport.height - 100);
-      expect(position!.x).toBeGreaterThan(viewport.width - 160);
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      expect(await toggle.boundingBox()).toEqual(position);
-      await toggle.focus();
-      await toggle.press("Space");
-      await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
-      expect(await toggle.boundingBox()).toEqual(position);
-      await expect(toggle).toBeFocused();
-      await expect(page.getByRole("banner")).toHaveCount(1);
-      await expect(page.getByRole("contentinfo")).toHaveCount(1);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-global-dev-${viewport.width}.png`, fullPage: true });
-      await toggle.click();
-      expect(await toggle.boundingBox()).toEqual(position);
+      expect(await privacy.boundingBox()).toEqual(position);
+      await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
+      await expect(page.locator("#developer-panel")).toHaveCount(0);
       await page.getByRole("button", { name: "Go to authenticator" }).click();
       await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-      expect(await toggle.boundingBox()).toEqual(position);
+      expect(await privacy.boundingBox()).toEqual(position);
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
       await page.getByRole("button", { name: "Cookie settings" }).click();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      expect(await toggle.boundingBox()).toEqual(position);
-      await toggle.click();
-      expect(await toggle.boundingBox()).toEqual(position);
+      expect(await privacy.boundingBox()).toEqual(position);
       await expect(page.getByRole("banner")).toHaveCount(1);
       await expect(page.getByRole("contentinfo")).toHaveCount(1);
     }
-  });
-
-  test("dev tools are opt-in, responsive and accessible without opening a wallet", async ({ page }, info) => {
-    await page.addInitScript({ content: axe.source });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    const toggle = page.getByRole("switch", { name: "Dev mode" });
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
-    await expect(page.getByRole("complementary")).toHaveCount(0);
-    await toggle.click();
-    await expect(page.getByRole("heading", { name: "Developer tools" })).toBeVisible();
-    await expect(page.getByText("Unlock your wallet to inspect its credentials.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Issue Faux credential" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Issue staging Selfie credential" })).toHaveCount(0);
-    expect(new URL(page.url()).pathname).toBe("/");
-    for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
-      await page.setViewportSize(viewport);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-dev-${viewport.width}.png`, fullPage: true });
-    }
-    const violations = await page.evaluate(async () => {
-      const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
-      return (await runtime.run()).violations;
-    });
-    expect(violations).toEqual([]);
-    await toggle.click();
-    await expect(page.getByRole("complementary")).toHaveCount(0);
-    expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
-    await page.reload();
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
   test("landing authenticator entry never starts camera or creates a passkey", async ({ page }) => {
@@ -372,19 +331,19 @@ if (!("bun" in process.versions)) {
       if (new URL(route.request().url()).pathname === "/create-account") registrations++;
       await route.fulfill({ status: 503, body: "test dependency unavailable", headers: { "access-control-allow-origin": "*" } });
     });
-    await page.goto("http://localhost:4194/");
-    await page.getByRole("switch", { name: "Dev mode" }).click();
-    await page.getByRole("button", { name: "Continue with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("No automatic resubmission", { timeout: 90_000 });
+    await installCamera(page);
+    await openSelfieRequest(page, "", "http://localhost:4194");
+    await page.getByRole("button", { name: "Save with passkey" }).click();
+    await expect(page.getByRole("alert")).toContainText("Setup didn’t finish", { timeout: 90_000 });
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
     expect(Object.values(saved)).toContain("submitting");
     const before = registrations;
     expect(before).toBe(1);
-    await page.reload();
-    await page.getByRole("switch", { name: "Dev mode" }).click();
+    await page.goto("http://localhost:4194/");
+    await page.getByRole("button", { name: "Go to authenticator" }).click();
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("No automatic resubmission", { timeout: 90_000 });
+    await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });

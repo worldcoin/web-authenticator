@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Home } from "./components/Home";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
@@ -17,7 +17,7 @@ const COMPLETION_STEPS = {
   "confirmation-exit": { duration: 250, next: "save", motion: true },
 } as const;
 
-/** A public visit holds only a temporary capture; wallet management belongs to Dev mode. */
+/** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
 export function PublicRequestFlow({ incoming, requested, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
   incoming: IncomingRequest | null;
   requested: boolean;
@@ -43,7 +43,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   }, []);
 
   const automatic = flow.stage in COMPLETION_STEPS;
-  useEffect(() => {
+  useLayoutEffect(() => {
     onTransitionChange(automatic);
     return () => onTransitionChange(false);
   }, [automatic, onTransitionChange]);

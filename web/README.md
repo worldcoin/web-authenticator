@@ -10,8 +10,7 @@ Open `/verify?i=REQUEST_ID&k=URL_ENCODED_KEY`. `/verify` serves the app directly
 key. The optional `b` parameter selects the official production or staging bridge.
 Requests currently must target staging.
 
-The browser fetches and decrypts the request and checks its RP signature. Outside
-Dev mode, only Selfie requests (schema 11 in every requirement) can start the
+The browser fetches and decrypts the request and checks its RP signature. Only Selfie requests (schema 11 in every requirement) can start the
 temporary camera flow. Mixed requests, user-presence requirements and identity
 attributes remain unsupported. Direct visits show the landing page, whose
 **Go to authenticator** button opens a saved-authenticator access screen. The user
@@ -33,14 +32,9 @@ uses the existing passkey setup and immediately closes the wallet. Both outcomes
 are terminal. Interrupted setup may retain a passkey profile for recovery.
 The RP continues waiting until expiry; cancellation attempts to notify it and
 reports failures. Real camera enrollment remains disconnected.
-Dev mode replaces the public screen in place, without changing the URL. Its
-single workspace contains passkey access, the credential vault, request proof
-tools, and optional camera diagnostics. Turning it off aborts operations and
-locks the developer wallet. Synthetic credential issuers are not part of this app.
 
 The app removes the key from the address bar; reloading loses the in-memory
 request and does not reopen a camera or wallet. Start a fresh request at the RP.
 
 Return navigation uses `return_to_url` from the encrypted request. A `return_to`
-query parameter alone does not enable a return link. The Dev-mode proof flow
-delivers through the bridge even when no payload callback is provided.
+query parameter alone does not enable a return link.

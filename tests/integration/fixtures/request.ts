@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { keccak256, stringToHex, hexToBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Payload } from "../../../web/lib/proof-request";
@@ -33,4 +34,15 @@ export async function encryptedRequest(payload: Payload) {
     query: `?i=${bridgeId}&k=${encodeURIComponent(Buffer.from(raw).toString("base64"))}&b=https%3A%2F%2Fstaging-bridge.worldcoin.org`,
     body: { iv: Buffer.from(iv).toString("base64"), payload: Buffer.from(encrypted).toString("base64") },
   };
+}
+
+/** A verified, encrypted app request, with all bridge traffic confined to fixtures. */
+export async function openSelfieRequest(page: Page, query = "", origin = "") {
+  const { payload, registry } = await signedRequest(11);
+  const encrypted = await encryptedRequest(payload);
+  await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
+  await page.route("https://staging-bridge.worldcoin.org/response/*", route => route.fulfill({ json: {}, headers: { "access-control-allow-origin": "*" } }));
+  await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+  await page.goto(origin + "/verify" + encrypted.query + (query ? "&" + query.replace(/^\?/, "") : ""));
+  await page.getByRole("button", { name: "Start selfie check" }).click();
 }

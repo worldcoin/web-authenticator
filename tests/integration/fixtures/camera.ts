@@ -35,16 +35,24 @@ export async function installCamera(page: Page) {
         return stream;
       } } });
       // Exercise capture/lifecycle behavior without claiming ML acceptance.
-      if (!params.has("real-worker")) Object.assign(window, { Worker: class {
-        onmessage?: (event: { data: unknown }) => void;
-        postMessage(data: { type: string; id: number; bitmap?: ImageBitmap }) {
-          data.bitmap?.close();
-          setTimeout(() => this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
-            type: "result", id: data.id, width: 640, height: 480, timings: "synthetic",
-            faces: state.aligned ? [{ box: [0.3, 0.2, 0.7, 0.8], landmarks: [], score: 0.99 }] : [],
-          } }), 0);
+      const NativeWorker = window.Worker;
+      if (!params.has("real-worker")) {
+        class CameraWorker {
+          onmessage?: (event: { data: unknown }) => void;
+          postMessage(data: { type: string; id: number; bitmap?: ImageBitmap }) {
+            data.bitmap?.close();
+            setTimeout(() => this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
+              type: "result", id: data.id, width: 640, height: 480, timings: "synthetic",
+              faces: state.aligned ? [{ box: [0.3, 0.2, 0.7, 0.8], landmarks: [], score: 0.99 }] : [],
+            } }), 0);
+          }
+          terminate() { this.onmessage = undefined; }
         }
-        terminate() { this.onmessage = undefined; }
-      } });
+        Object.assign(window, { Worker: new Proxy(NativeWorker, {
+          construct(target, args) {
+            return String(args[0]).includes("rgbnet.worker") ? new CameraWorker() : Reflect.construct(target, args);
+          },
+        }) });
+      }
     });
 }
