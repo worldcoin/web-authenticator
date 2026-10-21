@@ -50,9 +50,9 @@ if (!("bun" in process.versions)) {
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
-    const captureCompleted = page.evaluate(() => new Promise(resolve => {
+    const captureBorder = page.evaluate(() => new Promise(resolve => {
       const observer = new MutationObserver(() => {
-        if (document.querySelector('.completion-sequence')?.getAttribute("data-stage") !== "capture-complete") return;
+        if (document.querySelector('.completion-sequence')?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
           goldDots: document.querySelectorAll('.selfie-design-ring circle[data-filled="true"]').length,
@@ -60,6 +60,7 @@ if (!("bun" in process.versions)) {
           checkmark: !!document.querySelector('.selfie-complete'),
           live: !!document.querySelector('video')?.srcObject,
           title: document.querySelector('.selfie-guidance h2')?.textContent,
+          animationDuration: getComputedStyle(document.querySelector('.selfie-completion-border')!).animationDuration,
         });
       });
       observer.observe(document.body, { attributes: true, childList: true, subtree: true });
@@ -71,7 +72,7 @@ if (!("bun" in process.versions)) {
     expect(await goldDots.count()).toBeLessThan(64);
     await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureCompleted).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed" });
+    expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
@@ -115,17 +116,14 @@ if (!("bun" in process.versions)) {
         await expect(page.getByRole("heading", { name: "Selfie completed" })).toBeVisible();
         await expect(page.locator(".selfie-camera-stage")).toHaveCSS("opacity", "1");
         await expect(page.locator(".selfie-camera-stage")).toHaveCSS("transform", "none");
-        await expect(page.locator(".selfie-success-fill")).toHaveCSS("background-color", "rgb(40, 168, 107)");
-        if (reducedMotion === "reduce") {
-          await expect(page.locator(".selfie-success-fill")).toHaveCSS("animation-name", "none");
-          await expect(page.locator(".selfie-success-fill")).toHaveCSS("opacity", "1");
-        } else {
-          await expect(page.locator(".selfie-success-fill")).toHaveCSS("animation-duration", "0.4s");
-          // Inspect the final green frame while the stage clock remains paused.
-          await page.locator(".selfie-success-fill").evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
-          await expect(page.locator(".selfie-success-fill")).toHaveCSS("opacity", "1");
-          await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-green-completion.png`, fullPage: true });
-        }
+        const border = page.locator(".selfie-completion-border");
+        await expect(page.locator(".selfie-success-fill")).toHaveCount(0);
+        await expect(border).toHaveCSS("fill", "none");
+        await expect(border).toHaveCSS("stroke", "rgb(40, 168, 107)");
+        await expect(border).toHaveCSS("stroke-dasharray", "1px, 0px");
+        await expect(page.locator(".selfie-design-ring circle").first()).toBeHidden();
+        await expect(border).toHaveCSS("animation-name", "none");
+        await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-green-completion.png`, fullPage: true });
         expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);
         await expect(page.getByRole("button")).toHaveCount(0);
         await hideAtStage(page, "confirmation");
@@ -133,7 +131,7 @@ if (!("bun" in process.versions)) {
           Object.defineProperty(document, "hidden", { configurable: true, value: false });
           document.dispatchEvent(new Event("visibilitychange"));
         });
-        await page.clock.runFor(850);
+        await page.clock.runFor(550);
         await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
         await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
         expect(await page.evaluate(async url => {

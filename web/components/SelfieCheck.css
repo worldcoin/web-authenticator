@@ -79,10 +79,14 @@
   .public-request-flow .selfie-content { padding-top: 32px; }
 }
 
-/* Complete in the same aperture, then cut to the sigil without moving the frame. */
-.selfie-success-fill { position: absolute; inset: 0; background: #28a86b; opacity: 0; pointer-events: none; }
-.selfie-check[data-transitioning="true"] .selfie-success-fill { opacity: 1; }
+/* Stretch the existing dots along their contour until they join into a green border. */
+.selfie-completion-border { display: none; fill: none; stroke: #28a86b; stroke-width: 5.89732; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 0; stroke-dashoffset: .5; }
+.selfie-check[data-transitioning="true"] .selfie-design-ring circle { visibility: hidden; }
+.selfie-check[data-transitioning="true"] .selfie-completion-border { display: block; }
 @media (prefers-reduced-motion: no-preference) {
-  .selfie-check[data-transitioning="true"] .selfie-success-fill { animation: selfie-fill-success 400ms ease-in-out both; }
+  .completion-sequence[data-stage="capture-border"] .selfie-completion-border { animation: selfie-border-complete 300ms ease-in-out both; }
 }
-@keyframes selfie-fill-success { from { opacity: 0; } to { opacity: 1; } }
+@keyframes selfie-border-complete {
+  from { stroke: #d4af37; stroke-dasharray: 0 1; stroke-dashoffset: 0; }
+  to { stroke: #28a86b; stroke-dasharray: 1 0; stroke-dashoffset: .5; }
+}

@@ -32,9 +32,14 @@ const DOTS = Array.from({ length: DOT_COUNT }, (_, index) => {
   return { x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction };
 });
 
+// The completion stroke follows the same contour as the dots.
+const BORDER_PATH = samples.filter((_, index) => index % 4 === 0)
+  .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(3)} ${point.y.toFixed(3)}`).join(" ") + " Z";
+
 export function CaptureProgressRing({ progress }: { progress: number }) {
   const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOT_COUNT);
   return <svg className="selfie-design-ring" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fill="none" aria-hidden="true">
     {DOTS.map(({ x, y }, index) => <circle key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
+    <path className="selfie-completion-border" d={BORDER_PATH} pathLength={DOT_COUNT} />
   </svg>;
 }
