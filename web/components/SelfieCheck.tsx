@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import "./SelfieCheck.css";
 import { CaptureProgressRing } from "./CaptureProgressRing";
+import { SelfieIndicator } from "./SelfieIndicators";
 
 /** Local capture only. Completion does not issue a credential or satisfy an RP request. */
 export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostics = false }: {
@@ -108,7 +109,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         </div>
         <svg className="selfie-camera-ring" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="selfie-ring-track" cx="140" cy="175" rx="133" ry="168" /><path className="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
         <CaptureProgressRing progress={state.progress} />
-        <div className="selfie-feedback" role="status" aria-live="polite" aria-atomic="true"><div className="selfie-guidance"><h2>{state.title}</h2></div><p className="selfie-hint">{state.hint}</p></div>
+        <SelfieIndicator title={state.title} hint={state.hint} />
       </div>
       {(!transitioning && (complete || state.phase === "error")) && <div className="selfie-actions">
         <button className="selfie-retry" type="button" onClick={restart}>{complete ? "Retake selfie" : "Try again"}</button>

@@ -29,6 +29,8 @@
 .selfie-guidance { position: absolute; top: 22%; left: 50%; width: max-content; max-width: calc(100% - 48px); padding: 7px 10px; border-radius: 12px; color: #fff; background: rgb(0 0 0 / 68%); transform: translateX(-50%); }
 .selfie-guidance h2 { margin: 0; font-size: 15px; font-weight: 400; }
 .selfie-hint { position: absolute; top: calc(100% + 24px); left: 50%; width: min(330px, calc(100% + 30px)); margin: 0; color: var(--foreground-secondary); font-size: 15px; line-height: 1.45; transform: translateX(-50%); }
+.selfie-turn-indicator { position: absolute; top: calc(50% - 16px); left: 12px; width: 32px; height: 32px; padding: 4px; border-radius: 50%; color: #fff; background: rgb(24 24 24 / 68%); pointer-events: none; }
+.selfie-turn-indicator[data-direction="right"] { right: 12px; left: auto; transform: scaleX(-1); }
 
 /* States set on the root by SelfieCheck.tsx. */
 .selfie-check[data-camera-ready="true"] video { opacity: 1; }
