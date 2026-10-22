@@ -1,0 +1,68 @@
+.challenge-preview { --ink: #1f1f1f; display: grid; grid-template-columns: minmax(280px, 400px) 393px; justify-content: center; align-items: start; gap: 80px; min-height: 100dvh; padding: 48px 32px; }
+.challenge-review { padding-top: 40px; }
+.challenge-eyebrow { margin: 0 0 24px; color: #6c716f; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.challenge-review h1 { margin: 0; font-size: 42px; font-weight: 400; line-height: 1.1; letter-spacing: -1.5px; }
+.challenge-review-copy { max-width: 330px; margin: 24px 0; color: #676b69; font-size: 16px; line-height: 1.6; }
+.challenge-draft-note { padding: 16px 18px; border-left: 2px solid #c3b072; color: #645b40; background: #f1eee4; font-size: 13px; line-height: 1.6; }
+.challenge-review-actions .signin-primary { width: 100%; max-width: 330px; margin: 8px 0 24px; }
+.challenge-scenes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.challenge-scenes button { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; color: #626965; background: transparent; font-size: 12px; text-align: left; }
+.challenge-scenes button:hover { background: #eeefeb; }
+.challenge-scenes button[aria-current] { border-color: #d4dbd5; color: #243b2a; background: #e8eee8; }
+.challenge-scene-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: #aeb8af; }
+.challenge-scenes button[aria-current] .challenge-scene-dot { background: #436c4a; }
+.challenge-review-footnote { max-width: 330px; margin-top: 24px; color: #646b60; font-size: 12px; line-height: 1.6; }
+.challenge-device { display: flex; flex-direction: column; width: 393px; min-height: 820px; overflow: hidden; border: 1px solid #e5e7e0; border-radius: 28px; background: #fff; box-shadow: 0 20px 80px #26312608; }
+.challenge-brand { display: flex; justify-content: space-between; padding: 24px; color: #60655f; font-size: 12px; }
+.challenge-brand span { color: #656e5f; }
+.challenge-screen { display: flex; flex: 1; flex-direction: column; }
+.challenge-topline { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; }
+.challenge-topline p { margin: 0; font-size: 15px; }
+.challenge-close { width: 44px; border: 0; border-radius: 50%; color: #343a33; background: transparent; font-size: 26px; font-weight: 300; }
+.challenge-close:hover { background: #f3f5f0; }
+.challenge-topline-spacer { width: 44px; }
+.challenge-stage { padding-top: 24px; text-align: center; }
+.challenge-step { min-height: 20px; margin: 0 0 10px; color: #656e5f; font-size: 12px; }
+.challenge-visual { position: relative; width: 304px; height: 360px; margin: auto; }
+.challenge-oval { position: absolute; inset: 0; width: 100%; height: 100%; }
+.challenge-oval-track { stroke: #f0f2eb; stroke-width: 1; }
+.challenge-oval-dots { stroke: #d7ddcd; stroke-width: 3; stroke-dasharray: .01 .99; stroke-linecap: round; }
+.challenge-target { opacity: 0; stroke: #6e8a4b; stroke-width: 4; stroke-linecap: round; }
+.challenge-direction { opacity: 0; stroke: #4e6c37; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+[data-direction="left"] .challenge-target--left, [data-direction="left"] .challenge-direction--left,
+[data-direction="right"] .challenge-target--right, [data-direction="right"] .challenge-direction--right { opacity: 1; }
+.challenge-face-field { position: absolute; inset: 38px 45px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: radial-gradient(ellipse at 45% 20%, #f4f4e9, #e7eddf 75%); }
+.challenge-face { width: 180px; height: 240px; margin-top: 40px; stroke: #86967c; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.challenge-shoulders { fill: #dce5d2; }
+.challenge-head-fill { fill: #eef1e4; }
+.challenge-head { transform-box: fill-box; transform-origin: center; transition: transform 600ms ease; }
+[data-direction="left"] .challenge-head { transform: perspective(200px) rotateY(-35deg) translateX(-8px); }
+[data-direction="right"] .challenge-head { transform: perspective(200px) rotateY(35deg) translateX(8px); }
+.challenge-measuring { position: absolute; bottom: 4px; left: calc(50% - 3px); width: 6px; height: 6px; border-radius: 50%; background: #788c5a; animation: challenge-pulse 1.2s ease-in-out infinite; }
+.challenge-guidance { max-width: 310px; margin: 22px auto 0; padding: 0 12px; }
+.challenge-guidance h2 { margin: 0; font-size: 25px; font-weight: 400; line-height: 1.15; letter-spacing: -.5px; }
+.challenge-guidance p { max-width: 270px; min-height: 44px; margin: 14px auto 0; color: #656e5f; font-size: 15px; line-height: 1.5; }
+.challenge-camera-note { margin: auto 0 0; padding: 36px 20px 24px; color: #656e5f; font-size: 11px; text-align: center; }
+.challenge-device-footer { display: flex; justify-content: space-between; padding: 20px 24px; color: #656e5f; background: #f6f7f1; font-size: 11px; }
+.challenge-result-icon { width: 110px; stroke: #718656; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+[data-screen="complete"] .challenge-oval-dots { stroke: #78945b; }
+[data-screen="faceLost"] .challenge-oval-dots,
+[data-screen="inconclusive"] .challenge-oval-dots,
+[data-screen="expired"] .challenge-oval-dots,
+[data-screen="failed"] .challenge-oval-dots { stroke: #b3a67e; }
+.challenge-retry { width: calc(100% - 64px); margin: 20px 32px 0; }
+@keyframes challenge-pulse { 50% { opacity: .25; } }
+@media (max-width: 850px) {
+  .challenge-preview { grid-template-columns: minmax(0, 393px); gap: 32px; padding: 24px 16px; }
+  .challenge-review { padding: 0; }
+  .challenge-review h1 { font-size: 34px; }
+  .challenge-review-copy { margin: 16px 0; }
+  .challenge-scenes { grid-template-columns: repeat(3, 1fr); }
+  .challenge-scenes button { padding-inline: 6px; font-size: 11px; }
+  .challenge-device { width: 100%; min-height: 780px; border-radius: 20px; }
+  .challenge-visual { width: min(304px, 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .challenge-head { transition: none; }
+  .challenge-measuring { animation: none; }
+}
