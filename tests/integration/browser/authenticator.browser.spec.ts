@@ -91,6 +91,31 @@ if (!("bun" in process.versions)) {
     expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   });
 
+  test("cookie settings preserves capture and the completed connector request", async ({ page }) => {
+    await installCamera(page);
+    await openSelfieRequest(page, "&unaligned");
+    await expect(page.locator(".selfie-check")).toHaveAttribute("data-camera-ready", "true");
+    const cameraState = () => page.evaluate(() => {
+      const { requested, stopped } = (window as typeof window & { cameraTest: { requested: number; stopped: number } }).cameraTest;
+      return { requested, stopped };
+    });
+    const before = await cameraState();
+    await page.getByRole("button", { name: "Cookie settings" }).click();
+    await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Selfie capture" })).toBeHidden();
+    expect(await cameraState()).toEqual(before);
+    await page.getByRole("button", { name: "Decline" }).click();
+    await expect(page.getByRole("region", { name: "Selfie capture" })).toBeVisible();
+    expect(await cameraState()).toEqual(before);
+    await page.evaluate(() => { (window as typeof window & { cameraTest: { aligned: boolean } }).cameraTest.aligned = true; });
+    await page.getByRole("button", { name: "Not now" }).click();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    await page.getByRole("button", { name: "Cookie settings" }).click();
+    await page.getByRole("button", { name: "Decline" }).click();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toHaveCount(0);
+  });
+
   test.describe("automatic completion lifecycle", () => {
     test.beforeEach(async ({ page }) => {
       await installCamera(page);

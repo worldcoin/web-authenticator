@@ -131,6 +131,83 @@ test("an unreachable consent endpoint asks again rather than assuming a choice",
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
 });
 
+test("cookie settings keeps the same capture attempt mounted", async () => {
+  const f = await fixture(11);
+  const captureMock = spyOn(capture, "captureSelfie").mockImplementation((_video, signal, update) => {
+    update({ phase: "holding", title: "Hold still", hint: "", progress: 0.5, cameraReady: true });
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    const preview = await view.findByRole("region", { name: "Selfie capture" });
+    await view.findByRole("heading", { name: "Hold still" });
+    const signal = captureMock.mock.calls[0]![1];
+    fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+    expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(signal.aborted).toBe(false);
+    fireEvent.click(view.getByRole("button", { name: "Decline" }));
+    expect(await view.findByRole("region", { name: "Selfie capture" })).toBe(preview);
+    expect(view.getByRole("heading", { name: "Hold still" })).toBeTruthy();
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  } finally { captureMock.mockRestore(); }
+});
+
+test("cookie settings preserves pending passkey saving and its completed request", async () => {
+  const f = await fixture(11);
+  f.incoming.returnUrl = "https://rp.example/done";
+  window.history.replaceState(null, "", "/verify?i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
+  let saveSignal!: AbortSignal;
+  let finishSave!: (wallet: WalletKit) => void;
+  const services = { ...f.services, open: (signal: AbortSignal) => {
+    saveSignal = signal;
+    return new Promise<WalletKit>(resolve => { finishSave = resolve; });
+  } };
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    image: new Blob(["test"], { type: "image/jpeg" }),
+    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    fireEvent.click(await view.findByRole("button", { name: "Save with passkey" }, { timeout: 4000 }));
+    fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+    expect(saveSignal.aborted).toBe(false);
+    finishSave(f.wallet);
+    fireEvent.click(await view.findByRole("button", { name: "Accept" }));
+    expect(await view.findByRole("heading", { name: "Authenticator saved" })).toBeTruthy();
+    expect(f.calls.terminated).toBe(1);
+    fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+    fireEvent.click(await view.findByRole("button", { name: "Decline" }));
+    expect(await view.findByRole("heading", { name: "Authenticator saved" })).toBeTruthy();
+    expect(view.getByRole("link", { name: "Return to the app" }).getAttribute("href")).toBe("https://rp.example/done");
+    expect(view.queryByRole("heading", { name: "This request can’t be verified" })).toBeNull();
+  } finally { captureMock.mockRestore(); }
+});
+
+test("cookie settings preserves cancellation delivery and its failure message", async () => {
+  const f = await fixture(11);
+  window.history.replaceState(null, "", "/verify?i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
+  let cancelSignal!: AbortSignal;
+  let failCancel!: (error: Error) => void;
+  f.incoming.cancel = signal => {
+    cancelSignal = signal;
+    return new Promise((_resolve, reject) => { failCancel = reject; });
+  };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Cancel request" }));
+  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+  expect(cancelSignal.aborted).toBe(false);
+  failCancel(new Error("offline"));
+  fireEvent.click(await view.findByRole("button", { name: "Decline" }));
+  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+  expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
+});
+
 test("public Selfie capture finishes ephemerally without opening a wallet or sending a proof", async () => {
   const f = await fixture(11);
   let opened = 0;
