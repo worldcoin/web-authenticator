@@ -38,6 +38,9 @@ const record = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value)
 const hex = (value: unknown, size: number): value is Hex =>
 	typeof value === 'string' && new RegExp(`^0x[0-9a-fA-F]{${size * 2}}$`).test(value)
+/** The request is past its signed expiry, or the bridge no longer holds it. */
+export class RequestExpiredError extends Error {}
+
 export function checkExpiry(request: ProofRequest) {
 	const now = Math.floor(Date.now() / 1000)
 	if (
@@ -46,7 +49,7 @@ export function checkExpiry(request: ProofRequest) {
 		request.expires_at <= request.created_at ||
 		request.expires_at - request.created_at > 86400
 	)
-		throw new Error('The request is expired or its timestamp is invalid. Start a new request at the relying party.')
+		throw new RequestExpiredError('The request is expired or its timestamp is invalid. Start a new request at the relying party.')
 }
 export function parsePayload(json: string): Payload {
 	if (json.length > 131072) throw new Error('Request payload is too large.')

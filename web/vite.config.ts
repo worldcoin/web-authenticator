@@ -37,6 +37,8 @@ export default defineConfig({
   plugins: [rejectServerModulesFromBrowser(), react()],
   publicDir: "public",
   worker: { format: "es", plugins: () => [rejectServerModulesFromBrowser()] },
+  // Discover ONNX before entering capture so Vite cannot reload an active camera attempt.
+  optimizeDeps: { include: ["onnxruntime-web/wasm"] },
   server: {
     host: "127.0.0.1",
     port: 4173,

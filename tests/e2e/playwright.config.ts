@@ -12,6 +12,9 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: resolve(repositoryRoot, "playwright-report"), open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:4194",
+    // Global Privacy Control reads as a declined analytics choice, so flows other than the
+    // consent tests start past the first-visit consent screen.
+    extraHTTPHeaders: { "Sec-GPC": "1" },
     trace: "off",
     video: "off",
     screenshot: "only-on-failure",

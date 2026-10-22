@@ -1,4 +1,5 @@
 import { decodeBase64, type Connector } from './connector'
+import { RequestExpiredError } from './proof-request'
 
 function encode(bytes: Uint8Array<ArrayBuffer>): string {
 	let raw = ''
@@ -42,12 +43,9 @@ export async function openBridge(connector: Connector, signal: AbortSignal) {
 		cache: 'no-store',
 		redirect: 'error',
 	})
-	if (!response.ok)
-		throw new Error(
-			response.status === 404
-				? 'This request expired or was already consumed. Start a new request on the relying-party site.'
-				: `Bridge request fetch failed (HTTP ${response.status}).`
-		)
+	if (response.status === 404)
+		throw new RequestExpiredError('This request expired or was already consumed. Start a new request on the relying-party site.')
+	if (!response.ok) throw new Error(`Bridge request fetch failed (HTTP ${response.status}).`)
 	const wrapper = JSON.parse(await readBounded(response)) as { iv?: unknown; payload?: unknown }
 	const iv = decodeBase64(wrapper.iv, 12)
 	const encrypted = decodeBase64(wrapper.payload, 196608)

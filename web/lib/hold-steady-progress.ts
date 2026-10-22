@@ -1,4 +1,4 @@
-export const CAPTURE_HOLD_DURATION_MS_V1 = 2_400;
+export const CAPTURE_HOLD_DURATION_MS_V1 = 1_200;
 export const CAPTURE_HOLD_DOT_COUNT_V1 = 64;
 export const CAPTURE_COMPLETE_ACK_MS_V1 = 450;
 
