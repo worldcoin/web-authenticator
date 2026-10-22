@@ -45,7 +45,7 @@
     "web": {
       "name": "@web-authenticator/web",
       "dependencies": {
-        "@worldcoin/walletkit-web": "0.27.1",
+        "@worldcoin/walletkit-web": "file:../../walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1.tgz",
         "onnxruntime-web": "1.30.0",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -256,7 +256,7 @@
 
     "@world-id/web-authenticator-contracts": ["@world-id/web-authenticator-contracts@workspace:packages/contracts"],
 
-    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@0.27.1", "", {}, "sha512-8zcJ8a+YkZJYqSsBA/5I336E0t7kyIZppk2XZuAqkx6ixMYQPFznoNJRhY9gTfMEtI/jSCHWeP5cgdlPtyK2SA=="],
+    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@../../walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1.tgz", {}, "sha512-wDShvhTmsHzy6Hz/38BtCa7KcVbx5w7O3c0H6aCk3maniGbMreRE4xM4z5wcXccGKPR0Q3aWN0QGzukhn/e+ow=="],
 
     "abitype": ["abitype@1.2.3", "", { "peerDependencies": { "typescript": ">=5.0.4", "zod": "^3.22.0 || ^4.0.0" }, "optionalPeers": ["typescript", "zod"] }, "sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg=="],
 

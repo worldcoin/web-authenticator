@@ -7,7 +7,7 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * confirmed. Expired, invalid and unsupported requests end here: there is no
  * way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false }: {
+export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false, submitsSelfie = false }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
@@ -17,6 +17,7 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
   onStart: () => void;
   onCancel: () => void;
   selfieOnly?: boolean;
+  submitsSelfie?: boolean;
 }) {
   const open = state === "verifying" || state === "ready";
   const title = state === "expired" ? "This request has expired"
@@ -31,7 +32,9 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
         {open && selfieOnly ? <>
           <h1>Complete a Selfie Check</h1>
           <p>{state === "ready" ? `${rp} is requesting a Selfie Check.` : "Checking the app’s request…"}</p>
-          <p className="request-preview-note">Use your camera to capture a selfie. This preview does not submit a verification.</p>
+          <p className="request-preview-note">{submitsSelfie
+            ? "Use your camera to capture a selfie. A verified secure enclave checks it. This preview does not issue a credential."
+            : "Use your camera to capture a selfie. This preview does not submit a verification."}</p>
         </> : open ? <h1>
           {state === "ready"
             ? rp

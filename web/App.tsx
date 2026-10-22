@@ -5,9 +5,10 @@ import { consentClient, type ConsentChoice, type ConsentClient, type ConsentStat
 import { openAuthenticator } from "./lib/wallet-session";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
+import { selfieEnrollment } from "./lib/selfie-enrollment";
 import { PublicRequestFlow } from "./PublicRequestFlow";
 
-const defaults = { open: openAuthenticator, load: loadIncomingRequest };
+const defaults = { open: openAuthenticator, load: loadIncomingRequest, enrollment: selfieEnrollment };
 export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +84,6 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     {consentState === null ? null
       : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
       : <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
+        onTransitionChange={setCompletionAnimating} onSave={services.open} enrollment={services.enrollment} onDispose={() => { setIncoming(null); source.current = null; }} />}
   </AppLayout>;
 }

@@ -8,6 +8,7 @@ import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
+import { SelfieRejectedError, type SelfieEmbeddingSummary, type SelfieEnrollmentService } from "../lib/selfie-enrollment";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -33,6 +34,10 @@ async function fixture(schema: number, available = false) {
     load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
+    enrollment: {
+      policy: async (): Promise<string | null> => null,
+      extract: async (): Promise<SelfieEmbeddingSummary> => { throw new Error("Enrollment is switched off in this fixture"); },
+    } as SelfieEnrollmentService,
   };
   return { services, calls, incoming, wallet };
 }
@@ -156,6 +161,75 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
     expect(f.calls.deliver).toHaveLength(0);
     expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
   } finally { captureMock.mockRestore(); }
+});
+
+const POLICY = JSON.stringify({ endpoint: "wss://enclave.test/v1/embeddings", releases: [] });
+const SUMMARY: SelfieEmbeddingSummary = { embeddingType: "ghostfacenet_flipped_mean", embeddingVersion: "2.0.0", embeddingInferenceBackend: "face-engine", encodedLength: 2732 };
+
+test("with enrollment on, completion waits for the enclave to accept the captured image", async () => {
+  const f = await fixture(11);
+  const submitted: { policy: string; size: number }[] = [];
+  let accept!: () => void;
+  f.services.enrollment = {
+    policy: async () => POLICY,
+    extract: async (policy, image) => {
+      submitted.push({ policy, size: image.size });
+      await new Promise<void>(resolve => { accept = resolve; });
+      return SUMMARY;
+    },
+  };
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    image: new Blob(["test"], { type: "image/jpeg" }),
+    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    expect(await view.findByText(/A verified secure enclave checks it/)).toBeTruthy();
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    expect(await view.findByRole("heading", { name: "Checking your selfie" })).toBeTruthy();
+    expect(view.getByText("Your selfie is encrypted for a verified secure enclave.")).toBeTruthy();
+    expect(submitted).toEqual([{ policy: POLICY, size: 4 }]);
+    expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+    accept();
+    expect(await view.findByRole("heading", { name: "Save your authenticator?" }, { timeout: 4000 })).toBeTruthy();
+    expect(f.calls.prove).toBe(0);
+    expect(f.calls.deliver).toHaveLength(0);
+  } finally { captureMock.mockRestore(); }
+});
+
+for (const [name, error, title] of [
+  ["an image rejection", new SelfieRejectedError("quality_rejected"), "Let's try a clearer photo"],
+  ["a transport failure", new Error("wss://enclave.test refused: internal detail"), "We couldn't check your selfie"],
+  ["a timeout", new DOMException("signal timed out", "TimeoutError"), "That took too long"],
+] as const) {
+  test(`${name} from the enclave never completes the check and offers a retry`, async () => {
+    const f = await fixture(11);
+    let attempts = 0;
+    f.services.enrollment = { policy: async () => POLICY, extract: async () => { attempts++; throw error; } };
+    const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+      image: new Blob(["test"], { type: "image/jpeg" }),
+      timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+    });
+    try {
+      const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+      fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+      expect(await view.findByRole("heading", { name: title })).toBeTruthy();
+      expect(view.queryByText(/internal detail/)).toBeNull();
+      expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+      fireEvent.click(view.getByRole("button", { name: "Try again" }));
+      expect(await view.findByRole("heading", { name: title })).toBeTruthy();
+      expect(attempts).toBe(2);
+    } finally { captureMock.mockRestore(); }
+  });
+}
+
+test("an unreachable enrollment policy stops on the intro instead of capturing locally", async () => {
+  const f = await fixture(11);
+  f.services.enrollment = { policy: async () => { throw new Error("502"); }, extract: async () => SUMMARY };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  expect(await view.findByText(/Selfie Check is unavailable right now/)).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
 });
 
 test("public non-Selfie requests stop before capture or wallet access", async () => {

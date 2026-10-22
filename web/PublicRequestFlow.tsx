@@ -6,6 +6,7 @@ import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/inco
 import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
+import type { SelfieEnrollmentService } from "./lib/selfie-enrollment";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 import { Recover } from "./components/Recover";
 
@@ -21,12 +22,13 @@ const COMPLETION_STEPS = {
 } as const;
 
 /** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
-export function PublicRequestFlow({ incoming, recover, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, recover, loading, failed, expired, enrollment, onDispose, onSave, onTransitionChange }: {
   incoming: IncomingRequest | null;
   recover: boolean;
   loading: boolean;
   failed: boolean;
   expired: boolean;
+  enrollment: SelfieEnrollmentService;
   onDispose: () => void;
   onTransitionChange: (active: boolean) => void;
   onSave: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
@@ -38,7 +40,17 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
   const [saveError, setSaveError] = useState<string>();
   const savingController = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
+  // undefined while loading; null when the server has enrollment switched off (local capture only).
+  const [policy, setPolicy] = useState<string | null>();
+  const [policyFailed, setPolicyFailed] = useState(false);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
+  useEffect(() => {
+    if (!incoming) return;
+    const controller = new AbortController();
+    // A configured server that cannot be reached must not fall back to a capture that skips the enclave.
+    enrollment.policy(controller.signal).then(setPolicy, () => { if (!controller.signal.aborted) setPolicyFailed(true); });
+    return () => controller.abort();
+  }, [incoming, enrollment]);
   useEffect(() => {
     const stop = () => { cancelling.current?.abort(); savingController.current?.abort(); };
     window.addEventListener("pagehide", stop);
@@ -93,7 +105,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
     onDispose();
   };
   const start = () => {
-    if (!incoming || loading || failed || expired || unsupported || flow.stage !== "intro") return;
+    if (!incoming || loading || failed || expired || unsupported || policy === undefined || flow.stage !== "intro") return;
     // A suspended tab can click before the expiry timer runs.
     try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     setFlow({ stage: "capture" });
@@ -102,7 +114,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
     if (incoming) {
       try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     }
-    // Local capture supplies the completion signal until real enrollment is connected.
+    // With a policy, SelfieCheck calls this only after the enclave accepted the image. No credential is issued yet.
     setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
     onDispose();
   };
@@ -165,7 +177,8 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
 
   if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
+      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete}
+        enroll={policy ? (image, signal) => enrollment.extract(policy, image, signal) : undefined} />
     </Suspense>
   </div>;
 
@@ -176,11 +189,12 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
   return <div className="public-request-flow">
     <RequestIntro
       selfieOnly
-      state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
+      submitsSelfie={!!policy}
+      state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported || policyFailed ? "unsupported" : "ready"}
       rp={incoming?.label}
-      reason={unsupported}
+      reason={unsupported ?? (policyFailed ? "Selfie Check is unavailable right now. Return to the app and try again later." : undefined)}
       returnUrl={incoming?.returnUrl}
-      busy={false}
+      busy={policy === undefined}
       onStart={start}
       onCancel={() => void cancel()}
     />

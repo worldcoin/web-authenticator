@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
+import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, enrollmentFailure, ENROLLMENT_STATE, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import "./SelfieCheck.css";
 import { CaptureProgressRing } from "./CaptureProgressRing";
 
-/** Local capture only. Completion does not issue a credential or satisfy an RP request. */
-export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostics = false }: {
+/**
+ * Captures one frame. With `enroll`, completion waits for the enclave to accept it; that still
+ * does not issue a credential or satisfy an RP request.
+ */
+export default function SelfieCheck({ onClose, onComplete, enroll, backLabel, diagnostics = false }: {
   onClose: () => void;
   onComplete?: () => void;
+  enroll?: (image: Blob, signal: AbortSignal) => Promise<unknown>;
   backLabel: string;
   diagnostics?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
   const completion = useRef(onComplete);
+  const enrollment = useRef(enroll);
   const publicCompleted = useRef(false);
   const imageUrl = useRef<string | undefined>(undefined);
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
+  useEffect(() => { enrollment.current = enroll; }, [enroll]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
   const [visible, setVisible] = useState(() => !document.hidden);
@@ -68,10 +74,19 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     const timeout = new AbortController();
     const deadline = setTimeout(() => timeout.abort(new DOMException("Capture timed out", "TimeoutError")), CAPTURE_TIMEOUT_MS);
     const signal = AbortSignal.any([active.signal, timeout.signal]);
+    let enrolling = false;
     void captureSelfie(video.current, signal, next => {
       if (!signal.aborted) setState(next);
-    }, { retainPreviewUntilAbort: !!completion.current }).then(result => {
+    }, { retainPreviewUntilAbort: !!completion.current }).then(async result => {
       if (signal.aborted) return;
+      clearTimeout(deadline);
+      if (enrollment.current) {
+        // Hiding or leaving the page aborts `active`, which also stops the enclave request.
+        enrolling = true;
+        setState(ENROLLMENT_STATE);
+        await enrollment.current(result.image, active.signal);
+        if (active.signal.aborted) return;
+      }
       imageUrl.current = URL.createObjectURL(result.image);
       publicCompleted.current = !!completion.current;
       if (!publicCompleted.current) setImage(imageUrl.current);
@@ -81,7 +96,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     }).catch(error => {
       if (active.signal.aborted) return;
       active.abort(); clearImage();
-      setImage(undefined); setState(captureFailure(error));
+      setImage(undefined); setState(enrolling ? enrollmentFailure(error) : captureFailure(error));
     }).finally(() => clearTimeout(deadline));
     return () => {
       clearTimeout(deadline);
@@ -116,8 +131,10 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
       </div>}
     </div>
     <footer className="selfie-footer" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
-      <p className="selfie-privacy"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8.5" width="10" height="8" rx="2" stroke="currentColor" strokeWidth="1.3" /><path d="M7 8.5v-3a3 3 0 0 1 6 0v3M10 12v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Your selfie stays on this device.</p>
-      <details className="selfie-about"><summary>About this check</summary><p>This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
+      <p className="selfie-privacy"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8.5" width="10" height="8" rx="2" stroke="currentColor" strokeWidth="1.3" /><path d="M7 8.5v-3a3 3 0 0 1 6 0v3M10 12v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>{enroll ? "Your selfie is encrypted for a verified secure enclave." : "Your selfie stays on this device."}</p>
+      <details className="selfie-about"><summary>About this check</summary><p>{enroll
+        ? "This preview encrypts your selfie in your browser for a secure enclave, after verifying that enclave's software. The enclave checks the image and returns the result to this page. Your browser does not save the image or the result. This preview does not issue a credential."
+        : "This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave."}</p></details>
     </footer>
     {diagnostics && <details className="selfie-debug"><summary>Capture diagnostics</summary><pre>{timing || "No capture yet."}</pre></details>}
   </section>;

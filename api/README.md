@@ -32,6 +32,23 @@ return JSON 404; everything else falls through to the web build.
   RP registry is not part of readiness: when it fails, only `/api/staging-rp`
   degrades (502).
 
+## Selfie enrollment
+
+`SELFIE_ENROLLMENT_POLICY_FILE` points at the reviewed `client-stage.json` from
+`worldcoin/tee-apps` (`releases/selfie-enrollment/`). It holds the endpoint and the
+trusted PCR0/1/2 values. The server validates it at startup and refuses to start if
+the file is unreadable or invalid. It adds exactly that WebSocket endpoint to the
+CSP `connect-src`. `GET /api/selfie-enrollment` returns `{ "enabled": false }`
+when the variable is unset, or `{ "enabled": true, "policy": … }`. The browser
+treats any other response as an outage, not as "switched off". Unset the
+variable to switch enrollment off. The enclave is not part of readiness, because
+Selfie Check reports its own failures.
+
+```sh
+# Absolute path: `bun run dev` starts the API from api/.
+SELFIE_ENROLLMENT_POLICY_FILE="$PWD/../tee-apps/releases/selfie-enrollment/client-stage.json" bun run dev
+```
+
 ## Consent
 
 `GET /api/consent` returns the analytics choice from the `__Host-wid_consent` cookie
