@@ -22,7 +22,10 @@ credentials”), which is also how a later visit recovers an interrupted setup.
 creates an account.
 
 The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
+verified IDKit response. The capture is the region the oval preview shows, not
+the full camera frame. Framing guidance applies the face engine's VanillaSelfie
+geometry to that region, as World App iOS does: face box between 0.52 and 0.80
+of the image, at least 112 px, and 1.5% inside each edge (`ENGINE_FRAMING_V1`). The oval’s 64 dots fill gold clockwise during a 1.2-second
 continuous hold and reset when alignment is lost. Once captured, the dots stretch
 into a continuous green border over 300 ms while the face stays visible and the
 guidance changes to “Selfie completed.” The completed border holds for 500 ms,
