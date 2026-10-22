@@ -42,6 +42,10 @@ export async function serveStatic(request: Request, staticRoot: string): Promise
   return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
 }
 
+export function serveIndex(staticRoot: string): Promise<Response> {
+  return serveFile("/", staticRoot);
+}
+
 export function webBundleAvailable(staticRoot: string): Promise<boolean> {
   return Bun.file(resolve(staticRoot, "index.html")).exists();
 }

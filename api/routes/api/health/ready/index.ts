@@ -1,11 +1,5 @@
-import type { Handler } from "../lib/http";
-import { webBundleAvailable } from "../lib/static";
-
-// Liveness: the process accepts requests. Never checks dependencies, so a
-// dependency outage cannot trigger restarts.
-export function live(): Response {
-  return Response.json({ status: "ok" });
-}
+import type { Handler } from "../../../../lib/http";
+import { webBundleAvailable } from "../../../../lib/static";
 
 // Readiness: this instance can serve the app. The staging RP registry is
 // deliberately excluded: when it is down only /api/staging-rp degrades (502),

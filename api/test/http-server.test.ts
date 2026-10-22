@@ -17,9 +17,6 @@ const get = (path: string, init?: RequestInit) => fetch(origin + path, { redirec
 const expectSecurityHeaders = (response: Response) => {
   for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) expect(response.headers.get(name)).toBe(value);
 };
-const post = (body: unknown, headerOrigin = origin) => get("/api/selfie-credential", {
-  method: "POST", headers: { origin: headerOrigin, "content-type": "application/json" }, body: JSON.stringify(body),
-});
 test("serves web assets and HEAD responses with security headers", async () => {
   const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-assets-"));
   try {
@@ -41,18 +38,24 @@ test("serves web assets and HEAD responses with security headers", async () => {
     await rm(staticRoot, { recursive: true, force: true });
   }
 });
-test("verify links redirect to root with the original connector query and security headers", async () => {
-  const query = "?i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D&b=https%3A%2F%2Fstaging-bridge.worldcoin.org&return_to=https%3A%2F%2Fexample.com%2Fdone";
-  for (const method of ["GET", "HEAD"]) {
-    for (const search of ["", query]) {
-      const response = await get(`/verify${search}`, { method });
-      expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toBe(`/${search}`);
-      expect(await response.text()).toBe("");
+test("verify links serve the app directly, without a redirect that repeats the bridge key", async () => {
+  const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-verify-"));
+  try {
+    await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
+    const app = start({ staticRoot });
+    const query = "?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D&b=https%3A%2F%2Fstaging-bridge.worldcoin.org";
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${app}/verify${query}`, { method, redirect: "manual" });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(await response.text()).toBe(method === "GET" ? "<h1>Authenticator</h1>" : "");
       expectSecurityHeaders(response);
     }
+    expect((await fetch(`${app}/verify${query}`, { method: "POST" })).status).toBe(405);
+  } finally {
+    await rm(staticRoot, { recursive: true, force: true });
   }
-  expect((await get(`/verify${query}`, { method: "POST" })).status).toBe(405);
 });
 test("embedded demo routes and simulated endpoints are gone", async () => {
   for (const path of ["/demo", "/returned", "/api/v0/bootstrap", "/api/v0/session/create"]) {
@@ -61,8 +64,15 @@ test("embedded demo routes and simulated endpoints are gone", async () => {
 });
 test("synthetic enrollment is absent even for valid localhost requests", async () => {
   const body = { sub: "0x" + "a".repeat(64), token: "b".repeat(64) };
-  expect((await post(body)).status).toBe(404);
-  expect((await post(body, "https://other.example")).status).toBe(404);
+  for (const path of ["/api/faux-credential", "/api/selfie-credential"]) {
+    for (const headerOrigin of [origin, "https://other.example"]) {
+      const response = await get(path, {
+        method: "POST", headers: { origin: headerOrigin, "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "Not found" });
+    }
+  }
   expect((await get("/api/capabilities")).status).toBe(404);
 });
 test("RP lookup rejects malformed identifiers without a remote call", async () => {
@@ -109,4 +119,28 @@ test("all responses include no-referrer/no-store and bounded CSP destinations", 
   expectSecurityHeaders(response);
   expect(response.headers.get("content-security-policy")).toContain("https://staging-bridge.worldcoin.org");
   expect(response.headers.get("content-security-policy")).not.toContain("connect-src *");
+});
+
+test("consent is unset by default, denied under Global Privacy Control, and read from the cookie", async () => {
+  expect(await (await get("/api/consent")).json()).toEqual({ analytics: "unset" });
+  expect(await (await get("/api/consent", { headers: { "sec-gpc": "1" } })).json()).toEqual({ analytics: "denied" });
+  expect(await (await get("/api/consent", { headers: { cookie: "__Host-wid_consent=v1.granted" } })).json()).toEqual({ analytics: "granted" });
+  expect(await (await get("/api/consent", { headers: { cookie: "__Host-wid_consent=v0.granted" } })).json()).toEqual({ analytics: "unset" });
+});
+test("saving consent sets a hardened cookie holding only the versioned choice", async () => {
+  const response = await get("/api/consent", { method: "PUT", headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" }, body: JSON.stringify({ analytics: "granted" }) });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ analytics: "granted" });
+  const cookie = response.headers.get("set-cookie") ?? "";
+  expect(cookie).toStartWith("__Host-wid_consent=v1.granted;");
+  for (const attribute of ["Path=/", "Secure", "HttpOnly", "SameSite=Lax", "Max-Age="]) expect(cookie).toContain(attribute);
+  expectSecurityHeaders(response);
+});
+test("consent cannot be set cross-site or with a malformed body", async () => {
+  const put = (headers: Record<string, string>, body: string) => get("/api/consent", { method: "PUT", headers, body });
+  const json = { "content-type": "application/json" };
+  expect((await put({ ...json, "sec-fetch-site": "cross-site" }, JSON.stringify({ analytics: "granted" }))).status).toBe(403);
+  expect((await put({ "content-type": "text/plain" }, JSON.stringify({ analytics: "granted" }))).status).toBe(403);
+  expect((await put(json, "{")).status).toBe(400);
+  expect((await put(json, JSON.stringify({ analytics: "yes" }))).status).toBe(400);
 });

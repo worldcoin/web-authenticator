@@ -1,43 +1,20 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { CameraPreview } from "../components/CameraPreview";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
-import type { DetectorResponse } from "../lib/rgbnet.worker";
-import { WalletRegistrationError } from "../lib/wallet-errors";
+import { RequestExpiredError } from "../lib/proof-request";
+import type { ConsentClient } from "../lib/consent";
+import * as capture from "../lib/selfie-capture";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
+// Most tests are about other flows: consent is already decided, so the consent screen never renders.
+const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
 afterAll(() => GlobalRegistrator.unregister());
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
 
-test("wallet setup timeout clears progress and offers a retry that preserves the incoming request", async () => {
-  const f = await fixture(1, true);
-  const open = f.services.open;
-  f.services.open = async () => { throw new WalletRegistrationError("Registration may still finish. Retry to check the account.", true); };
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByRole("heading", { name: "Wallet setup timed out" })).toBeTruthy();
-  expect(view.queryByRole("status")).toBeNull();
-  expect(view.getByText("Registration may still finish. Retry to check the account.")).toBeTruthy();
-  expect(view.getByRole("link", { name: "Open authenticator" }).getAttribute("href")).toBe("/");
-  f.services.open = open;
-  fireEvent.click(view.getByRole("button", { name: "Retry wallet setup" }));
-  await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(view.queryByRole("alert")).toBeNull();
-  expect(f.calls.prove).toBe(0);
-});
-
-test("definitive wallet setup failure offers retry", async () => {
-  const f = await fixture(1);
-  f.services.open = async () => { throw new WalletRegistrationError("Registration failed. Retry registration.", false); };
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByRole("heading", { name: "Wallet setup interrupted" })).toBeTruthy();
-  expect((view.getByRole("button", { name: "Retry wallet setup" }) as HTMLButtonElement).disabled).toBe(false);
-});
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
@@ -53,210 +30,237 @@ async function fixture(schema: number, available = false) {
     terminate: () => { calls.terminated++; },
   } as unknown as WalletKit;
   const services = {
-    load: async () => incoming,
+    load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
   };
-  return { services, calls, incoming };
+  return { services, calls, incoming, wallet };
 }
-test("missing Selfie credentials show unavailable enrollment without an issuance action", async () => {
-  const f = await fixture(11); const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByRole("heading", { name: "Set up Selfie Check" })).toBeTruthy();
-  expect(view.getByText(/Selfie Check enrollment is not available/)).toBeTruthy();
-  expect(view.queryByRole("button", { name: /Issue.*credential/ })).toBeNull();
-  expect(view.queryByRole("button", { name: /camera preview/i })).toBeNull();
-  expect(view.container.querySelector("video")).toBeNull();
-  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
-  expect(view.queryByRole("button", { name: /camera preview/i })).toBeNull();
-  fireEvent.click(view.getByRole("button", { name: "Back to wallet" }));
-  expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(f.calls.prove).toBe(0);
-});
-test("Orb-only requests never offer Selfie enrollment", async () => {
-  const f = await fixture(1); const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByText(/eligible Orb credential/)).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
-  expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
-});
-test("either-credential requests wait for the user's choice", async () => {
-  const f = await fixture(1);
-  f.incoming.proof.proof_requests.push({ identifier: "selfie", issuer_schema_id: 11 });
-  f.incoming.proof.constraints = { any: ["credential", "selfie"] };
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByRole("button", { name: "Set up Selfie Check" })).toBeTruthy();
-  expect(view.queryByRole("heading", { name: "Set up Selfie Check" })).toBeNull();
-});
-test("delivery retries reuse the proof and show success only after the bridge accepts it", async () => {
-  const f = await fixture(11, true); f.calls.failDelivery = true;
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(view.getByRole("button", { name: "Approve and share proof" }));
-  const retry = await view.findByRole("button", { name: "Retry sending proof" });
-  expect(view.queryByRole("heading", { name: "Proof response sent" })).toBeNull();
-  f.calls.failDelivery = false; fireEvent.click(retry);
-  expect(await view.findByRole("heading", { name: "Proof response sent" })).toBeTruthy();
-  expect(f.calls.prove).toBe(1); expect(f.calls.deliver).toHaveLength(2);
-  expect(f.calls.deliver[0]).toBe(f.calls.deliver[1]);
-});
 test("unsupported presence requirements stop before passkey setup", async () => {
   const f = await fixture(11); f.incoming.unsupportedReason = "User presence is not implemented.";
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   expect(await view.findByText("User presence is not implemented.")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Create or unlock with passkey" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Start check" })).toBeNull();
 });
 
-for (const pending of [false, true]) {
-  test(`expired delivery offers a local exit after ${pending ? "a pending upload" : "an upload failure"}`, async () => {
-    const f = await fixture(11, true);
-    f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
-    let deliverySignal: AbortSignal | undefined;
-    let cancellations = 0;
-    f.incoming.cancel = async () => { cancellations++; };
-    f.incoming.deliver = async (proof, signal) => {
-      f.calls.deliver.push(proof);
-      deliverySignal = signal;
-      if (pending) await new Promise<void>((_, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-      });
-      throw new Error("Transport unavailable");
-    };
-    const view = render(<AuthenticatorAppV1 services={f.services} />);
-    fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-    await waitFor(() => expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(view.getByRole("button", { name: "Approve and share proof" }));
-    await waitFor(() => expect(f.calls.deliver).toHaveLength(1));
-    expect(await view.findByRole("heading", { name: "Request expired" }, { timeout: 3000 })).toBeTruthy();
-    expect(view.getByText(/Proof delivery is unconfirmed\. Check the requesting app/)).toBeTruthy();
-    expect(view.queryByText(/Retry sending the same proof/)).toBeNull();
-    const retry = view.getByRole("button", { name: "Retry sending proof" }) as HTMLButtonElement;
-    expect(retry.disabled).toBe(true);
-    fireEvent.click(retry);
-    expect(f.calls.deliver).toHaveLength(1);
-    const exit = view.getByRole("link", { name: "Open authenticator" });
-    expect(exit.getAttribute("href")).toBe("/");
-    // Keep this DOM test on the page while exercising the exit's cleanup.
-    exit.addEventListener("click", event => event.preventDefault());
-    fireEvent.click(exit);
-    expect(f.calls.terminated).toBe(1);
-    if (pending) expect(deliverySignal?.aborted).toBe(true);
-    expect(cancellations).toBe(0);
-    expect(f.calls.prove).toBe(1);
-    expect(view.queryByText("No proof was sent. You can return to the requesting app.")).toBeNull();
-    view.unmount();
+test("request intro names the RP only after validation, then starts the check", async () => {
+  const f = await fixture(11); let opened = 0; let resolve!: (request: IncomingRequest) => void;
+  f.services.load = () => new Promise(done => { resolve = done; });
+  const open = f.services.open; f.services.open = async (...args) => { opened++; return open(...args); };
+  window.history.replaceState(null, "", "/verify?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  expect(window.location.search).toBe("");
+  // Load is pending: the RP is unverified, so it is not shown and the check cannot start.
+  await view.findByRole("heading", { name: "Complete a Selfie Check" });
+  expect(view.queryByText("rp_1")).toBeNull();
+  expect((view.getByRole("button", { name: "Verifying request…" }) as HTMLButtonElement).disabled).toBe(true);
+  resolve(f.incoming);
+  expect(await view.findByText("rp_1 is requesting a Selfie Check.")).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Start selfie check" }));
+  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  expect(opened).toBe(0);  window.history.replaceState(null, "", "/");
+});
+for (const [name, failure, title] of [
+  ["expired", new RequestExpiredError("expired"), "This request has expired"],
+  ["invalid", new Error("The RP request signature is invalid."), "This request can’t be verified"],
+] as const) {
+  test(`${name} requests end on the intro with no way to continue`, async () => {
+    const f = await fixture(1); f.services.load = async () => { throw failure; };
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    expect(await view.findByRole("heading", { name: title })).toBeTruthy();
+    expect(view.getByText("Close this tab and return to the app to start again.")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Start check" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Create or unlock with passkey" })).toBeNull();
+    expect(view.queryByText(failure.message)).toBeNull();
+  });
+}
+test("a request that expires on the intro stops offering the check", async () => {
+  const f = await fixture(11);
+  f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
+  f.incoming.returnUrl = "https://rp.example/done";
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  expect(await view.findByRole("button", { name: "Start selfie check" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "This request has expired" }, { timeout: 3000 })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.getByRole("link", { name: "Return to the app" }).getAttribute("href")).toBe("https://rp.example/done");
+});
+
+test("a first visit sees the consent screen before the home page, and the choice can be reopened", async () => {
+  const f = await fixture(1); f.services.load = async () => null;
+  const saved: string[] = [];
+  let state: "granted" | "denied" | "unset" = "unset";
+  const consent: ConsentClient = { read: async () => state, save: async choice => { saved.push(choice); state = choice; return choice; } };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+  expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+  expect(view.getByText(/Never photos, face data, or account identifiers/)).toBeTruthy();
+  expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
+  expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Accept" }));
+  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(saved).toEqual(["granted"]);
+  fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+  fireEvent.click(await view.findByRole("button", { name: "Decline" }));
+  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(saved).toEqual(["granted", "denied"]);
+});
+
+test("a request link waits behind the consent screen and opens on its intro once the user chooses", async () => {
+  const f = await fixture(11);
+  const consent: ConsentClient = { read: async () => "unset", save: async choice => choice };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+  expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Decline" }));
+  expect(await view.findByRole("button", { name: "Start selfie check" })).toBeTruthy();
+});
+
+test("a failed consent save keeps the consent screen with an error", async () => {
+  const f = await fixture(1); f.services.load = async () => null;
+  const consent: ConsentClient = { read: async () => "unset", save: async () => { throw new Error("offline"); } };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Accept" }));
+  expect(await view.findByText("Your choice couldn’t be saved. Try again.")).toBeTruthy();
+  expect(view.getByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+});
+
+test("an unreachable consent endpoint asks again rather than assuming a choice", async () => {
+  const f = await fixture(1); f.services.load = async () => null;
+  const consent: ConsentClient = { read: async () => { throw new Error("offline"); }, save: async choice => choice };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+  expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+});
+
+test("public Selfie capture finishes ephemerally without opening a wallet or sending a proof", async () => {
+  const f = await fixture(11);
+  let opened = 0;
+  f.services.open = async () => { opened++; throw new Error("Public capture must not open a wallet"); };
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    image: new Blob(["test"], { type: "image/jpeg" }),
+    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    // Browser lifecycle tests inspect transient animation states with a controlled clock.
+    expect(await view.findByRole("heading", { name: "Save your authenticator?" }, { timeout: 4000 })).toBeTruthy();
+    expect(opened).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Not now" }));
+    expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
+    expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(opened).toBe(0);
+    expect(f.calls.prove).toBe(0);
+    expect(f.calls.deliver).toHaveLength(0);
+    expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
+  } finally { captureMock.mockRestore(); }
+});
+
+test("public non-Selfie requests stop before capture or wallet access", async () => {
+  const f = await fixture(1);
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  expect(await view.findByRole("heading", { name: "This request isn’t supported here" })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("button", { name: /passkey|Approve/ })).toBeNull();
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(f.calls.listed).toBe(0);
+});
+
+for (const fails of [false, true]) {
+  test(`optional passkey saving ${fails ? "reports failure and allows declining" : "closes the saved wallet and finishes"}`, async () => {
+    const f = await fixture(11);
+    let opened = 0;
+    const open = f.services.open;
+    f.services.open = async () => { opened++; if (fails) throw new Error("passkey unavailable"); return open(); };
+    const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+      image: new Blob(["test"], { type: "image/jpeg" }),
+      timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+    });
+    try {
+      const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+      fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+      const save = await view.findByRole("button", { name: "Save with passkey" }, { timeout: 4000 });
+      expect(opened).toBe(0);
+      expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+      fireEvent.click(save);
+      if (fails) {
+        expect(await view.findByRole("alert")).toBeTruthy();
+        expect(view.getByText(/Setup didn’t finish. A passkey may already have been saved/)).toBeTruthy();
+        fireEvent.click(view.getByRole("button", { name: "Not now" }));
+      }
+      expect(await view.findByRole("heading", { name: fails ? "Selfie captured" : "Authenticator saved" })).toBeTruthy();
+      expect(opened).toBe(1);
+      expect(f.calls.terminated).toBe(fails ? 0 : 1);
+      expect(f.calls.prove).toBe(0);
+      expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
+      if (fails) {
+        expect(view.queryByRole("button", { name: "Go to authenticator" })).toBeNull();
+      } else {
+        localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+        fireEvent.click(view.getByRole("button", { name: "Go to authenticator" }));
+        expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+        expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+        expect(opened).toBe(1);
+        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+        fireEvent.click(view.getByRole("button", { name: "Back to home" }));
+        expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+        expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      }
+    } finally { captureMock.mockRestore(); localStorage.clear(); }
   });
 }
 
-test("missing camera APIs show an actionable failure without crashing the flow", async () => {
-  const original = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
-  Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });
-  try {
-    const view = render(<CameraPreview />);
-    expect(await view.findByText("Camera unavailable. Allow camera access, then reopen the preview.")).toBeTruthy();
-  } finally {
-    if (original) Object.defineProperty(navigator, "mediaDevices", original);
-    else Reflect.deleteProperty(navigator, "mediaDevices");
-  }
+test("public cancellation closes the request even when the bridge is unavailable", async () => {
+  const f = await fixture(11);
+  f.incoming.cancel = async () => { throw new Error("offline"); };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Cancel request" }));
+  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+  expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(f.calls.prove).toBe(0);
 });
 
-test("camera preview consumes ONNX results and releases camera and worker on close", async () => {
-  let stopped = 0, terminated = 0, time = 0;
-  const media = new MediaStream();
-  Object.defineProperty(media, "getTracks", { value: () => [{ stop: () => { stopped++; } }] });
-  const worker = {
-    onmessage: undefined as ((event: { data: DetectorResponse }) => void) | undefined,
-    postMessage: (request: { type: string; id?: number }) => queueMicrotask(() => worker.onmessage?.({ data: request.type === "init"
-      ? { type: "ready" }
-      : { type: "result", id: request.id!, width: 640, height: 480, timings: "inference 1ms", faces: [{ box: [0.35, 0.2, 0.65, 0.8], landmarks: [], score: 0.99 }] } })),
-    terminate: () => { terminated++; },
-  };
-  const replacements = [
-    [globalThis, "Worker", function () { return worker; }],
-    [globalThis, "createImageBitmap", async () => ({ close: () => {} })],
-    [navigator, "mediaDevices", { getUserMedia: async () => media }],
-  ] as const;
-  const saved = replacements.map(([object, key]) => Object.getOwnPropertyDescriptor(object, key));
-  replacements.forEach(([object, key, value]) => Object.defineProperty(object, key, { value, configurable: true }));
-  const play = spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) {
-    Object.defineProperties(this, { readyState: { value: 2 }, currentTime: { get: () => ++time }, clientWidth: { value: 260 }, clientHeight: { value: 364 } });
-    return Promise.resolve();
-  });
-  try {
-    const view = render(<CameraPreview />);
-    expect(await view.findByText("Face positioned")).toBeTruthy();
-    view.unmount();
-    expect(terminated).toBe(1); expect(stopped).toBe(1);
-  } finally {
-    cleanup(); play.mockRestore();
-    replacements.forEach(([object, key], i) => { const descriptor = saved[i]; if (descriptor) Object.defineProperty(object, key, descriptor); else Reflect.deleteProperty(object, key); });
-  }
-});
-
-test("dev mode is opt-in, inspects metadata and refreshes without issuing", async () => {
-  const f = await fixture(11, true);
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  expect(view.queryByRole("complementary", { name: "Developer tools" })).toBeNull();
-  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
-  expect(view.getByText("Unlock your wallet to inspect its credentials.")).toBeTruthy();
+test("landing entry explains request-first setup without opening camera or creating a wallet", async () => {
+  localStorage.clear();
+  const f = await fixture(11);
+  f.services.load = async () => null;
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Go to authenticator" }));
+  expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+  expect(view.getByText(/Complete a Selfie Check from an app request/)).toBeTruthy();
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(view.queryByRole("button", { name: /passkey/ })).toBeNull();
   expect(f.calls.listed).toBe(0);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  expect(await view.findByText("Credential ID")).toBeTruthy();
-  expect(view.getByText(/Schema 11. A proof can disclose/)).toBeTruthy();
-  expect(view.getByText("Not available in this app")).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Refresh vault" }));
-  await waitFor(() => expect(f.calls.listed).toBe(2));
-  expect(f.calls.prove).toBe(0);
-  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
-  expect(view.queryByRole("complementary", { name: "Developer tools" })).toBeNull();
+  view.unmount();
+  const reopened = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  expect(await reopened.findByRole("button", { name: "Go to authenticator" })).toBeTruthy();
+  expect(reopened.queryByRole("region", { name: "Selfie capture" })).toBeNull();
 });
 
-test("vault deletion requires confirmation and removes proof eligibility", async () => {
-  const f = await fixture(11, true);
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  await view.findByText("Credential ID");
-  fireEvent.click(view.getByText(/Selfie Check/, { selector: "summary" }));
-  fireEvent.click(view.getByRole("button", { name: "Delete local credential" }));
-  expect(f.calls.deleted).toEqual([]);
-  fireEvent.click(view.getByRole("button", { name: "Keep credential" }));
-  expect(view.queryByRole("button", { name: "Confirm deletion" })).toBeNull();
-  fireEvent.click(view.getByRole("button", { name: "Delete local credential" }));
-  fireEvent.click(view.getByRole("button", { name: "Confirm deletion" }));
-  await view.findByText("No credentials stored yet.");
-  expect(f.calls.deleted).toEqual([1n]);
-  expect((view.getByRole("button", { name: "Approve and share proof" }) as HTMLButtonElement).disabled).toBe(true);
-});
-
-test("unconfirmed vault deletion locks the wallet and hides internal errors", async () => {
-  const f = await fixture(11, true); f.calls.failDelete = true;
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(view.getByRole("switch", { name: "Dev mode" }));
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  await view.findByText("Credential ID");
-  fireEvent.click(view.getByText(/Selfie Check/, { selector: "summary" }));
-  fireEvent.click(view.getByRole("button", { name: "Delete local credential" }));
-  fireEvent.click(view.getByRole("button", { name: "Confirm deletion" }));
-  expect(await view.findByText(/Credential deletion could not be confirmed/)).toBeTruthy();
-  expect(f.calls.terminated).toBe(1);
-  expect(view.queryByText("private worker error")).toBeNull();
-  expect(view.getByText("Unlock your wallet to inspect its credentials.")).toBeTruthy();
-});
-
-test("a request that expires on the review screen offers a local exit and the return link", async () => {
-  const f = await fixture(1, true);
-  f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
-  f.incoming.returnUrl = "https://rp.example/done";
-  const view = render(<AuthenticatorAppV1 services={f.services} />);
-  fireEvent.click(await view.findByRole("button", { name: "Create or unlock with passkey" }));
-  await view.findByRole("button", { name: "Approve and share proof" });
-  expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
-  expect(await view.findByText(/This request expired\. Start a new request/, undefined, { timeout: 3000 })).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Approve and share proof" })).toBeNull();
-  expect(view.getByRole("link", { name: "Open authenticator" }).getAttribute("href")).toBe("/");
-  expect(view.getByRole("link", { name: "Return to requesting app" }).getAttribute("href")).toBe("https://rp.example/done");
-  expect(f.calls.prove).toBe(0);
+test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  try {
+    const f = await fixture(11);
+    f.services.load = async () => null;
+    let opened = 0;
+    const open = f.services.open;
+    f.services.open = async () => { opened++; return open(); };
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    const button = await view.findByRole("button", { name: "Go to authenticator" });
+    expect(opened).toBe(0);
+    fireEvent.click(button);
+    expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+    expect(opened).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
+    expect(opened).toBe(1);
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
+    expect(f.calls.terminated).toBe(1);
+    expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+  } finally { localStorage.clear(); }
 });

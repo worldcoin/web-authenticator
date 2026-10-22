@@ -1,4 +1,4 @@
-import { readStagingRp } from '../lib/rp-registry'
+import { readStagingRp } from '../../../lib/rp-registry'
 
 export async function GET(request: Request) {
 	const id = new URL(request.url).searchParams.get('id')
