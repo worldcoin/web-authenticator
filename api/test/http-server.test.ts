@@ -112,6 +112,17 @@ test("synthetic enrollment is absent even for valid localhost requests", async (
   }
   expect((await get("/api/capabilities")).status).toBe(404);
 });
+
+test("local issuance is opt-in and rejects cross-origin, malformed and oversized requests", async () => {
+  const app = start({ localStagingIssuance: true });
+  expect(await (await fetch(app + "/api/selfie-credential")).json()).toEqual({ enabled: true });
+  for (const [requestOrigin, body, expected] of [
+    ["https://other.example", "{}", 403], [app, "{}", 400], [app, "x".repeat(1100), 400],
+  ] as const) {
+    const response = await fetch(app + "/api/selfie-credential", { method: "POST", headers: { origin: requestOrigin, "content-type": "application/json" }, body });
+    expect(response.status).toBe(expected);
+  }
+});
 test("RP lookup rejects malformed identifiers without a remote call", async () => {
   const response = await get("/api/staging-rp?id=bad");
   expect(response.status).toBe(400);

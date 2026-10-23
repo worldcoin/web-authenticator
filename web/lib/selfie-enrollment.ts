@@ -59,6 +59,7 @@ export async function extractSelfieEmbedding(
   image: Blob,
   signal: AbortSignal,
   initialize: typeof initializeWalletKit = initializeWalletKit,
+  closeOnCompletion = true,
 ): Promise<SelfieEmbeddingSummary> {
   signal = AbortSignal.any([signal, AbortSignal.timeout(SELFIE_EXTRACTION_TIMEOUT_MS)]);
   const bytes = new Uint8Array(await image.arrayBuffer());
@@ -83,6 +84,6 @@ export async function extractSelfieEmbedding(
   } finally {
     signal.removeEventListener("abort", stop);
     bytes.fill(0);
-    client?.terminate();
+    if (closeOnCompletion) client?.terminate();
   }
 }

@@ -8,6 +8,7 @@ import { activateStagingWallet } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
+import { parseWrappedProfile, unwrapTemporaryWallet, wrapTemporaryWallet, type TemporaryWalletMaterial, type WrappedWalletProfile } from "./wallet-envelope";
 
 const PROFILE_KEY = "world-id-wallet-v1";
 const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
@@ -40,8 +41,9 @@ export function hasSavedWallet(): boolean {
   }
 }
 
-export function parseWalletProfile(raw: string): WalletProfile {
+export function parseWalletProfile(raw: string): WalletProfile | WrappedWalletProfile {
   const value: unknown = JSON.parse(raw);
+  if (typeof value === "object" && value !== null && "version" in value && value.version === 2) return parseWrappedProfile(value as Record<string, unknown>);
   if (
     typeof value !== "object" || value === null ||
     !("version" in value) || value.version !== 1 ||
@@ -168,12 +170,14 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
-    keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
+    keys = await logFlowStep("passkey.derive_secrets", () => profile.version === 2
+      ? unwrapTemporaryWallet(profile, prf)
+      : useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
     client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal: opening.signal }));
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : credentialId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");
-    const paths = await client.StoragePaths.fromRoot(`/walletkit/${useLegacy ? "passkey-" : ""}${root}`);
+    const paths = await client.StoragePaths.fromRoot(profile.version === 2 ? profile.storageRoot : `/walletkit/${useLegacy ? "passkey-" : ""}${root}`);
     let store: CredentialStore;
     try {
       store = await logFlowStep("walletkit.storage_open", () => client!.CredentialStore.new(paths, storageKeys));
@@ -200,4 +204,49 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     keys?.seed.fill(0);
     keys?.databaseKey.fill(0);
   }
+}
+
+/** Saves custody of the account that already issued the proof; never creates another World ID. */
+export async function saveTemporaryWallet(material: TemporaryWalletMaterial, signal: AbortSignal): Promise<void> {
+  if (!window.isSecureContext || window.top !== window.self || document.visibilityState !== "visible" || !navigator.locks) {
+    throw new WalletOpenError("Save from a visible, secure browser tab with passkey support.");
+  }
+  await navigator.locks.request("world-id-wallet-setup-v1", { ifAvailable: true }, async lock => {
+    if (!lock) throw new WalletOpenError("Wallet setup is already running in another tab.");
+    if (material.persisted) return;
+    if (hasSavedWallet()) throw new WalletOpenError("A saved authenticator already exists in this browser. It has been preserved; this temporary wallet was not saved.");
+    signal.throwIfAborted();
+    if (!material.credentialId) {
+      const created = await navigator.credentials.create({ signal, publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)), rp: { name: "World ID" },
+        user: { id: crypto.getRandomValues(new Uint8Array(32)), name: "World ID", displayName: "World ID" },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        attestation: "none", timeout: 60_000,
+        extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
+      } });
+      if (!(created instanceof PublicKeyCredential) || !(created.getClientExtensionResults() as { prf?: { enabled?: boolean } }).prf?.enabled) {
+        throw new WalletOpenError("Choose a passkey provider that supports PRF.");
+      }
+      material.credentialId = Array.from(new Uint8Array(created.rawId), b => b.toString(16).padStart(2, "0")).join("");
+    }
+    const expectedId = Uint8Array.from(material.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
+    const unlocked = await navigator.credentials.get({ signal, publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)), allowCredentials: [{ type: "public-key", id: expectedId }],
+      userVerification: "required", timeout: 60_000,
+      extensions: { prf: { eval: { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
+    } });
+    if (!(unlocked instanceof PublicKeyCredential)) throw new WalletOpenError("Passkey unlock was not completed.");
+    const actualId = new Uint8Array(unlocked.rawId);
+    if (actualId.length !== expectedId.length || actualId.some((byte, index) => byte !== expectedId[index])) throw new WalletOpenError("The passkey does not match this save operation.");
+    const prf = prfBytes((unlocked.getClientExtensionResults() as PrfOutputs).prf?.results?.first);
+    if (!prf) throw new WalletOpenError("The passkey did not return the required PRF output.");
+    try {
+      const profile = await wrapTemporaryWallet(material, material.credentialId, prf);
+      signal.throwIfAborted();
+      saveRegistrationState(profile.credentialId, "finalized");
+      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+      material.persisted = true;
+    } finally { prf.fill(0); }
+  });
 }

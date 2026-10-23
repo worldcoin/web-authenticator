@@ -9,6 +9,7 @@ import { RequestExpiredError } from "../lib/proof-request";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
 import { SelfieRejectedError, type SelfieEmbeddingSummary, type SelfieEnrollmentService } from "../lib/selfie-enrollment";
+import type { TemporarySelfieSession } from "../lib/temporary-selfie-session";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -41,6 +42,69 @@ async function fixture(schema: number, available = false) {
   };
   return { services, calls, incoming, wallet };
 }
+
+for (const save of [false, true]) {
+  test(`temporary flow delivers before completion and ${save ? "saves the same wallet" : "discards without a passkey"}`, async () => {
+    const f = await fixture(11);
+    const calls = { prepared: 0, extracted: 0, completed: 0, saved: 0, disposed: 0, opened: 0 };
+    let deliver!: () => void;
+    const delivered = new Promise<void>(resolve => { deliver = resolve; });
+    const session: TemporarySelfieSession = {
+      extract: async () => { calls.extracted++; return { embeddingType: "test", embeddingVersion: "1", embeddingInferenceBackend: "test", encodedLength: 1 }; },
+      complete: async (request, signal) => { calls.completed++; await delivered; signal.throwIfAborted(); await request.deliver("proof", signal); },
+      save: async () => { calls.saved++; }, dispose: async () => { calls.disposed++; },
+    };
+    f.services.enrollment.policy = async () => "trusted-policy";
+    const services = { ...f.services, open: async () => { calls.opened++; return f.wallet; },
+      temporary: async () => { calls.prepared++; return session; } };
+    const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({ image: new Blob(["test"], { type: "image/jpeg" }),
+      timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 } });
+    try {
+      const view = render(<AuthenticatorAppV1 services={services} consent={decidedConsent} />);
+      const start = await view.findByRole("button", { name: "Start selfie check" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(calls.prepared).toBe(1);
+      expect(calls.opened).toBe(0);
+      fireEvent.click(start);
+      await view.findByText("Checking your selfie");
+      expect(calls.extracted).toBe(1); expect(calls.completed).toBe(1);
+      expect(view.queryByRole("heading", { name: "Selfie captured" })).toBeNull();
+      expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+      // Settings must preserve the in-flight proof and temporary seed/session.
+      fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+      expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+      expect(calls.disposed).toBe(0);
+      fireEvent.click(view.getByRole("button", { name: "Decline" }));
+      deliver();
+      const choice = await view.findByRole("button", { name: save ? "Save with passkey" : "Not now" }, { timeout: 4000 });
+      expect(f.calls.deliver).toEqual(["proof"]);
+      expect(calls.saved).toBe(0);
+      fireEvent.click(choice);
+      expect(await view.findByRole("heading", { name: save ? "Authenticator saved" : "Selfie captured" })).toBeTruthy();
+      expect(calls.saved).toBe(save ? 1 : 0);
+      expect(calls.opened).toBe(0);
+      expect(calls.disposed).toBeGreaterThan(0);
+    } finally { captureMock.mockRestore(); }
+  });
+}
+
+test("failed proof delivery never shows completion or passkey saving", async () => {
+  const f = await fixture(11);
+  f.services.enrollment.policy = async () => "trusted-policy";
+  const session: TemporarySelfieSession = {
+    extract: async () => ({ embeddingType: "test", embeddingVersion: "1", embeddingInferenceBackend: "test", encodedLength: 1 }),
+    complete: async () => { throw new Error("Proof delivery failed"); },
+    save: async () => { throw new Error("Must not save"); }, dispose: async () => {},
+  };
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({ image: new Blob(["test"]), timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 } });
+  try {
+    const view = render(<AuthenticatorAppV1 services={{ ...f.services, temporary: async () => session }} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    expect(await view.findByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(view.queryByRole("heading", { name: "Selfie captured" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+  } finally { captureMock.mockRestore(); }
+});
 test("unsupported presence requirements stop before passkey setup", async () => {
   const f = await fixture(11); f.incoming.unsupportedReason = "User presence is not implemented.";
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);

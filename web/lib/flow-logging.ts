@@ -24,12 +24,19 @@ export async function logFlowStep<T>(step: string, operation: () => Promise<T>):
 			'DataError',
 			'InvalidStateError',
 			'QuotaExceededError',
+			'WalletKitError',
+			'StorageError',
 		]
 		const category = error instanceof Error && allowedNames.includes(error.name) ? error.name : 'OperationError'
+		// Fixed SDK variants only; dependency messages and details may contain secrets.
+		const allowedCodes = ['AccountDoesNotExist', 'NetworkError', 'Reqwest', 'UnauthorizedAuthenticator']
+		const code = error instanceof Error && 'code' in error && typeof error.code === 'string' && allowedCodes.includes(error.code)
+			? error.code : undefined
 		console.error('authenticator_step', {
 			step,
 			status: 'failed',
 			category,
+			...(code ? { code } : {}),
 			durationMs: Math.round(performance.now() - started),
 		})
 		throw error

@@ -21,8 +21,9 @@ credentials”), which is also how a later visit recovers an interrupted setup.
 **Back** returns to the screen that opened it. Neither entry opens the camera or
 creates an account.
 
-The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The capture is the region the oval preview shows, not
+By default, the public flow uses capture as its completion signal without sending
+a proof. The local staging mode described below waits for proof delivery instead.
+The capture is the region the oval preview shows, not
 the full camera frame. Framing guidance applies the face engine's VanillaSelfie
 geometry to that region, as World App iOS does: face box between 0.52 and 0.80
 of the image, at least 112 px, and 1.5% inside each edge (`ENGINE_FRAMING_V1`). The oval’s 64 dots fill gold clockwise during a 1.2-second
@@ -39,8 +40,8 @@ reduced-motion users skip the movement. Shared footer controls are hidden during
 the sequence without changing the layout. Declining ends the session; saving
 uses the existing passkey setup and immediately closes the wallet. Both outcomes
 are terminal. Interrupted setup may retain a passkey profile for recovery.
-The RP continues waiting until expiry; cancellation attempts to notify it and
-reports failures.
+Without local staging issuance, the RP continues waiting until expiry;
+cancellation attempts to notify it and reports failures.
 
 When the server has a Selfie enrollment policy (see the API README), the captured
 JPEG goes to WalletKit's `extractSelfieEmbedding` before completion. A one-shot
@@ -50,12 +51,22 @@ completed border. Image/quality rejections, attestation or transport failures an
 timeouts show a retry, never completion. Hiding the page aborts the request and
 terminates the worker. The page keeps only metadata (type, version, backend and
 encoded length) and logs it as `selfie_extraction_succeeded`. It does not store
-the vector, issue a credential or send a proof to the RP. Without a policy, capture
-stays local, as above.
+the vector. Without a policy, capture stays local, as above.
+
+With a policy and the explicitly enabled local staging issuer (see the API README),
+opening a supported request prepares a random temporary account and schema-11
+subject in the background. After enclave acceptance, synthetic staging issuance,
+credential storage and proof delivery must succeed before completion. Optional
+passkey saving encrypts the same account seed and vault key using its PRF; it does
+not register another account. Declining destroys the local vault, although remote
+account and issuer records remain. Saving refuses to overwrite an existing saved
+authenticator. The synthetic credential does not attest to the captured embedding.
 
 Until WalletKit #604 is published, `@worldcoin/walletkit-web` resolves to a local
 tarball built from #604 merged with WalletKit `main`, with the TEE client pinned to
-biometrics-tee `main`. Replace it with the published version once it is released.
+biometrics-tee `main`. The `wasm-serial` build also patches `ark-ec` 0.6.0 to avoid
+creating a native Rayon thread pool during browser MSM. Replace this local tarball
+with a published SDK containing both fixes once available.
 
 The app removes the key from the address bar; reloading loses the in-memory
 request and does not reopen a camera or wallet. Start a fresh request at the RP.

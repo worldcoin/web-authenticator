@@ -48,3 +48,8 @@ export const AUTHENTICATOR_APP_CONFIG = Object.freeze({
   host: envValue("AUTHENTICATOR_HOST") ?? "127.0.0.1",
   port: envPort(),
 });
+
+export const LOCAL_STAGING_ISSUANCE = envValue("ENABLE_STAGING_ISSUERS") === "1";
+if (LOCAL_STAGING_ISSUANCE && (ENV.NODE_ENV === "production" || !["localhost", "127.0.0.1", "::1"].includes(AUTHENTICATOR_APP_CONFIG.host))) {
+  throw new Error("Synthetic staging issuance requires a non-production loopback listener.");
+}

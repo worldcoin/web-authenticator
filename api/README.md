@@ -49,6 +49,13 @@ Selfie Check reports its own failures.
 SELFIE_ENROLLMENT_POLICY_FILE="$PWD/../tee-apps/releases/selfie-enrollment/client-stage.json" bun run dev
 ```
 
+For local synthetic issuance, also set `ENABLE_STAGING_ISSUERS=1` and
+`STAGING_SELFIE_HELPER` to the `staging-face-crypto` binary. This mode requires a
+loopback listener and refuses production startup. It enables `/api/selfie-credential`
+for the real staging Face issuer, using synthetic enrollment shares; the captured
+embedding is not bound to this test credential. Issuance retries resume the same
+operation using owner-only state under `~/.local/state/web-authenticator/`.
+
 ## Consent
 
 `GET /api/consent` returns the analytics choice from the `__Host-wid_consent` cookie
