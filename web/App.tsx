@@ -79,10 +79,11 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     {consentState !== null && consentState !== "unset" && !consentOpen && <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
   </span>;
 
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
-    {consentState === null ? null
-      : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
-      : <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
+  return <AppLayout footerActions={footerActions} hideControls={completionAnimating && !consentScreen}>
+    {consentState !== null && consentState !== "unset" && <div hidden={consentOpen} inert={consentOpen} style={consentOpen ? undefined : { display: "contents" }}>
+      <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />
+    </div>}
+    {consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
   </AppLayout>;
 }
