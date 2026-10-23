@@ -17,11 +17,20 @@ async function hideAtStage(page: Page, stage: string) {
 }
 
 if (!("bun" in process.versions)) {
-  test("root is an authenticator, with no implicit RP or network registration", async ({ page }, info) => {
+  test("the bare origin redirects to world.org without forwarding the query", async ({ page }) => {
+    for (const path of ["/", "/?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D"]) {
+      const response = await page.request.get(path, { maxRedirects: 0 });
+      expect(response.status()).toBe(302);
+      expect(response.headers()["location"]).toBe("https://world.org/");
+    }
+  });
+
+  test("a direct visit has no landing page, implicit RP or network registration", async ({ page }, info) => {
     const external: string[] = [];
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await page.goto("/verify");
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Download World ID" })).toHaveCount(0);
     await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
@@ -32,7 +41,7 @@ if (!("bun" in process.versions)) {
       expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
       await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
-      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-direct-${viewport.width}.png`, fullPage: true });
     }
   });
 
@@ -177,8 +186,8 @@ if (!("bun" in process.versions)) {
   test("shared chrome stays in place across public screens without developer controls", async ({ page }, info) => {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
-      await page.goto("/");
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await page.goto("/verify");
+      await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
       const privacy = page.getByRole("link", { name: "Privacy", exact: true });
       const position = await privacy.boundingBox();
       expect(position).not.toBeNull();
@@ -187,10 +196,7 @@ if (!("bun" in process.versions)) {
       expect(await privacy.boundingBox()).toEqual(position);
       await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
       await expect(page.locator("#developer-panel")).toHaveCount(0);
-      await page.getByRole("button", { name: "Go to authenticator" }).click();
-      await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-      expect(await privacy.boundingBox()).toEqual(position);
-      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-direct-chrome-${viewport.width}.png`, fullPage: true });
       await page.getByRole("button", { name: "Cookie settings" }).click();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
       expect(await privacy.boundingBox()).toEqual(position);
@@ -199,25 +205,20 @@ if (!("bun" in process.versions)) {
     }
   });
 
-  test("landing authenticator entry never starts camera or creates a passkey", async ({ page }) => {
+  test("a direct visit offers no authenticator entry and never starts the camera", async ({ page }) => {
     let cameraCalls = 0;
     await page.exposeFunction("recordCameraCall", () => { cameraCalls++; });
     await page.addInitScript(() => {
       navigator.mediaDevices.getUserMedia = async () => {
         await (window as typeof window & { recordCameraCall(): Promise<void> }).recordCameraCall();
-        throw new Error("Camera must not open from landing");
+        throw new Error("Camera must not open without a request");
       };
     });
-    await page.goto("/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-    await expect(page.getByText(/Complete a Selfie Check from an app request/)).toBeVisible();
+    await page.goto("/verify");
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Go to authenticator|passkey/i })).toHaveCount(0);
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
     expect(cameraCalls).toBe(0);
-    expect(new URL(page.url()).pathname).toBe("/");
-    await page.getByRole("button", { name: "Back to home" }).click();
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
   });
 
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
@@ -274,9 +275,9 @@ if (!("bun" in process.versions)) {
 
     test("the consent screen comes first, is accessible, and is recorded in an HttpOnly cookie", async ({ page, context, browserName }, info) => {
       await page.addInitScript({ content: axe.source });
-      await page.goto("/");
+      await page.goto("/verify");
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toHaveCount(0);
       const violations = await page.evaluate(async () => {
         const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
         return (await runtime.run()).violations;
@@ -284,14 +285,14 @@ if (!("bun" in process.versions)) {
       expect(violations).toEqual([]);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
       await page.getByRole("button", { name: "Accept" }).click();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
       // WebKit refuses Secure cookies on plain-http loopback; production is HTTPS.
       if (browserName !== "chromium") return;
       const cookie = (await context.cookies()).find(c => c.name === "__Host-wid_consent");
       expect(cookie).toMatchObject({ value: "v1.granted", httpOnly: true, secure: true, sameSite: "Lax" });
       expect(await page.evaluate(() => document.cookie)).toBe("");
       await page.reload();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
@@ -310,8 +311,8 @@ if (!("bun" in process.versions)) {
 
   test("built app passes automated accessibility checks", async ({ page }) => {
     await page.addInitScript({ content: axe.source });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await page.goto("/verify");
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
     const violations = await page.evaluate(async () => {
       const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
       return (await runtime.run()).violations;
@@ -320,7 +321,7 @@ if (!("bun" in process.versions)) {
   });
 
   for (const providerArrays of [false, true]) {
-  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
+  test(`real virtual PRF and WalletKit vault survive a failed staging registration (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Virtual PRF requires Chromium CDP");
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
@@ -350,13 +351,11 @@ if (!("bun" in process.versions)) {
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
     expect(Object.values(saved)).toContain("submitting");
-    const before = registrations;
-    expect(before).toBe(1);
-    await page.goto("http://localhost:4194/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await page.getByRole("button", { name: "Sign in with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
-    expect(registrations).toBe(before);
+    expect(registrations).toBe(1);
+    // Without the landing page, a later visit has no saved-access entry; recovery is the in-flow retry.
+    await page.getByRole("button", { name: "Not now" }).click();
+    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    expect(registrations).toBe(1);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });
   }

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
-import { hasConnector } from "./lib/connector";
 import { consentClient, type ConsentChoice, type ConsentClient, type ConsentState } from "./lib/consent";
 import { openAuthenticator } from "./lib/wallet-session";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
@@ -20,8 +19,6 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
-  // Read before the effect strips the query: was this page opened from a request link?
-  const [requestLink] = useState(() => hasConnector(window.location.href));
   const [loadExpired, setLoadExpired] = useState(false);
   const source = useRef<string | null>(null);
 
@@ -84,7 +81,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
     {consentState === null ? null
       : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
-      : <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+      : <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed} expired={loadExpired || expired}
         onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
   </AppLayout>;
 }

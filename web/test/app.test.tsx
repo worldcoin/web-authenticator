@@ -86,7 +86,7 @@ test("a request that expires on the intro stops offering the check", async () =>
   expect(view.getByRole("link", { name: "Return to the app" }).getAttribute("href")).toBe("https://rp.example/done");
 });
 
-test("a first visit sees the consent screen before the home page, and the choice can be reopened", async () => {
+test("a first visit sees the consent screen first, and the choice can be reopened", async () => {
   const f = await fixture(1); f.services.load = async () => null;
   const saved: string[] = [];
   let state: "granted" | "denied" | "unset" = "unset";
@@ -94,14 +94,14 @@ test("a first visit sees the consent screen before the home page, and the choice
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
   expect(view.getByText(/Never photos, face data, or account identifiers/)).toBeTruthy();
-  expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
+  expect(view.queryByRole("heading", { name: "This request can’t be verified" })).toBeNull();
   expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Accept" }));
-  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "This request can’t be verified" })).toBeTruthy();
   expect(saved).toEqual(["granted"]);
   fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
   fireEvent.click(await view.findByRole("button", { name: "Decline" }));
-  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "This request can’t be verified" })).toBeTruthy();
   expect(saved).toEqual(["granted", "denied"]);
 });
 
@@ -205,9 +205,17 @@ for (const fails of [false, true]) {
         expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
         expect(opened).toBe(1);
         expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-        fireEvent.click(view.getByRole("button", { name: "Back to home" }));
-        expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+        // Saved access requires an explicit sign-in and never restarts the camera.
+        fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
+        expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
+        expect(opened).toBe(2);
+        fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
+        expect(f.calls.terminated).toBe(2);
+        // With no landing page, Back returns to the completed request.
+        fireEvent.click(view.getByRole("button", { name: "Back" }));
+        expect(await view.findByRole("heading", { name: "Authenticator saved" })).toBeTruthy();
         expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
       }
     } finally { captureMock.mockRestore(); localStorage.clear(); }
   });
@@ -224,43 +232,19 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
-test("landing entry explains request-first setup without opening camera or creating a wallet", async () => {
-  localStorage.clear();
-  const f = await fixture(11);
-  f.services.load = async () => null;
-  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  fireEvent.click(await view.findByRole("button", { name: "Go to authenticator" }));
-  expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
-  expect(view.getByText(/Complete a Selfie Check from an app request/)).toBeTruthy();
-  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-  expect(view.queryByRole("button", { name: /passkey/ })).toBeNull();
-  expect(f.calls.listed).toBe(0);
-  view.unmount();
-  const reopened = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  expect(await reopened.findByRole("button", { name: "Go to authenticator" })).toBeTruthy();
-  expect(reopened.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-});
-
-test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
+test("a visit without a request link has no landing page or authenticator entry", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   try {
     const f = await fixture(11);
     f.services.load = async () => null;
     let opened = 0;
-    const open = f.services.open;
-    f.services.open = async () => { opened++; return open(); };
+    f.services.open = async () => { opened++; throw new Error("must not open"); };
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-    const button = await view.findByRole("button", { name: "Go to authenticator" });
-    expect(opened).toBe(0);
-    fireEvent.click(button);
-    expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
-    expect(opened).toBe(0);
-    fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
-    expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
-    expect(opened).toBe(1);
+    expect(await view.findByRole("heading", { name: "This request can’t be verified" })).toBeTruthy();
+    expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
+    expect(view.queryByRole("button", { name: /Go to authenticator|passkey|Start selfie check/ })).toBeNull();
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
-    expect(f.calls.terminated).toBe(1);
-    expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+    expect(opened).toBe(0);
+    expect(f.calls.listed).toBe(0);
   } finally { localStorage.clear(); }
 });
