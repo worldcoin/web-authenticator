@@ -9,11 +9,11 @@
 
 :root {
   color: #1f1f1f;
-  background: #f9f9f8;
+  background: #fff;
   font-family: "World Pro MVP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --surface-page: #f9f9f8;
+  --surface-page: #fff;
   --foreground-primary: #1f1f1f;
   --foreground-secondary: #707070;
   --foreground-disabled: #767676;
@@ -252,7 +252,7 @@ h1:focus {
 
 /* Direct-open sign-in page, following browser sign-in conventions (Ramp, Vercel, Stripe):
    top bar, one left-aligned column near the top, compact controls, footer links. */
-.app-main--landing { padding: 0; background: #f9f9f8; }
+.app-main--landing { padding: 0; background: #fff; }
 .authenticator-shell .app-main--landing { min-height: 100svh; min-height: 100dvh; }
 .signin { --ink: #181818; --ink-muted: #75726f; --line: #e1dfda; --brand-blue: #0a5cfe; display: flex; flex: 1; flex-direction: column; width: 100%; color: var(--ink); }
 .signin-badge { width: 72px; height: 72px; margin-bottom: 20px; }

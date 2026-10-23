@@ -39,7 +39,8 @@ if (!("bun" in process.versions)) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
-      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+      await expect(page.getByRole("contentinfo")).toHaveCSS("background-color", "rgb(255, 255, 255)");
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-direct-${viewport.width}.png`, fullPage: true });
     }

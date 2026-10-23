@@ -116,7 +116,7 @@ if (!("bun" in process.versions)) {
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
         await expect(page.locator(".public-request-flow")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });
       }
