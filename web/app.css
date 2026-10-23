@@ -303,7 +303,6 @@ a.signin-primary { text-decoration: none; }
 .public-request-flow h1 { font-size: 27px; font-weight: 400; line-height: 1.2; letter-spacing: -.405px; overflow-wrap: anywhere; }
 .public-request-flow .message-block { gap: 16px; }
 .public-request-flow .message-block > p { max-width: 313px; font-size: 17px; font-weight: 350; line-height: 1.3; letter-spacing: -.085px; overflow-wrap: anywhere; }
-.public-request-flow .message-block > .request-preview-note { color: var(--foreground-secondary); font-size: 15px; }
 .request-selfie-emblem { display: block; width: 56.0035px; height: 56px; }
 .request-completion-emblem { display: block; width: 88px; height: 88px; }
 .request-passkey-emblem { display: block; width: 56px; height: 56px; }

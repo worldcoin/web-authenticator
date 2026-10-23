@@ -189,7 +189,6 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
   return <div className="public-request-flow">
     <RequestIntro
       selfieOnly
-      submitsSelfie={!!policy}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported || policyFailed ? "unsupported" : "ready"}
       rp={incoming?.label}
       reason={unsupported ?? (policyFailed ? "Selfie Check is unavailable right now. Return to the app and try again later." : undefined)}

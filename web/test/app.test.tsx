@@ -184,11 +184,11 @@ test("with enrollment on, completion waits for the enclave to accept the capture
   });
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-    expect(await view.findByText(/A verified secure enclave checks it/)).toBeTruthy();
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
     expect(await view.findByRole("heading", { name: "Checking your selfie" })).toBeTruthy();
     expect(view.getByText("Your selfie is encrypted for a verified secure enclave.")).toBeTruthy();
     expect(submitted).toEqual([{ policy: POLICY, size: 4 }]);
+    expect(view.queryByRole("heading", { name: "Selfie completed" })).toBeNull();
     expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
     accept();
     expect(await view.findByRole("heading", { name: "Save your authenticator?" }, { timeout: 4000 })).toBeTruthy();
@@ -215,6 +215,7 @@ for (const [name, error, title] of [
       fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
       expect(await view.findByRole("heading", { name: title })).toBeTruthy();
       expect(view.queryByText(/internal detail/)).toBeNull();
+      expect(view.queryByRole("heading", { name: "Selfie completed" })).toBeNull();
       expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
       fireEvent.click(view.getByRole("button", { name: "Try again" }));
       expect(await view.findByRole("heading", { name: title })).toBeTruthy();
