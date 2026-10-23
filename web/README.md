@@ -12,11 +12,14 @@ Requests currently must target staging.
 
 The browser fetches and decrypts the request and checks its RP signature. Only Selfie requests (schema 11 in every requirement) can start the
 temporary camera flow. Mixed requests, user-presence requirements and identity
-attributes remain unsupported. Direct visits show the landing page, whose
-**Go to authenticator** button opens a saved-authenticator access screen. The user
-explicitly signs in with their saved passkey to view credentials. Browsers without
-saved access are directed to start from an app request; this button never opens
-the camera or creates an account.
+attributes remain unsupported. There is no landing page: `/` redirects (302) to
+https://world.org/ without its query, and `/verify` without a request ends on
+“This request can’t be verified”. **Go to authenticator** opens saved access,
+where the user explicitly signs in with their passkey to view credentials. It is
+offered after a request is saved and on `/recover` (“Retrieve your World ID
+credentials”), which is also how a later visit recovers an interrupted setup.
+**Back** returns to the screen that opened it. Neither entry opens the camera or
+creates an account.
 
 The public flow uses local capture as its completion signal; it does not send a
 verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second

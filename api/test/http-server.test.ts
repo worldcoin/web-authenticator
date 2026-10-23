@@ -23,7 +23,7 @@ test("serves web assets and HEAD responses with security headers", async () => {
     await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
     await writeFile(join(staticRoot, "app.js"), "export const ready = true;");
     const assets = start({ staticRoot });
-    const page = await fetch(assets);
+    const page = await fetch(assets + "/index.html");
     expect(page.status).toBe(200);
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(await page.text()).toContain("Authenticator");
@@ -38,6 +38,43 @@ test("serves web assets and HEAD responses with security headers", async () => {
     await rm(staticRoot, { recursive: true, force: true });
   }
 });
+test("the bare origin redirects to world.org temporarily and never forwards the query", async () => {
+  const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-root-"));
+  try {
+    await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
+    const app = start({ staticRoot });
+    for (const path of ["/", "/?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D"]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetch(app + path, { method, redirect: "manual" });
+        expect(response.status).toBe(302);
+        expect(response.headers.get("location")).toBe("https://world.org/");
+        expectSecurityHeaders(response);
+      }
+    }
+    expect((await fetch(app + "/", { method: "POST" })).status).toBe(405);
+  } finally {
+    await rm(staticRoot, { recursive: true, force: true });
+  }
+});
+
+test("the recover page serves the app with security headers", async () => {
+  const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-recover-"));
+  try {
+    await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
+    const app = start({ staticRoot });
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${app}/recover`, { method, redirect: "manual" });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(await response.text()).toBe(method === "GET" ? "<h1>Authenticator</h1>" : "");
+      expectSecurityHeaders(response);
+    }
+    expect((await fetch(`${app}/recover`, { method: "POST" })).status).toBe(405);
+  } finally {
+    await rm(staticRoot, { recursive: true, force: true });
+  }
+});
+
 test("verify links serve the app directly, without a redirect that repeats the bridge key", async () => {
   const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-verify-"));
   try {
