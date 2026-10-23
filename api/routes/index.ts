@@ -24,5 +24,6 @@ export function createRoutes({ staticRoot, selfieEnrollmentPolicy, localStagingI
     "/": { GET: root },
     "/verify": { GET: verifyPage(staticRoot) },
     "/recover": { GET: recoverPage(staticRoot) },
+    "/poseguard": { GET: recoverPage(staticRoot) },
   };
 }

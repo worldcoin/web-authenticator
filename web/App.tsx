@@ -24,6 +24,8 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [consentError, setConsentError] = useState<string | null>(null);
   const [loadExpired, setLoadExpired] = useState(false);
   const [recover] = useState(() => window.location.pathname === "/recover");
+  // Explicit demo opt-in, retained before the request capability is removed from history.
+  const [poseguard] = useState(() => new URLSearchParams(window.location.search).get("poseguard") === "1");
   const source = useRef<string | null>(null);
 
   useEffect(() => {
@@ -84,7 +86,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
 
   return <AppLayout footerActions={footerActions} hideControls={completionAnimating && !consentScreen}>
     {consentState !== null && consentState !== "unset" && <div hidden={consentOpen} inert={consentOpen} style={consentOpen ? undefined : { display: "contents" }}>
-      <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+      <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired} poseguard={poseguard}
         onTransitionChange={setCompletionAnimating} onSave={services.open} enrollment={services.enrollment} temporary={services.temporary}
         onDispose={() => { setIncoming(null); source.current = null; }} />
     </div>}

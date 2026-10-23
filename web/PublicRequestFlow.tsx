@@ -25,7 +25,7 @@ const COMPLETION_STEPS = {
 } as const;
 
 /** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
-export function PublicRequestFlow({ incoming, recover, loading, failed, expired, enrollment, temporary, onDispose, onSave, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, recover, loading, failed, expired, enrollment, temporary, onDispose, onSave, onTransitionChange, poseguard = false }: {
   incoming: IncomingRequest | null;
   recover: boolean;
   loading: boolean;
@@ -33,6 +33,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
   expired: boolean;
   enrollment: SelfieEnrollmentService;
   temporary?: PrepareTemporarySession;
+  poseguard?: boolean;
   onDispose: () => void;
   onTransitionChange: (active: boolean) => void;
   onSave: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
@@ -221,7 +222,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
 
   if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete}
+      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} poseguard={poseguard}
         enroll={policy ? async (image, signal) => {
           const prepared = await startTemporary();
           if (prepared && !prepared.ok) throw prepared.error;

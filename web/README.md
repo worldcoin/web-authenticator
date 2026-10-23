@@ -73,3 +73,28 @@ request and does not reopen a camera or wallet. Start a fresh request at the RP.
 
 Return navigation uses `return_to_url` from the encrypted request. A `return_to`
 query parameter alone does not enable a return link.
+
+## Local PoseGuard demo
+
+Open `/poseguard` for a repeatable movement check without an IDKit request.
+Camera access and the model start only after **Start**. The check uses the pinned
+FacePAD algorithm 8 defaults: framing, four generated head movements and an eye
+check. Keep looking at the stationary dot while following the arrow. Completing
+the four movements can still produce a failed or inconclusive eye check.
+
+This is the FacePAD research flow. It does not implement the mobile `POSE_GUARD`
+production configuration's three-success policy or embedding similarity checks.
+Those require the matching evaluator/model contract, not a constants-only update.
+
+To try it within the existing request flow, append `&poseguard=1` to a fresh
+`/verify?i=…&k=…` link. A local pass hands the initial frontal JPEG to the existing
+enrollment flow when configured. The standalone demo never submits images or
+issues credentials. Neither path has TEE challenge generation or evaluation yet;
+the browser's result is not issuer-verifiable authorization.
+
+The build prepares pinned MediaPipe assets locally; it checks the model hash and
+serves runtime/model files from `/mediapipe/`. Source and adapter differences are
+recorded in `lib/poseguard/PROVENANCE.md`. Completion logs appear in the browser
+console under `poseguard_complete`, including outcome, timings and aggregate gaze
+metrics. Images, landmarks, seeds and embeddings are not logged or persisted by
+this adapter. Closing, hiding or retrying the capture releases camera and worker.
