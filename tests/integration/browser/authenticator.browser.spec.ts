@@ -221,6 +221,35 @@ if (!("bun" in process.versions)) {
     expect(cameraCalls).toBe(0);
   });
 
+  test("/recover is the saved-access entry: accessible, no camera, and Back returns to it", async ({ page }, info) => {
+    let cameraCalls = 0;
+    await page.exposeFunction("recordCameraCall", () => { cameraCalls++; });
+    await page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = async () => {
+        await (window as typeof window & { recordCameraCall(): Promise<void> }).recordCameraCall();
+        throw new Error("Camera must not open from /recover");
+      };
+    });
+    await page.addInitScript({ content: axe.source });
+    await page.goto("/recover");
+    await expect(page.getByRole("heading", { name: "Retrieve your World ID credentials" })).toBeVisible();
+    const violations = await page.evaluate(async () => {
+      const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
+      return (await runtime.run()).violations;
+    });
+    expect(violations).toEqual([]);
+    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-recover.png`, fullPage: true });
+    await page.getByRole("button", { name: "Go to authenticator" }).click();
+    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+    await expect(page.getByText(/Complete a Selfie Check from an app request/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page.getByRole("heading", { name: "Retrieve your World ID credentials" })).toBeVisible();
+    await expect(page.locator("video")).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe("/recover");
+    expect(cameraCalls).toBe(0);
+  });
+
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
@@ -321,7 +350,7 @@ if (!("bun" in process.versions)) {
   });
 
   for (const providerArrays of [false, true]) {
-  test(`real virtual PRF and WalletKit vault survive a failed staging registration (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
+  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Virtual PRF requires Chromium CDP");
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
@@ -351,11 +380,14 @@ if (!("bun" in process.versions)) {
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
     expect(Object.values(saved)).toContain("submitting");
-    expect(registrations).toBe(1);
-    // Without the landing page, a later visit has no saved-access entry; recovery is the in-flow retry.
-    await page.getByRole("button", { name: "Not now" }).click();
-    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
-    expect(registrations).toBe(1);
+    const before = registrations;
+    expect(before).toBe(1);
+    // A later visit recovers through /recover without registering again.
+    await page.goto("http://localhost:4194/recover");
+    await page.getByRole("button", { name: "Go to authenticator" }).click();
+    await page.getByRole("button", { name: "Sign in with passkey" }).click();
+    await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
+    expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });
   }

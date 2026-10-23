@@ -7,10 +7,11 @@ import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
+import { Recover } from "./components/Recover";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Stage = "intro" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired";
-// `back` is the completion screen that opened saved access.
+// `back` is the screen that opened saved access: a completed request or /recover.
 type Flow = { stage: Stage; returnUrl?: string; saved?: boolean; back?: Stage };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
@@ -20,8 +21,9 @@ const COMPLETION_STEPS = {
 } as const;
 
 /** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
-export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, recover, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
   incoming: IncomingRequest | null;
+  recover: boolean;
   loading: boolean;
   failed: boolean;
   expired: boolean;
@@ -167,7 +169,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     </Suspense>
   </div>;
 
-  // Without a request link there is no landing page: the intro ends as "can't be verified".
+  // Back from saved access returns here (stage "intro").
+  if (recover && !incoming && !loading && !failed) return <Recover onOpen={() => setFlow(current => ({ ...current, stage: "access", back: current.stage }))} />;
+
+  // Elsewhere without a request link there is no landing page: the intro ends as "can't be verified".
   return <div className="public-request-flow">
     <RequestIntro
       selfieOnly

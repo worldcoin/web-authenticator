@@ -20,6 +20,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [loadExpired, setLoadExpired] = useState(false);
+  const [recover] = useState(() => window.location.pathname === "/recover");
   const source = useRef<string | null>(null);
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
     {consentState === null ? null
       : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
-      : <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed} expired={loadExpired || expired}
+      : <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired}
         onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
   </AppLayout>;
 }

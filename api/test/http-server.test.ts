@@ -57,6 +57,24 @@ test("the bare origin redirects to world.org temporarily and never forwards the 
   }
 });
 
+test("the recover page serves the app with security headers", async () => {
+  const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-recover-"));
+  try {
+    await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
+    const app = start({ staticRoot });
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${app}/recover`, { method, redirect: "manual" });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(await response.text()).toBe(method === "GET" ? "<h1>Authenticator</h1>" : "");
+      expectSecurityHeaders(response);
+    }
+    expect((await fetch(`${app}/recover`, { method: "POST" })).status).toBe(405);
+  } finally {
+    await rm(staticRoot, { recursive: true, force: true });
+  }
+});
+
 test("verify links serve the app directly, without a redirect that repeats the bridge key", async () => {
   const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-verify-"));
   try {

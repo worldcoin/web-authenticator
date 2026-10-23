@@ -232,6 +232,32 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
+test("/recover opens saved access only on an explicit sign-in, and Back returns to it", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  window.history.replaceState(null, "", "/recover");
+  try {
+    const f = await fixture(11);
+    f.services.load = async () => null;
+    let opened = 0;
+    const open = f.services.open;
+    f.services.open = async () => { opened++; return open(); };
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    expect(await view.findByRole("heading", { name: "Retrieve your World ID credentials" })).toBeTruthy();
+    expect(view.queryByRole("button", { name: /passkey|Start selfie check/ })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Go to authenticator" }));
+    expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+    expect(opened).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
+    expect(opened).toBe(1);
+    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
+    expect(f.calls.terminated).toBe(1);
+    fireEvent.click(view.getByRole("button", { name: "Back" }));
+    expect(await view.findByRole("heading", { name: "Retrieve your World ID credentials" })).toBeTruthy();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  } finally { localStorage.clear(); }
+});
+
 test("a visit without a request link has no landing page or authenticator entry", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   try {

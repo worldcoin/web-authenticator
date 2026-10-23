@@ -10,13 +10,16 @@ async function openSelfie(page: Page, query = "") {
 }
 
 if (!("bun" in process.versions)) {
-  test("a direct visit does not start the camera or load its runtime", async ({ page }) => {
+  test("direct visits, /recover and saved access do not start the camera or load its runtime", async ({ page }) => {
     const modelRequests: string[] = [];
     page.on("request", request => {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/verify");
     await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await page.goto("/recover");
+    await page.getByRole("button", { name: "Go to authenticator" }).click();
+    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
     await expect(page.locator("video")).toHaveCount(0);
     expect(modelRequests).toEqual([]);
