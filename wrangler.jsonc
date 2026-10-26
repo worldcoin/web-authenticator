@@ -14,11 +14,11 @@
     "html_handling": "none",
     "not_found_handling": "none"
   },
-  // The administrator supplies these after creating the TFH-only Access app.
-  // Empty values deliberately prevent the Worker from serving any content.
+  // Public identifiers for the Access app protecting authenticator.toolsforhumanity.dev.
+  // Update the audience if Terraform recreates that Access application.
   "vars": {
-    "CF_ACCESS_TEAM_DOMAIN": "",
-    "CF_ACCESS_AUD": ""
+    "CF_ACCESS_TEAM_DOMAIN": "toolsforhumanity.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "d0a462b581bb5cc080282fb737691d2fa93332168d859514a0f2ab7fc6692d46"
   },
   "observability": {
     "enabled": true,
