@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
@@ -9,7 +9,7 @@ import { RequestExpiredError } from "../lib/proof-request";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
 import { SelfieRejectedError, type SelfieEmbeddingSummary, type SelfieEnrollmentService } from "../lib/selfie-enrollment";
-import type { TemporarySelfieSession } from "../lib/temporary-selfie-session";
+import type { SelfieProcessingStep, TemporarySelfieSession } from "../lib/temporary-selfie-session";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -48,10 +48,12 @@ for (const save of [false, true]) {
     const f = await fixture(11);
     const calls = { prepared: 0, extracted: 0, completed: 0, saved: 0, disposed: 0, opened: 0 };
     let deliver!: () => void;
+    let progress!: (step: SelfieProcessingStep) => void;
     const delivered = new Promise<void>(resolve => { deliver = resolve; });
     const session: TemporarySelfieSession = {
+      waitUntilReady: async () => {},
       extract: async () => { calls.extracted++; return { embeddingType: "test", embeddingVersion: "1", embeddingInferenceBackend: "test", encodedLength: 1 }; },
-      complete: async (request, signal) => { calls.completed++; await delivered; signal.throwIfAborted(); await request.deliver("proof", signal); },
+      complete: async (request, signal, onProgress) => { calls.completed++; progress = onProgress!; await delivered; signal.throwIfAborted(); await request.deliver("proof", signal); },
       save: async () => { calls.saved++; }, dispose: async () => { calls.disposed++; },
     };
     f.services.enrollment.policy = async () => "trusted-policy";
@@ -66,16 +68,31 @@ for (const save of [false, true]) {
       expect(calls.prepared).toBe(1);
       expect(calls.opened).toBe(0);
       fireEvent.click(start);
-      await view.findByText("Checking your selfie");
+      await view.findByText("Checking your selfie", {}, { timeout: 2000 });
+      expect(view.queryByRole("heading", { name: "Photo captured" })).toBeNull();
+      expect(view.container.querySelector(".selfie-photo")).toBeNull();
       expect(calls.extracted).toBe(1); expect(calls.completed).toBe(1);
       expect(view.queryByRole("heading", { name: "Selfie captured" })).toBeNull();
       expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+      expect(view.queryByLabelText("Your camera preview")).toBeNull();
+      expect(view.container.querySelector(".request-processing")?.textContent).toBe("Checking your selfie");
+      expect(view.container.querySelector(".request-processing")?.children).toHaveLength(1);
+      expect(view.container.querySelector(".selfie-footer")).toBeNull();
+      expect(captureMock.mock.calls[0]![3]?.retainPreviewUntilAbort).toBe(false);
+      for (const [step, heading] of [["preparing-credential", "Preparing your credential"], ["creating-proof", "Creating your proof"], ["sending-proof", "Sending your proof"]] as const) {
+        act(() => progress(step));
+        await view.findByRole("heading", { name: heading });
+        expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();
+        expect(view.queryByLabelText("Your camera preview")).toBeNull();
+      }
       // Settings must preserve the in-flight proof and temporary seed/session.
       fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
       expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
       expect(calls.disposed).toBe(0);
       fireEvent.click(view.getByRole("button", { name: "Decline" }));
       deliver();
+      await waitFor(() => expect(view.container.querySelector(".completion-sequence")?.getAttribute("data-stage")).toBe("confirmation"));
+      expect(view.queryByRole("heading", { name: "Photo captured" })).toBeNull();
       const choice = await view.findByRole("button", { name: save ? "Save with passkey" : "Not now" }, { timeout: 4000 });
       expect(f.calls.deliver).toEqual(["proof"]);
       expect(calls.saved).toBe(0);
@@ -92,6 +109,7 @@ test("failed proof delivery never shows completion or passkey saving", async () 
   const f = await fixture(11);
   f.services.enrollment.policy = async () => "trusted-policy";
   const session: TemporarySelfieSession = {
+    waitUntilReady: async () => {},
     extract: async () => ({ embeddingType: "test", embeddingVersion: "1", embeddingInferenceBackend: "test", encodedLength: 1 }),
     complete: async () => { throw new Error("Proof delivery failed"); },
     save: async () => { throw new Error("Must not save"); }, dispose: async () => {},
@@ -105,6 +123,51 @@ test("failed proof delivery never shows completion or passkey saving", async () 
     expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
   } finally { captureMock.mockRestore(); }
 });
+
+for (const outcome of ["ready", "failed", "cancelled"] as const) {
+  test(`photo waits for temporary authenticator readiness: ${outcome}`, async () => {
+    const f = await fixture(11);
+    f.services.enrollment.policy = async () => "trusted-policy";
+    let release!: () => void;
+    let reject!: (error: Error) => void;
+    let entered!: () => void;
+    const preparing = new Promise<void>(resolve => { entered = resolve; });
+    const ready = new Promise<void>((resolve, fail) => { release = resolve; reject = fail; });
+    const events: string[] = [];
+    const session: TemporarySelfieSession = {
+      waitUntilReady: async signal => { entered(); await ready; signal.throwIfAborted(); events.push("ready"); },
+      extract: async () => { events.push("extract"); return { embeddingType: "test", embeddingVersion: "1", embeddingInferenceBackend: "test", encodedLength: 1 }; },
+      complete: async () => { events.push("proof"); }, save: async () => {}, dispose: async () => {},
+    };
+    const captureMock = spyOn(capture, "captureSelfie").mockImplementation(async (_video, signal, _update, options) => {
+      await options?.beforeCapture?.(signal);
+      events.push("capture");
+      return { image: new Blob(["test"]), timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 } };
+    });
+    try {
+      const view = render(<AuthenticatorAppV1 services={{ ...f.services, temporary: async () => session }} consent={decidedConsent} />);
+      fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+      await preparing;
+      expect(events).not.toContain("capture");
+      if (outcome === "ready") {
+        release();
+        await waitFor(() => expect(events).toEqual(["ready", "capture", "extract", "proof"]));
+      } else if (outcome === "failed") {
+        reject(new Error("private SDK failure"));
+        expect(await view.findByRole("button", { name: "Try again" })).toBeTruthy();
+        expect(view.queryByText("private SDK failure")).toBeNull();
+        expect(events).not.toContain("capture");
+        expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+      } else {
+        fireEvent.click(view.getByRole("button", { name: "Cancel check" }));
+        await view.findByRole("heading", { name: "Check cancelled" });
+        release();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(events).not.toContain("capture");
+      }
+    } finally { release(); captureMock.mockRestore(); }
+  });
+}
 test("unsupported presence requirements stop before passkey setup", async () => {
   const f = await fixture(11); f.incoming.unsupportedReason = "User presence is not implemented.";
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
@@ -250,7 +313,7 @@ test("with enrollment on, completion waits for the enclave to accept the capture
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
     expect(await view.findByRole("heading", { name: "Checking your selfie" })).toBeTruthy();
-    expect(view.getByText("Your selfie is encrypted for a verified secure enclave.")).toBeTruthy();
+    expect(view.queryByLabelText("Your camera preview")).toBeNull();
     expect(submitted).toEqual([{ policy: POLICY, size: 4 }]);
     expect(view.queryByRole("heading", { name: "Selfie completed" })).toBeNull();
     expect(view.queryByRole("heading", { name: "Save your authenticator?" })).toBeNull();

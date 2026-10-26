@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import * as sdk from "@worldcoin/walletkit-web";
 import * as passkeys from "../lib/wallet-session";
 import { WalletKit } from "../lib/walletkit";
-import { prepareTemporarySelfieSession } from "../lib/temporary-selfie-session";
+import { prepareTemporarySelfieSession, type SelfieProcessingStep } from "../lib/temporary-selfie-session";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
 
@@ -59,9 +59,13 @@ test("prepares without a passkey, shares the worker for extraction, delivers bef
   expect(f.calls.register).toBe(1);
   expect(f.calls.issue).toBe(0);
   expect(f.calls.save).toBe(0);
+  await session.waitUntilReady(f.controller.signal);
+  expect(f.calls).toMatchObject({ initialize: 1, subject: 1, issue: 0 });
   await session.extract("{}", new Blob(["image"]), f.controller.signal);
   expect(f.calls.terminated).toBe(0);
-  await session.complete(f.incoming, f.controller.signal);
+  const steps: SelfieProcessingStep[] = [];
+  await session.complete(f.incoming, f.controller.signal, step => steps.push(step));
+  expect(steps).toEqual(["preparing-credential", "creating-proof", "sending-proof"]);
   expect(f.calls).toMatchObject({ issue: 1, store: 1, prove: 1, deliver: 1, save: 0 });
   await session.save(f.controller.signal);
   await session.complete(f.incoming, f.controller.signal);
@@ -75,7 +79,9 @@ test("declining erases the unsaved store; a delivery retry reuses the same issue
   f.calls.failDelivery = true;
   await expect(session.complete(f.incoming, f.controller.signal)).rejects.toThrow("delivery unavailable");
   f.calls.failDelivery = false;
-  await session.complete(f.incoming, f.controller.signal);
+  const steps: SelfieProcessingStep[] = [];
+  await session.complete(f.incoming, f.controller.signal, step => steps.push(step));
+  expect(steps).toEqual(["sending-proof"]);
   await session.dispose();
   await session.dispose();
   expect(f.calls).toMatchObject({ register: 1, issue: 1, prove: 1, deliver: 2, save: 0, destroy: 1 });
@@ -110,6 +116,7 @@ test("finalization before account visibility retries initialization of the same 
 test("unexpected initialization failures are surfaced without retrying or issuing", async () => {
   const f = await fixture(); f.calls.failInitialize = true;
   const session = (await f.begin())!;
+  await expect(session.waitUntilReady(f.controller.signal)).rejects.toThrow("storage unavailable");
   await expect(session.complete(f.incoming, f.controller.signal)).rejects.toThrow("storage unavailable");
   expect(f.calls).toMatchObject({ register: 1, initialize: 1, subject: 0, issue: 0, deliver: 0 });
   await session.dispose();

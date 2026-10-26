@@ -18,6 +18,11 @@ export type CaptureResult = {
   timing: { guidanceMs: number; totalMs: number; width: number; height: number };
 };
 
+export type CaptureOptions = {
+  retainPreviewUntilAbort?: boolean;
+  beforeCapture?: (signal: AbortSignal) => Promise<void>;
+};
+
 export const INITIAL_CAPTURE_STATE: CaptureState = {
   phase: "starting", title: "Opening your camera", hint: "Allow camera access when your browser asks.", progress: 0, cameraReady: false,
 };
@@ -98,7 +103,7 @@ export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
 }
 
 /** Owns one attempt. A retained live preview must be released by aborting the caller’s signal. */
-export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean } = {}): Promise<CaptureResult> {
+export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: CaptureOptions = {}): Promise<CaptureResult> {
   let stream: MediaStream | undefined;
   let stopDetector: (() => void) | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -140,6 +145,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     try {
       await withAbort(video.play(), attempt);
       update({ phase: "framing", title: "Find your light", hint: "Look at the camera. We're getting ready.", progress: 0, cameraReady: true });
+      if (options.beforeCapture) await withAbort(options.beforeCapture(attempt), attempt);
+      attempt.throwIfAborted();
       await withAbort(new Promise<void>((resolve, reject) => {
         let alignedSince: number | undefined;
         let lastResultAt = 0;

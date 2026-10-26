@@ -8,9 +8,12 @@ import { WalletKit } from "./walletkit";
 import { saveTemporaryWallet } from "./wallet-session";
 import type { TemporaryWalletMaterial } from "./wallet-envelope";
 
+export type SelfieProcessingStep = "checking-selfie" | "preparing-credential" | "creating-proof" | "sending-proof";
+
 export interface TemporarySelfieSession {
+  waitUntilReady(signal: AbortSignal): Promise<void>;
   extract(policy: string, image: Blob, signal: AbortSignal): Promise<SelfieEmbeddingSummary>;
-  complete(request: IncomingRequest, signal: AbortSignal): Promise<void>;
+  complete(request: IncomingRequest, signal: AbortSignal, onProgress?: (step: SelfieProcessingStep) => void): Promise<void>;
   save(signal: AbortSignal): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -107,12 +110,17 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
   })().then(() => ({ ok: true as const }), error => ({ ok: false as const, error }));
 
   return {
+    async waitUntilReady(captureSignal) {
+      if (closed) throw new Error("This temporary session has ended. Start a fresh request.");
+      const result = await abortable(ready, AbortSignal.any([signal, captureSignal]));
+      if (!result.ok) throw result.error;
+    },
     async extract(policy, image, captureSignal) {
       if (closed) throw new Error("This temporary session has ended. Start a fresh request.");
       const api = await abortable(worker, captureSignal);
       return extractSelfieEmbedding(policy, image, captureSignal, async () => api, false);
     },
-    complete(request, captureSignal) {
+    complete(request, captureSignal, onProgress) {
       if (closed || (boundRequest && boundRequest !== request.proof.id)) return Promise.reject(new Error("Temporary session does not match this request."));
       boundRequest = request.proof.id;
       if (delivered) return Promise.resolve();
@@ -123,6 +131,7 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
         if (!preparation.ok) throw preparation.error;
         if (!wallet || !prepared) throw new Error("Temporary authenticator is unavailable.");
         if (!credentialStored) {
+          onProgress?.("preparing-credential");
           const bytes = await logFlowStep("temporary.issue_credential", () => issue(prepared!.sub, token, deadline));
           try {
             const result = await logFlowStep("temporary.store_credential", () => wallet!.storeCredential(bytes, prepared!.blindingFactor));
@@ -130,7 +139,11 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
             credentialStored = true;
           } finally { bytes.fill(0); }
         }
-        proof ??= await logFlowStep("temporary.create_proof", () => createProof(request, wallet!, deadline, () => {}));
+        if (!proof) {
+          onProgress?.("creating-proof");
+          proof = await logFlowStep("temporary.create_proof", () => createProof(request, wallet!, deadline, () => {}));
+        }
+        onProgress?.("sending-proof");
         await logFlowStep("temporary.deliver_proof", () => abortable(request.deliver(proof!, deadline), AbortSignal.any([deadline, AbortSignal.timeout(30_000)])));
         delivered = true;
         proof = undefined;

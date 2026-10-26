@@ -159,8 +159,8 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
     if (incoming) {
       try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     }
-    // With a policy, SelfieCheck calls this only after the enclave accepted the image. No credential is issued yet.
-    setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
+    // SelfieCheck completes only after the configured enrollment/request pipeline succeeds.
+    setFlow({ stage: policy ? "confirmation" : "capture-border", returnUrl: incoming?.returnUrl });
     onDispose();
   };
   const finishDecision = (saved: boolean) => {
@@ -223,14 +223,21 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
   if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
       <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} poseguard={poseguard}
-        enroll={policy ? async (image, signal) => {
+        prepare={policy && temporary ? async signal => {
+          const preparation = startTemporary();
+          if (!preparation) throw new Error("This request is no longer available. Start a fresh request.");
+          const prepared = await abortable(preparation, signal);
+          if (!prepared.ok) throw prepared.error;
+          await prepared.session?.waitUntilReady(signal);
+        } : undefined}
+        enroll={policy ? async (image, signal, onProgress) => {
           const prepared = await startTemporary();
           if (prepared && !prepared.ok) throw prepared.error;
           const session = prepared?.session;
           if (session) {
             await session.extract(policy, image, signal);
             if (!incoming) throw new Error("The requesting app is no longer available.");
-            await session.complete(incoming, signal);
+            await session.complete(incoming, signal, onProgress);
           } else await enrollment.extract(policy, image, signal);
         } : undefined} />
     </Suspense>

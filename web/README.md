@@ -55,7 +55,9 @@ the vector. Without a policy, capture stays local, as above.
 
 With a policy and the explicitly enabled local staging issuer (see the API README),
 opening a supported request prepares a random temporary account and schema-11
-subject in the background. After enclave acceptance, synthetic staging issuance,
+subject in the background. Camera warm-up can run in parallel, but framing and
+capture wait for both authenticator initialization and subject preparation.
+After enclave acceptance, synthetic staging issuance,
 credential storage and proof delivery must succeed before completion. Optional
 passkey saving encrypts the same account seed and vault key using its PRF; it does
 not register another account. Declining destroys the local vault, although remote

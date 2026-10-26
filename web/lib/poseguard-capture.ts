@@ -1,5 +1,5 @@
 import { createPoseWorker, Session, Phase, secureSeed, words, VERSION, type PoseObservation, type PoseResult, type PoseWorker } from "./poseguard";
-import { withAbort, type CaptureResult, type CaptureState } from "./selfie-capture";
+import { withAbort, type CaptureOptions, type CaptureResult, type CaptureState } from "./selfie-capture";
 import { previewCrop } from "./rgbnet";
 
 export type PoseProgress = { step: number; total: number; direction?: number; holding: boolean };
@@ -44,7 +44,7 @@ export async function capturePoseGuard(
   video: HTMLVideoElement,
   signal: AbortSignal,
   update: (state: PoseCaptureState) => void,
-  options: { retainPreviewUntilAbort?: boolean } = {},
+  options: CaptureOptions = {},
 ): Promise<CaptureResult> {
   const own = new AbortController();
   const attempt = AbortSignal.any([signal, own.signal]);
@@ -72,7 +72,7 @@ export async function capturePoseGuard(
     update({
       phase: "holding", cameraReady: true,
       title: !session.present() ? "Keep your face in view" : moving ? holding ? "Hold it there" : `Turn your head ${words(target.direction)}` : session.index() === 0 ? "Look straight ahead" : "Keep looking at the screen",
-      hint: "Keep your eyes on the dot. Move your head in the arrow’s direction.",
+      hint: "Keep your eyes on the dot. Turn toward the green edge.",
       progress: (session.index() + (moving ? session.hold() : 0)) / session.targets.length,
       pose: { step: Math.min(session.index() + 1, session.targets.length), total: session.targets.length, direction: moving ? target.direction : undefined, holding },
     });
@@ -93,6 +93,8 @@ export async function capturePoseGuard(
         update({ phase: "starting", title: "Getting ready", hint: "Look at the screen. The movement check is loading.", progress: 0, cameraReady: true });
       }),
     ]), attempt);
+    if (options.beforeCapture) await withAbort(options.beforeCapture(attempt), attempt);
+    attempt.throwIfAborted();
     const context = canvas.getContext("2d");
     if (!context || !worker) throw new Error("Could not start the movement check.");
     let lastVideoTime = -1;

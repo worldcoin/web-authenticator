@@ -32,18 +32,18 @@ async function installSyntheticPose(page: Page, mode: "absent" | "follow" | "eye
           return;
         }
         state.analyzed++;
-        // Follow the actual rendered arrow; do not replace the Session or its verdict.
-        const arrow = document.querySelector<SVGElement>(".poseguard-direction svg");
-        const transform = arrow?.style.transform ?? "";
-        if (transform && transform !== this.previousDirection) {
-          const direction = -Number(/rotate\(([-\d.]+)deg\)/.exec(transform)?.[1]);
+        // Follow the rendered target; do not replace the Session or its verdict.
+        const target = document.querySelector<HTMLElement>(".poseguard-target");
+        const targetDirection = target?.style.getPropertyValue("--poseguard-direction") ?? "";
+        if (targetDirection && targetDirection !== this.previousDirection) {
+          const direction = Number.parseFloat(targetDirection);
           this.fromX = this.x; this.fromY = this.y;
           this.toX = 22 * Math.cos(direction * Math.PI / 180);
           this.toY = -22 * Math.sin(direction * Math.PI / 180);
           this.movedAt = data.t;
-          this.previousDirection = transform;
+          this.previousDirection = targetDirection;
         }
-        if (transform) {
+        if (targetDirection) {
           const progress = Math.max(0, Math.min(1, (data.t - this.movedAt) / 0.45));
           this.x = this.fromX + (this.toX - this.fromX) * progress;
           this.y = this.fromY + (this.toY - this.fromY) * progress;
@@ -109,6 +109,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/poseguard?deny");
     await page.getByRole("button", { name: "Start check" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
+    await expect(page.locator(".selfie-placeholder")).toHaveCount(0);
     await expect.poll(async () => (await workerState(page)).terminated).toBe(1);
     await page.evaluate(() => { (window as typeof window & { cameraTest: DemoCamera }).cameraTest.deny = false; });
     await page.getByRole("button", { name: "Try again" }).click();
@@ -131,12 +132,28 @@ if (!("bun" in process.versions)) {
     await page.goto("/poseguard");
     await page.getByRole("button", { name: "Start check" }).click();
     await expect(page.getByLabel("Movement 1 of 4")).toBeVisible();
-    await expect(page.locator(".poseguard-direction")).toBeVisible();
+    await expect(page.locator(".poseguard-target")).toBeVisible();
+    await expect(page.locator(".poseguard-direction")).toHaveCount(0);
+    await expect(page.locator(".poseguard-target")).toHaveCSS("border-top-color", "rgb(40, 168, 107)");
+    await expect(page.locator(".poseguard-target")).not.toHaveCSS("mask-image", "none");
+    const bumperGap = await page.locator(".poseguard-target").evaluate(element => {
+      const target = element.getBoundingClientRect();
+      const surface = element.parentElement!.querySelector(".selfie-camera-surface")!.getBoundingClientRect();
+      const border = Number.parseFloat(getComputedStyle(element).borderTopWidth);
+      return { horizontal: surface.left - target.left - border, vertical: surface.top - target.top - border };
+    });
+    expect(bumperGap.horizontal).toBeCloseTo(4, 1);
+    expect(bumperGap.vertical).toBeCloseTo(4, 1);
+    await expect(page.getByRole("status")).toContainText("Turn toward the green edge.");
     await expect(page.locator(".poseguard-fixation")).toBeVisible();
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-poseguard-synthetic-movement.png`, fullPage: true });
     for (const viewport of [{ width: 320, height: 568 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await expect(page.locator(".poseguard-fixation")).toBeVisible();
+      const dot = await page.locator(".poseguard-fixation").boundingBox();
+      const oval = await page.locator(".selfie-camera-surface").boundingBox();
+      expect(dot!.x + dot!.width / 2).toBeCloseTo(oval!.x + oval!.width, 0);
+      expect(dot!.y + dot!.height / 2).toBeCloseTo(oval!.y, 0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const heading = await page.getByRole("heading", { name: "Follow the movements" }).boundingBox();
       const steps = await page.locator(".poseguard-steps").boundingBox();
@@ -149,6 +166,7 @@ if (!("bun" in process.versions)) {
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-poseguard-synthetic-movement-${viewport.width}.png`, fullPage: true });
     }
     await expect(page.getByRole("heading", { name: "Movement check complete" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".poseguard-target")).toHaveCount(0);
     await expect(page.getByText("You followed all four movements. This demo was checked on your device.")).toBeVisible();
     await expect(page.getByAltText("Your captured selfie")).toBeVisible();
     expect((await cameraState(page)).stopped).toBeGreaterThan(0);

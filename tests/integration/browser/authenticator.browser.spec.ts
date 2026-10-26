@@ -65,24 +65,25 @@ if (!("bun" in process.versions)) {
         if (document.querySelector('.completion-sequence')?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          goldDots: document.querySelectorAll('.selfie-design-ring circle[data-filled="true"]').length,
+          filledDots: document.querySelectorAll('.selfie-design-ring circle[data-filled="true"]').length,
           still: !!document.querySelector('.selfie-photo'),
           checkmark: !!document.querySelector('.selfie-complete'),
           live: !!document.querySelector('video')?.srcObject,
           title: document.querySelector('.selfie-guidance h2')?.textContent,
           animationDuration: getComputedStyle(document.querySelector('.selfie-completion-border')!).animationDuration,
+          borderColor: getComputedStyle(document.querySelector('.selfie-completion-border')!).stroke,
         });
       });
       observer.observe(document.body, { attributes: true, childList: true, subtree: true });
     }));
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-    const goldDots = page.locator('.selfie-design-ring circle[data-filled="true"]');
-    await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
-    expect(await goldDots.count()).toBeLessThan(64);
-    await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
+    const filledDots = page.locator('.selfie-design-ring circle[data-filled="true"]');
+    await expect.poll(() => filledDots.count()).toBeGreaterThan(0);
+    expect(await filledDots.count()).toBeLessThan(64);
+    await expect(filledDots.first()).toHaveCSS("fill", "rgb(0, 92, 255)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s", borderColor: "rgb(0, 92, 255)" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
