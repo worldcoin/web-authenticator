@@ -27,3 +27,5 @@ dist/
 public/models/
 **/target/
 .codex-visualizations/
+
+worker-configuration.d.ts

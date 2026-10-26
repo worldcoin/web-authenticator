@@ -14,5 +14,9 @@
     "*.ts",
     "lib/**/*.ts",
     "routes/**/*.ts"
+  ],
+  "exclude": [
+    "worker.ts",
+    "lib/cloudflare-*.ts"
   ]
 }

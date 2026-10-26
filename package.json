@@ -16,11 +16,16 @@
     "start": "bun run --cwd api start",
     "start:tunnel": "bun --env-file=.env.tunnel api/dist/main.js",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "bun run --cwd web typecheck && bun run --cwd api typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "typecheck": "bun run cf:types && bun run --cwd web typecheck && bun run --cwd api typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit && tsc -p tsconfig.cloudflare.json --noEmit",
     "test": "bun test ./web/test ./api/test ./packages ./tests",
     "test:web": "bun run --cwd web test",
     "test:api": "bun run --cwd api test",
-    "test:browser": "bun run build && playwright test -c tests/e2e/playwright.config.ts"
+    "test:browser": "bun run build && playwright test -c tests/e2e/playwright.config.ts",
+    "build:cf": "bun scripts/build-cloudflare.ts",
+    "deploy:cf": "wrangler deploy",
+    "cf:types": "wrangler types --strict-vars=false",
+    "cf:check": "wrangler deploy --dry-run",
+    "cf:package": "bun scripts/build-cloudflare.ts --package-only"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
@@ -39,6 +44,7 @@
     "globals": "16.4.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.68.0",
-    "viem": "2.56.0"
+    "viem": "2.56.0",
+    "wrangler": "4.153.0"
   }
 }

@@ -20,6 +20,7 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "**/.wrangler/**",
+      "worker-configuration.d.ts",
     ],
   },
   js.configs.recommended,

@@ -52,3 +52,6 @@ bun run start
 ```
 
 [Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
+
+For a TFH-login-protected deployment tracking `main`, see
+[Cloudflare deployment](docs/cloudflare-deployment.md).
