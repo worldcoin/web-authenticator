@@ -54,15 +54,6 @@ jobs:
             - name: Browser regression tests
               run: bunx playwright test -c tests/e2e/playwright.config.ts --project=desktop-${{ matrix.browser }}
 
-            - name: Upload browser screenshots
-              if: always()
-              uses: actions/upload-artifact@v4
-              with:
-                  name: browser-screenshots-${{ matrix.browser }}
-                  path: test-results/screenshots/*.png
-                  if-no-files-found: ignore
-                  retention-days: 7
-
             - name: Build and smoke-test container
               if: runner.os == 'Linux'
               run: |
