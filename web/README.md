@@ -37,7 +37,25 @@ the sequence without changing the layout. Declining ends the session; saving
 uses the existing passkey setup and immediately closes the wallet. Both outcomes
 are terminal. Interrupted setup may retain a passkey profile for recovery.
 The RP continues waiting until expiry; cancellation attempts to notify it and
-reports failures. Real camera enrollment remains disconnected.
+reports failures.
+
+When the server has a Selfie enrollment policy (see the API README), the captured
+JPEG goes to WalletKit's `extractSelfieEmbedding` before completion. A one-shot
+WalletKit worker verifies the enclave's Nitro measurements against that policy,
+seals the image and waits up to 60 seconds. Only an accepted image reaches confirmation. While extraction runs,
+the camera is off and the UI shows only “Checking your selfie”. Image/quality rejections, attestation or transport failures and
+timeouts show a retry, never completion. Hiding the page aborts the request and
+terminates the worker. The page keeps only metadata (type, version, backend and
+encoded length) and logs it as `selfie_extraction_succeeded`. It does not store
+the vector, issue a credential or send a proof to the RP. Without a policy, capture
+stays local, as above.
+
+This draft depends on [WalletKit #604](https://github.com/worldcoin/walletkit/pull/604).
+It keeps the released `0.27.1` dependency so clean installs need no local tarball;
+that SDK does not implement extraction and enabling it fails closed with an
+unsupported-operation error. Before merging, pin the published #604 SDK, replace
+the temporary RPC contract with its exported types, and run live extraction checks.
+See [the integration boundary](../docs/selfie-extraction.md).
 
 The app removes the key from the address bar; reloading loses the in-memory
 request and does not reopen a camera or wallet. Start a fresh request at the RP.

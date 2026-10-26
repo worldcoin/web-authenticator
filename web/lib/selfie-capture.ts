@@ -50,6 +50,26 @@ export function captureFailure(error: unknown): CaptureState {
   return { phase: "error", title, hint, progress: 0, cameraReady: false };
 }
 
+export const ENROLLMENT_STATE: CaptureState = {
+  phase: "capturing", title: "Checking your selfie", hint: "", progress: 1, cameraReady: false,
+};
+
+/** Never shows raw worker or transport messages: they can carry dependency detail. */
+export function enrollmentFailure(error: unknown): CaptureState {
+  const name = error instanceof Error ? error.name : "";
+  const reason = (error as { reason?: string } | undefined)?.reason;
+  let title = "We couldn't check your selfie";
+  let hint = "Something went wrong on our side. Please try again.";
+  if (name === "SelfieRejectedError" && (reason === "invalid_image" || reason === "quality_rejected")) {
+    title = "Let's try a clearer photo";
+    hint = "Face the camera in even light, without anything covering your face.";
+  } else if (name === "TimeoutError") {
+    title = "That took too long";
+    hint = "Check your connection and try again.";
+  }
+  return { phase: "error", title, hint, progress: 0, cameraReady: false };
+}
+
 /** Rejects as soon as `signal` aborts, even if `promise` never settles. */
 export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
