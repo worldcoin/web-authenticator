@@ -77,7 +77,7 @@ export async function capturePoseGuard(
     update({
       phase: "holding", cameraReady: true,
       title: !session.present() ? "Keep your face in view" : moving ? holding ? "Hold it there" : `Turn your head ${words(target.direction)}` : session.index() === 0 ? "Look straight ahead" : "Keep looking at the screen",
-      hint: "Keep your eyes on the dot. Turn toward the green edge.",
+      hint: "Keep your eyes on the dot. Turn toward the highlighted edge.",
       progress: (session.index() + (moving ? session.hold() : 0)) / session.targets.length,
       pose: { step: Math.min(session.index() + 1, session.targets.length), total: session.targets.length, direction: moving ? target.direction : undefined, holding },
     });
@@ -131,7 +131,22 @@ export async function capturePoseGuard(
         return frame;
       }), attempt);
       // Await each result. The camera stays live; old inference frames never accumulate.
-      const observed = await worker.analyze(bitmap, tick);
+      let observed: PoseObservation;
+      try { observed = await worker.analyze(bitmap, tick); }
+      catch (error) {
+        // Some browsers initialize WebGL successfully but stall/fail on first inference.
+        // Restart on CPU before the challenge begins; never switch mid-challenge.
+        if (!session && worker.delegate === "GPU" && !attempt.aborted) {
+          worker.dispose();
+          update({ phase: "starting", title: "Getting ready", hint: "Adjusting the movement check for this device.", progress: 0, cameraReady: true });
+          worker = await createPoseWorker(attempt, "CPU");
+          recent.length = 0;
+          framingStarted = undefined;
+          lastFrameAt = now();
+          continue;
+        }
+        throw error;
+      }
       attempt.throwIfAborted();
       if (session) {
         if (evidence.frames.length >= POSEGUARD_MAX_FRAMES) throw new Error("The movement check took too long. Please try again.");

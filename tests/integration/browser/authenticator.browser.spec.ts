@@ -67,7 +67,7 @@ if (!("bun" in process.versions)) {
     await expect.poll(async () => {
       await page.clock.runFor(100);
       return filledDots.count();
-    }, { timeout: 15_000 }).toBeGreaterThan(0);
+    }, { timeout: 15_000, intervals: [100] }).toBeGreaterThan(0);
     await expect(page.getByRole("heading", { name: "Hold it there" })).toBeVisible();
     expect(await filledDots.count()).toBeLessThan(64);
     await expect(filledDots.first()).toHaveCSS("fill", "rgb(0, 92, 255)");

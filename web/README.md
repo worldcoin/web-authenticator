@@ -21,10 +21,13 @@ credentials”), which is also how a later visit recovers an interrupted setup.
 **Back** returns to the screen that opened it. Neither entry opens the camera or
 creates an account.
 
-The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The oval’s 64 dots fill clockwise in Human badge blue
-(`#005CFF`) during a 1.2-second continuous hold and reset when alignment is lost.
-Capture stops the camera and cuts directly to the sigil confirmation. There is no
+The public flow runs four server-issued PoseGuard movements and submits head/eye
+measurements for API verification. Photos remain in browser memory. The oval’s
+64 dots fill clockwise in Human badge blue (`#005CFF`) as movements complete;
+a highlighted edge shows the requested direction and a red dot guides eye fixation.
+Only an API `passed` verdict, together with local completion, opens the sigil
+confirmation. This is a movement-check preview: it does not issue a credential
+or send a verified IDKit response. Capture stops the camera before API verification. There is no
 frozen-photo presentation, solid-border animation, or post-capture hold.
 The page and fixed footer use a white background.
 The button-free sigil confirmation holds for
@@ -42,3 +45,11 @@ request and does not reopen a camera or wallet. Start a fresh request at the RP.
 
 Return navigation uses `return_to_url` from the encrypted request. A `return_to`
 query parameter alone does not enable a return link.
+
+## PoseGuard runtime
+
+Development and web preparation copy the pinned MediaPipe runtime and download a
+hash-verified model into ignored `web/public/mediapipe/`. These assets are served
+from the app's origin; users do not contact a model CDN. No private RGBNet model
+is needed for the public movement flow. See [the API boundary and beta
+follow-ups](../docs/poseguard.md) before connecting an issuer or deployment.

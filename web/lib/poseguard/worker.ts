@@ -1,7 +1,7 @@
 import type { PoseObservation, PoseWorker, PoseWorkerRequest, PoseWorkerResponse } from './types'
 
 /** One model instance per capture session, with bounded startup and one transferred frame at a time. */
-export function createPoseWorker(signal: AbortSignal): Promise<PoseWorker> {
+export function createPoseWorker(signal: AbortSignal, delegate?: 'CPU'): Promise<PoseWorker> {
   if (signal.aborted) return Promise.reject(new DOMException('Pose capture cancelled', 'AbortError'))
   return new Promise((resolve, reject) => {
     let worker: Worker
@@ -90,7 +90,7 @@ export function createPoseWorker(signal: AbortSignal): Promise<PoseWorker> {
       return
     }
     armTimer(45_000, 'Pose model startup timed out')
-    try { worker.postMessage({ type: 'init' } satisfies PoseWorkerRequest) }
+    try { worker.postMessage({ type: 'init', ...(delegate ? { delegate } : {}) } satisfies PoseWorkerRequest) }
     catch { fail('Could not initialize the pose worker') }
   })
 }

@@ -103,6 +103,11 @@ if (!("bun" in process.versions)) {
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const footer = (await page.getByRole('contentinfo').boundingBox())!;
+        for (const control of [page.locator('.selfie-camera-stage'), page.locator('.selfie-hint'), page.locator('.selfie-about summary')]) {
+          const box = (await control.boundingBox())!;
+          expect(box.y + box.height).toBeLessThanOrEqual(footer.y + 1);
+        }
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-poseguard-${viewport.width}.png`, fullPage: true });
       }
       await page.evaluate(() => { (window as any).cameraTest.aligned = true; });
@@ -113,7 +118,15 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole('heading', { name: 'Allow camera access' })).toBeVisible();
       const violations = await page.evaluate(async () => (await (window as any).axe.run()).violations);
       expect(violations).toEqual([]);
-      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-poseguard-retry.png`, fullPage: true });
+      for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
+        await page.setViewportSize(viewport);
+        const footer = (await page.getByRole('contentinfo').boundingBox())!;
+        const button = (await page.getByRole('button', { name: 'Try again' }).boundingBox())!;
+        const hint = (await page.locator('.selfie-hint').boundingBox())!;
+        expect(hint.y + hint.height).toBeLessThanOrEqual(button.y);
+        expect(button.y + button.height).toBeLessThanOrEqual(footer.y);
+        await page.screenshot({ path: `test-results/screenshots/${info.project.name}-poseguard-retry-${viewport.width}.png`, fullPage: true });
+      }
     });
   });
 }

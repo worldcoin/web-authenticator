@@ -15,7 +15,7 @@ export interface PoseWorker {
 }
 
 export type PoseWorkerRequest =
-  | { type: 'init' }
+  | { type: 'init'; delegate?: 'CPU' }
   | { type: 'analyze'; id: number; frame: ImageBitmap; t: number }
 export type PoseWorkerResponse =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }

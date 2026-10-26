@@ -25,7 +25,9 @@ test("PoseGuard framing requires fresh, finite, steady frontal observations", ()
 
 function harness() {
   let time = 10, videoTime = 0, nextTimer = 0;
-  let stopped = 0, terminated = 0, analyzed = 0, encodeAt = -1;
+  let stopped = 0, terminated = 0, analyzed = 0, encodeAt = -1, initialized = 0;
+  let failGPU = false;
+  let delegate: "GPU" | "CPU" = "GPU";
   const timers = new Map<number, () => void>();
   const intervals = new Map<number, () => void>();
   const controller = new AbortController();
@@ -46,10 +48,18 @@ function harness() {
     onmessage: undefined as ((event: { data: unknown }) => void) | undefined,
     onerror: undefined as (() => void) | undefined,
     onmessageerror: undefined as (() => void) | undefined,
-    postMessage(data: { type: string; id?: number; t?: number; frame?: ImageBitmap }) {
-      if (data.type === "init") queueMicrotask(() => worker.onmessage?.({ data: { type: "ready", delegate: "GPU" } }));
+    postMessage(data: { type: string; id?: number; t?: number; frame?: ImageBitmap; delegate?: "CPU" }) {
+      if (data.type === "init") {
+        initialized++; delegate = data.delegate ?? "GPU";
+        queueMicrotask(() => worker.onmessage?.({ data: { type: "ready", delegate } }));
+      }
       else {
         analyzed++;
+        if (failGPU && delegate === "GPU") {
+          data.frame?.close();
+          queueMicrotask(() => worker.onmessage?.({ data: { type: "error", message: "GPU inference failed" } }));
+          return;
+        }
         if (encodeAt >= 0 && analyzed >= encodeAt + 2) controller.abort();
         const observation = face(data.t!);
         data.frame?.close();
@@ -60,6 +70,7 @@ function harness() {
   };
   return {
     controller, stream, video, timers, intervals,
+    set failGPU(value: boolean) { failGPU = value; },
     getUserMedia: () => Promise.resolve(stream),
     replacements: {
       Worker: function () { return worker; },
@@ -78,7 +89,7 @@ function harness() {
       setInterval: (callback: () => void) => { const id = ++nextTimer; intervals.set(id, callback); return id; },
       clearInterval: (id: number) => { intervals.delete(id); },
     },
-    counts: () => ({ stopped, terminated, analyzed, encodeAt }),
+    counts: () => ({ stopped, terminated, analyzed, encodeAt, initialized }),
   };
 }
 
@@ -128,3 +139,15 @@ test("PoseGuard stops a camera permission result that arrives after cancellation
   });
 });
 
+
+
+test("PoseGuard retries failed GPU inference on CPU before starting the challenge", async () => {
+  await withCapture(async h => {
+    h.failGPU = true;
+    await assert.rejects(capturePoseGuard(h.video, h.controller.signal, () => {}, { ...challenge, targets: [] }), error => error instanceof DOMException && error.name === "AbortError");
+    assert.equal(h.counts().initialized, 2);
+    assert.equal(h.counts().terminated, 2);
+    assert.equal(h.counts().stopped, 1);
+    assert.ok(h.counts().encodeAt >= 3);
+  });
+});

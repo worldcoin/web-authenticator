@@ -9,7 +9,7 @@ let lastStamp = -1
 const send = (message: PoseWorkerResponse, transfer: Transferable[] = []) =>
   self.postMessage(message, { transfer })
 
-async function initialize(): Promise<'GPU' | 'CPU'> {
+async function initialize(preferred?: 'CPU'): Promise<'GPU' | 'CPU'> {
   // Match FacePAD's module-worker runtime; importScripts is unavailable here.
   const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm', true)
   const response = await fetch('/mediapipe/face_landmarker.task', {
@@ -21,7 +21,7 @@ async function initialize(): Promise<'GPU' | 'CPU'> {
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', model)),
     byte => byte.toString(16).padStart(2, '0')).join('')
   if (digest !== MODEL_SHA256) throw new Error('Pose model integrity check failed')
-  for (const delegate of ['GPU', 'CPU'] as const) {
+  for (const delegate of (preferred === 'CPU' ? ['CPU'] as const : ['GPU', 'CPU'] as const)) {
     try {
       landmarker = await FaceLandmarker.createFromOptions(fileset, {
         ...(typeof OffscreenCanvas !== 'undefined' ? { canvas: new OffscreenCanvas(1, 1) } : {}),
@@ -87,7 +87,7 @@ self.onmessage = async ({ data }: MessageEvent<PoseWorkerRequest>) => {
   try {
     if (data.type === 'init') {
       if (landmarker) throw new Error('Pose model already initialized')
-      send({ type: 'ready', delegate: await initialize() })
+      send({ type: 'ready', delegate: await initialize(data.delegate) })
     } else {
       try {
         const observation = analyze(data.frame, data.t)
