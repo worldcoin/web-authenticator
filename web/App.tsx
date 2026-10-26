@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
-import { hasConnector } from "./lib/connector";
 import { consentClient, type ConsentChoice, type ConsentClient, type ConsentState } from "./lib/consent";
 import { openAuthenticator } from "./lib/wallet-session";
 import { loadIncomingRequest, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
+import { selfieEnrollment } from "./lib/selfie-enrollment";
 import { PublicRequestFlow } from "./PublicRequestFlow";
 import { analytics } from "./lib/analytics";
+import { prepareTemporarySelfieSession, type PrepareTemporarySession } from "./lib/temporary-selfie-session";
 
-const defaults = { open: openAuthenticator, load: loadIncomingRequest };
-export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
+const defaults = { open: openAuthenticator, load: loadIncomingRequest, enrollment: selfieEnrollment, temporary: prepareTemporarySelfieSession };
+type Services = Omit<typeof defaults, "temporary"> & { temporary?: PrepareTemporarySession };
+export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: Services; consent?: ConsentClient }) {
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -21,9 +23,14 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
-  // Read before the effect strips the query: was this page opened from a request link?
-  const [requestLink] = useState(() => hasConnector(window.location.href));
   const [loadExpired, setLoadExpired] = useState(false);
+  const [requestLink] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has("i") || params.has("k");
+  });
+  const [recover] = useState(() => window.location.pathname === "/recover");
+  // Explicit demo opt-in, retained before the request capability is removed from history.
+  const [poseguard] = useState(() => new URLSearchParams(window.location.search).get("poseguard") === "1");
   const source = useRef<string | null>(null);
 
   useEffect(() => {
@@ -118,10 +125,12 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
     {consentState !== null && consentState !== "unset" && !consentOpen && <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
   </span>;
 
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
-    {consentState === null ? null
-      : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
-      : <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
+  return <AppLayout footerActions={footerActions} hideControls={completionAnimating && !consentScreen}>
+    {consentState !== null && consentState !== "unset" && <div hidden={consentOpen} inert={consentOpen} style={consentOpen ? undefined : { display: "contents" }}>
+      <PublicRequestFlow incoming={incoming} recover={recover} loading={loading} failed={loadFailed} expired={loadExpired || expired} poseguard={poseguard}
+        onTransitionChange={setCompletionAnimating} onSave={services.open} enrollment={services.enrollment} temporary={services.temporary}
+        onDispose={() => { setIncoming(null); source.current = null; }} />
+    </div>}
+    {consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
   </AppLayout>;
 }

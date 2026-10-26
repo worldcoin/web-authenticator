@@ -7,7 +7,7 @@
 .selfie-close img { display: block; width: 24px; height: 24px; }
 .selfie-design-ring { display: none; }
 .selfie-design-ring circle { fill: #e3e3e3; }
-.selfie-design-ring circle[data-filled="true"] { fill: #d4af37; }
+.selfie-design-ring circle[data-filled="true"] { fill: var(--capture-accent, #d4af37); }
 .selfie-content { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding-block: 24px; text-align: center; }
 .selfie-content h1 { margin: 0 0 28px; font-size: 27px; font-weight: 400; letter-spacing: -.4px; }
 
@@ -15,14 +15,13 @@
 .selfie-camera-stage { position: relative; width: min(280px, 100%); aspect-ratio: .8; margin-bottom: 84px; }
 .selfie-camera-surface { position: absolute; inset: 4px; overflow: hidden; border-radius: 50%; background: var(--background-secondary); }
 .selfie-camera-surface video, .selfie-photo { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.selfie-photo { position: absolute; inset: 0; }
 .selfie-camera-surface video { opacity: 0; transition: opacity .25s; }
-.selfie-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #b5b5b5; }
-.selfie-placeholder svg { width: 47%; }
 .selfie-complete { position: absolute; inset: 0; display: none; place-items: center; color: #fff; background: rgb(0 0 0 / 16%); }
-.selfie-complete svg { width: 56px; height: 56px; padding: 9px; border-radius: 50%; background: var(--accent); }
+.selfie-complete svg { width: 56px; height: 56px; padding: 9px; border-radius: 50%; background: var(--capture-accent, var(--accent)); }
 .selfie-camera-ring { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); overflow: visible; pointer-events: none; }
 .selfie-ring-track { stroke: #e3e3e3; stroke-width: 2; }
-.selfie-ring-progress { stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset .12s linear; }
+.selfie-ring-progress { stroke: var(--capture-accent, var(--accent)); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset .12s linear; }
 
 /* The instruction sits at 22% of the oval, as in OverlayInstruction. */
 .selfie-feedback { position: absolute; inset: 4px; pointer-events: none; }
@@ -32,8 +31,8 @@
 
 /* States set on the root by SelfieCheck.tsx. */
 .selfie-check[data-camera-ready="true"] video { opacity: 1; }
-.selfie-check[data-camera-ready="true"] .selfie-placeholder, .selfie-check[data-state="complete"] .selfie-placeholder, .selfie-check[data-state="complete"]:not([data-transitioning="true"]) video { display: none; }
-.selfie-check[data-state="paused"] .selfie-placeholder, .selfie-check[data-state="error"] .selfie-placeholder, .selfie-check[data-state="complete"] .selfie-complete { display: grid; }
+.selfie-check[data-state="complete"]:not([data-transitioning="true"]) video { display: none; }
+.selfie-check[data-state="complete"] .selfie-complete { display: grid; }
 .selfie-check[data-transitioning="true"][data-camera-ready="false"] video { display: none; }
 .selfie-check[data-state="complete"] .selfie-ring-progress { stroke-dashoffset: 0 !important; }
 
@@ -62,7 +61,7 @@
 }
 
 /* Public capture uses the design's mobile aperture, centered inside a browser. */
-.public-request-flow .selfie-check { max-width: 393px; min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height))); padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
+.public-request-flow .selfie-check { --capture-accent: #005cff; max-width: 393px; min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height))); padding: max(16px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom)); }
 .public-request-flow .selfie-brand { font-size: 15px; }
 .public-request-flow .selfie-content { padding-block: 64px 24px; }
 .public-request-flow .selfie-content > h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
@@ -79,14 +78,14 @@
   .public-request-flow .selfie-content { padding-top: 32px; }
 }
 
-/* Stretch the existing dots along their contour until they join into a green border. */
-.selfie-completion-border { display: none; fill: none; stroke: #28a86b; stroke-width: 5.89732; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 0; stroke-dashoffset: .5; }
+/* Stretch the existing dots along their contour until they join into a solid border. */
+.selfie-completion-border { display: none; fill: none; stroke: var(--capture-accent, #28a86b); stroke-width: 5.89732; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 0; stroke-dashoffset: .5; }
 .selfie-check[data-transitioning="true"] .selfie-design-ring circle { visibility: hidden; }
 .selfie-check[data-transitioning="true"] .selfie-completion-border { display: block; }
 @media (prefers-reduced-motion: no-preference) {
   .completion-sequence[data-stage="capture-border"] .selfie-completion-border { animation: selfie-border-complete 300ms ease-in-out both; }
 }
 @keyframes selfie-border-complete {
-  from { stroke: #d4af37; stroke-dasharray: 0 1; stroke-dashoffset: 0; }
-  to { stroke: #28a86b; stroke-dasharray: 1 0; stroke-dashoffset: .5; }
+  from { stroke: var(--capture-accent, #d4af37); stroke-dasharray: 0 1; stroke-dashoffset: 0; }
+  to { stroke: var(--capture-accent, #28a86b); stroke-dasharray: 1 0; stroke-dashoffset: .5; }
 }

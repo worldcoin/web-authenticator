@@ -10,13 +10,14 @@ async function openSelfie(page: Page, query = "") {
 }
 
 if (!("bun" in process.versions)) {
-  test("landing and saved access do not start the camera or load its runtime", async ({ page }) => {
+  test("direct visits, /recover and saved access do not start the camera or load its runtime", async ({ page }) => {
     const modelRequests: string[] = [];
     page.on("request", request => {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await page.goto("/verify");
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await page.goto("/recover");
     await page.getByRole("button", { name: "Go to authenticator" }).click();
     await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
@@ -115,7 +116,7 @@ if (!("bun" in process.versions)) {
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
         await expect(page.locator(".public-request-flow")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });
       }

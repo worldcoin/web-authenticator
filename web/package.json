@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite build --watch",
+    "build": "bun ../scripts/prepare-poseguard.ts && vite build",
+    "dev": "bun ../scripts/prepare-poseguard.ts && vite build --watch",
     "test": "bun test ./test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@worldcoin/walletkit-web": "0.27.1",
+    "@mediapipe/tasks-vision": "1.0.1",
+    "@worldcoin/walletkit-web": "file:../../walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1-wasm-serial.tgz",
     "onnxruntime-web": "1.30.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",

@@ -15,6 +15,8 @@ export default tseslint.config(
       "**/dist-server/**",
       "**/dist-static/**",
       "**/node_modules/**",
+      "web/public/mediapipe/**",
+      "web/lib/poseguard/vendor/**",
       ".artifacts/**",
       ".runtime/**",
       "playwright-report/**",

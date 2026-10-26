@@ -46,7 +46,8 @@
     "web": {
       "name": "@web-authenticator/web",
       "dependencies": {
-        "@worldcoin/walletkit-web": "0.27.1",
+        "@mediapipe/tasks-vision": "1.0.1",
+        "@worldcoin/walletkit-web": "file:../../walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1-wasm-serial.tgz",
         "onnxruntime-web": "1.30.0",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -136,6 +137,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "", {}, "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@mediapipe/tasks-vision": ["@mediapipe/tasks-vision@1.0.1", "", {}, "sha512-rvRE2FmAZ6ZxKSw7wq+e+jQDpN3t1B/tD2mJz9SmAzb1msoDkd4dMoE4wAh8Z30Um0PQwLiHr9QtomhmXk3aUQ=="],
 
     "@noble/ciphers": ["@noble/ciphers@1.3.0", "", {}, "sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw=="],
 
@@ -261,7 +264,7 @@
 
     "@world-id/web-authenticator-contracts": ["@world-id/web-authenticator-contracts@workspace:packages/contracts"],
 
-    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@0.27.1", "", {}, "sha512-8zcJ8a+YkZJYqSsBA/5I336E0t7kyIZppk2XZuAqkx6ixMYQPFznoNJRhY9gTfMEtI/jSCHWeP5cgdlPtyK2SA=="],
+    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@../../walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1-wasm-serial.tgz", {}, "sha512-4+oiKHsqHiQr2tuWg68zGNU5UOL34D0Py0Rfp5UclhkcRuvdJwuhaZMQITIPgJVepoVYT9O+zr9Y7MkubOETHA=="],
 
     "abitype": ["abitype@1.2.3", "", { "peerDependencies": { "typescript": ">=5.0.4", "zod": "^3.22.0 || ^4.0.0" }, "optionalPeers": ["typescript", "zod"] }, "sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg=="],
 

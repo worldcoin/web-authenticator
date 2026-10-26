@@ -4,6 +4,8 @@ import type { AnalyticsStep } from "../../packages/contracts/src/analytics";
 const analyticsSteps: Partial<Record<string, AnalyticsStep>> = {
   "passkey.create": "passkey_create", "passkey.unlock_prf": "passkey_unlock",
   "walletkit.worker_initialize": "wallet_initialize", "registration.submit": "registration_submit",
+  "selfie.enrollment_policy": "enrollment_policy", "temporary.worker_initialize": "wallet_initialize",
+  "temporary.registration": "registration_submit", "temporary.authenticator_initialize": "registration_initialize",
   "registration.poll": "registration_poll", "registration.initialize_authenticator": "registration_initialize",
 };
 
@@ -38,12 +40,19 @@ export async function logFlowStep<T>(step: string, operation: () => Promise<T>):
 			'DataError',
 			'InvalidStateError',
 			'QuotaExceededError',
+			'WalletKitError',
+			'StorageError',
 		]
 		const category = error instanceof Error && allowedNames.includes(error.name) ? error.name : 'OperationError'
+		// Fixed SDK variants only; dependency messages and details may contain secrets.
+		const allowedCodes = ['AccountDoesNotExist', 'NetworkError', 'Reqwest', 'UnauthorizedAuthenticator']
+		const code = error instanceof Error && 'code' in error && typeof error.code === 'string' && allowedCodes.includes(error.code)
+			? error.code : undefined
 		console.error('authenticator_step', {
 			step,
 			status: 'failed',
 			category,
+			...(code ? { code } : {}),
 			durationMs: Math.round(performance.now() - started),
 		})
 		throw error

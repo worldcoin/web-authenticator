@@ -32,6 +32,30 @@ return JSON 404; everything else falls through to the web build.
   RP registry is not part of readiness: when it fails, only `/api/staging-rp`
   degrades (502).
 
+## Selfie enrollment
+
+`SELFIE_ENROLLMENT_POLICY_FILE` points at the reviewed `client-stage.json` from
+`worldcoin/tee-apps` (`releases/selfie-enrollment/`). It holds the endpoint and the
+trusted PCR0/1/2 values. The server validates it at startup and refuses to start if
+the file is unreadable or invalid. It adds exactly that WebSocket endpoint to the
+CSP `connect-src`. `GET /api/selfie-enrollment` returns `{ "enabled": false }`
+when the variable is unset, or `{ "enabled": true, "policy": … }`. The browser
+treats any other response as an outage, not as "switched off". Unset the
+variable to switch enrollment off. The enclave is not part of readiness, because
+Selfie Check reports its own failures.
+
+```sh
+# Absolute path: `bun run dev` starts the API from api/.
+SELFIE_ENROLLMENT_POLICY_FILE="$PWD/../tee-apps/releases/selfie-enrollment/client-stage.json" bun run dev
+```
+
+For local synthetic issuance, also set `ENABLE_STAGING_ISSUERS=1` and
+`STAGING_SELFIE_HELPER` to the `staging-face-crypto` binary. This mode requires a
+loopback listener and refuses production startup. It enables `/api/selfie-credential`
+for the real staging Face issuer, using synthetic enrollment shares; the captured
+embedding is not bound to this test credential. Issuance retries resume the same
+operation using owner-only state under `~/.local/state/web-authenticator/`.
+
 ## Consent
 
 `GET /api/consent` returns the analytics choice from the `__Host-wid_consent` cookie

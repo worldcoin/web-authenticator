@@ -1,6 +1,6 @@
 import {
   ANALYTICS_BATCH_SIZE, isAnalyticsEvent,
-  type AnalyticsEntryPoint, type AnalyticsEvent, type AnalyticsReason, type AnalyticsStatus, type AnalyticsStep,
+  type AnalyticsContext, type AnalyticsEntryPoint, type AnalyticsEvent, type AnalyticsReason, type AnalyticsStatus, type AnalyticsStep,
 } from "../../packages/contracts/src/analytics";
 import type { ConsentState } from "./consent";
 
@@ -17,6 +17,7 @@ export function analyticsReason(error: unknown): AnalyticsReason {
     case "QuotaExceededError": return "storage_full";
     case "DataError": case "SyntaxError": return "invalid_data";
     case "NetworkError": return "network_error";
+    case "SelfieRejectedError": return "selfie_rejected";
     default: return "operation_error";
   }
 }
@@ -57,7 +58,7 @@ export class FlowAnalytics {
     this.sending = false;
   }
 
-  record(step: AnalyticsStep, status: AnalyticsStatus, fields: { attempt?: number; duration_ms?: number; reason?: AnalyticsReason } = {}): boolean {
+  record(step: AnalyticsStep, status: AnalyticsStatus, fields: AnalyticsContext & { attempt?: number; duration_ms?: number; reason?: AnalyticsReason } = {}): boolean {
     if (!this.consent || this.pending.length >= 128) return false;
     try {
       this.flowId ??= crypto.randomUUID();
@@ -82,11 +83,11 @@ export class FlowAnalytics {
     if (!this.seen.has(key) && this.record(step, status, { reason })) this.seen.add(key);
   }
 
-  begin(step: AnalyticsStep): Finish {
+  begin(step: AnalyticsStep, context: AnalyticsContext = {}): Finish {
     const generation = this.generation;
     const attempt = (this.attempts.get(step) ?? 0) + 1;
     const started = performance.now();
-    const accepted = this.record(step, "started", { attempt });
+    const accepted = this.record(step, "started", { ...context, attempt });
     if (accepted) this.attempts.set(step, attempt);
     let finished = false;
     return (status, reason) => {
@@ -94,7 +95,7 @@ export class FlowAnalytics {
       finished = true;
       // Never replay pre-consent work or an old attempt after consent is revoked/regranted.
       if (!accepted || generation !== this.generation) return;
-      this.record(step, status, { attempt, reason, duration_ms: Math.min(3_600_000, Math.max(0, Math.round(performance.now() - started))) });
+      this.record(step, status, { ...context, attempt, reason, duration_ms: Math.min(3_600_000, Math.max(0, Math.round(performance.now() - started))) });
     };
   }
 

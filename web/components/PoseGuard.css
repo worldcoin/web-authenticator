@@ -1,0 +1,24 @@
+.poseguard-steps { position: absolute; top: -30px; left: 50%; display: flex; gap: 8px; transform: translateX(-50%); }
+.poseguard-demo .selfie-content h1 { margin-bottom: 40px; }
+.poseguard-steps span { width: 24px; height: 4px; border-radius: 4px; background: #e3e3e3; }
+.poseguard-steps span[data-current="true"] { background: var(--capture-accent, #d4af37); }
+.poseguard-steps span[data-done="true"] { background: var(--capture-accent, #28a86b); }
+/* An 8px bumper, 4px outside the aperture, clipped to the target's 45-degree sector. */
+.poseguard-target { position: absolute; inset: -8px; border: 8px solid var(--capture-accent, #28a86b); border-radius: 50%; pointer-events: none; mask-image: conic-gradient(from calc(67.5deg - var(--poseguard-direction)), #000 0deg 45deg, transparent 45deg); }
+.public-request-flow .poseguard-target { inset: calc(11 / 481.637 * 100% - 12px) calc(11 / 345.005 * 100% - 12px); }
+.poseguard-fixation { position: absolute; top: 4px; left: calc(100% - 4px); width: 13px; height: 13px; border: 0; border-radius: 50%; background: #ff0000; transform: translate(-50%, -50%); pointer-events: none; }
+.public-request-flow .poseguard-fixation { top: calc(11 / 481.637 * 100%); left: calc(100% - 11 / 345.005 * 100%); }
+.selfie-check[data-poseguard="true"][data-state="error"] .selfie-camera-stage { margin-bottom: 112px; }
+.poseguard-demo .selfie-check { min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height))); }
+.poseguard-demo { width: 100%; }
+.poseguard-demo-intro { max-width: 420px; margin: auto; padding: 72px 24px 32px; text-align: center; }
+.poseguard-demo-intro img { width: 88px; height: 88px; }
+.poseguard-demo-intro h1 { margin: 28px 0 12px; font-size: 30px; font-weight: 450; letter-spacing: -.6px; }
+.poseguard-demo-intro p { color: var(--foreground-secondary); line-height: 1.5; }
+.poseguard-demo-intro .primary-action { margin-top: 28px; width: 100%; }
+.poseguard-demo-note { font-size: 12px; }
+@media (max-width: 599px) and (max-height: 640px) {
+  /* The live instruction already names the action; reserve space for it above the fixed footer. */
+  .poseguard-demo .selfie-content > h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .poseguard-demo .selfie-content { padding-top: 40px; }
+}

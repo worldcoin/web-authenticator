@@ -1,6 +1,6 @@
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
-import { faceGuidance } from "./rgbnet";
+import { faceGuidance, previewCrop } from "./rgbnet";
 import { analytics, analyticsReason } from "./analytics";
 
 /** Local capture only: one frame, taken once the face has held still in the oval. Nothing is uploaded. */
@@ -17,6 +17,11 @@ export type CaptureState = {
 export type CaptureResult = {
   image: Blob;
   timing: { guidanceMs: number; totalMs: number; width: number; height: number };
+};
+
+export type CaptureOptions = {
+  retainPreviewUntilAbort?: boolean;
+  beforeCapture?: (signal: AbortSignal) => Promise<void>;
 };
 
 export const INITIAL_CAPTURE_STATE: CaptureState = {
@@ -51,6 +56,26 @@ export function captureFailure(error: unknown): CaptureState {
   return { phase: "error", title, hint, progress: 0, cameraReady: false };
 }
 
+export const ENROLLMENT_STATE: CaptureState = {
+  phase: "capturing", title: "Checking your selfie", hint: "This takes a few seconds. Keep this page open.", progress: 1, cameraReady: true,
+};
+
+/** Never shows raw worker or transport messages: they can carry dependency detail. */
+export function enrollmentFailure(error: unknown): CaptureState {
+  const name = error instanceof Error ? error.name : "";
+  const reason = (error as { reason?: string } | undefined)?.reason;
+  let title = "We couldn't check your selfie";
+  let hint = "Something went wrong on our side. Please try again.";
+  if (name === "SelfieRejectedError" && (reason === "invalid_image" || reason === "quality_rejected")) {
+    title = "Let's try a clearer photo";
+    hint = "Face the camera in even light, without anything covering your face.";
+  } else if (name === "TimeoutError") {
+    title = "That took too long";
+    hint = "Check your connection and try again.";
+  }
+  return { phase: "error", title, hint, progress: 0, cameraReady: false };
+}
+
 /** Rejects as soon as `signal` aborts, even if `promise` never settles. */
 export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -61,21 +86,25 @@ export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<
   });
 }
 
-/** Copies the current camera frame. The detector has just confirmed the framing. */
+/**
+ * Copies the part of the current camera frame that the preview shows, which is also the image the framing
+ * guidance evaluated. A full landscape frame would leave the face too small for the face engine.
+ */
 export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
   const { videoWidth: width, videoHeight: height } = video;
   if (width < 1 || height < 1 || width > 4096 || height > 4096) throw new Error("Camera frame dimensions are unsupported.");
+  const [sx, sy, sw, sh] = previewCrop(width, height, video.clientWidth || width, video.clientHeight || height);
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = sw;
+  canvas.height = sh;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Could not create the capture canvas.");
-  context.drawImage(video, 0, 0);
+  context.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
   return canvas;
 }
 
 /** Owns one attempt. A retained live preview must be released by aborting the caller’s signal. */
-export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean } = {}): Promise<CaptureResult> {
+export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: CaptureOptions = {}): Promise<CaptureResult> {
   const captureFinished = analytics.begin("selfie_capture");
   const cameraFinished = analytics.begin("camera");
   let guidanceFinished: ReturnType<typeof analytics.begin> | undefined;
@@ -100,7 +129,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     signal.throwIfAborted();
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Open this page in a browser with camera access over HTTPS or localhost.");
     const media = await withAbort<MediaStream>(navigator.mediaDevices.getUserMedia({
-      audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      // World App iOS captures at 1280x720; the RGBNet detector downsamples, so this only enlarges the capture.
+      audio: false, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
     }).then(media => {
       // A stream granted after cancellation must still be stopped.
       if (signal.aborted) {
@@ -122,6 +152,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
       cameraFinished("completed");
       guidanceFinished = analytics.begin("face_guidance");
       update({ phase: "framing", title: "Find your light", hint: "Look at the camera. We're getting ready.", progress: 0, cameraReady: true });
+      if (options.beforeCapture) await withAbort(options.beforeCapture(attempt), attempt);
+      attempt.throwIfAborted();
       await withAbort(new Promise<void>((resolve, reject) => {
         let alignedSince: number | undefined;
         let lastResultAt = 0;
@@ -148,7 +180,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
           lastResultAt = now;
           if (message === "Face positioned") {
             guidanceFinished?.("completed");
-            challengeFinished ??= analytics.begin("physical_challenge");
+            challengeFinished ??= analytics.begin("physical_challenge", { challenge: "hold_still" });
             alignedSince ??= now;
             if (progressFrame === undefined) showHoldProgress();
             // Only a fresh, aligned detector result can complete the hold.

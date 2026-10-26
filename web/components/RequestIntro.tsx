@@ -31,7 +31,6 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
         {open && selfieOnly ? <>
           <h1>Complete a Selfie Check</h1>
           <p>{state === "ready" ? `${rp} is requesting a Selfie Check.` : "Checking the app’s request…"}</p>
-          <p className="request-preview-note">Use your camera to capture a selfie. This preview does not submit a verification.</p>
         </> : open ? <h1>
           {state === "ready"
             ? rp

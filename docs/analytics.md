@@ -25,8 +25,15 @@ All events use `web_authenticator_step`, with `surface=web_authenticator` and `a
 | `request_eligibility` | The request is supported by the current public flow. Unsupported requests emit `failed/unsupported`. |
 | `camera` | Permission was granted and video playback started. |
 | `face_guidance` | The detector first observed an aligned face. |
-| `physical_challenge` | A fresh detector result confirmed the continuous hold. `challenge=hold_still`; progress animations cannot complete it. Hold resets remain part of this capture attempt. |
+| `physical_challenge` | `challenge=hold_still`: a fresh detector result confirmed the continuous hold. `challenge=poseguard`: the pinned core returned `passed`, including its final evaluation. Animations cannot complete either check. |
+| `challenge_model` | The PoseGuard worker/model is ready. |
+| `challenge_step` | The core advanced past an observed head-turn target. Carries only `challenge=poseguard` and a one-based `challenge_index`; completing all movements does not imply the final evaluation passed. |
 | `selfie_capture` | The JPEG exists in memory. This does **not** imply a credential or proof. |
+| `enrollment_policy` | The policy request was validated (including enrollment disabled). |
+| `selfie_extraction` | The attested enclave returned a successful extraction verdict. A resolved call with a rejected verdict emits `failed/selfie_rejected`. No embedding metadata/vector or rejection message is sent. |
+| `temporary_session` | The local staging issuance capability and temporary session were created. `skipped` means the capability is disabled; account readiness is tracked separately. |
+| `registration_finalization` | Polling reached `finalized`; account initialization can still need retries. |
+| `credential_issuance` | `/api/selfie-credential` returned an accepted `issued` response with decodable credential bytes. Emitted before storage/proof, once per session even if storage/delivery is retried. `issuance_source=staging_demo` explicitly identifies synthetic staging enrollment. |
 | `save_decision` | The user saved access; `skipped` means Not now. |
 | `save_access`, `authenticator_access` | Setup or explicit sign-in finished successfully. |
 | `passkey_create`, `passkey_unlock`, `wallet_initialize` | The corresponding browser/WalletKit call resolved; later validation may still fail the overall operation. |
@@ -40,11 +47,13 @@ All events use `web_authenticator_step`, with `surface=web_authenticator` and `a
 
 Operations emit `started` and one of `completed`, `failed`, or `cancelled`, with a monotonic duration in milliseconds and a per-step attempt number. Request observations and user decisions use attempt `0`. Reasons come from a fixed vocabulary; error messages, causes and stacks are never sent.
 
-### Current implementation boundary
+### End-to-end snapshot and limits
 
-`main` performs local selfie capture and an optional passkey save. It has **no issuer enrollment integration, server-issued physical challenges, or public-flow proof submission**. This PR instruments the existing hold-still challenge and the credential/proof library boundaries, which have automated fixture coverage but are not reached by public capture. It deliberately emits no `credential_issued` or `selfie_check_succeeded` event.
+This draft is stacked on `codex/authenticator-e2e-snapshot` (`a3c199e`), copied from the committed `codex/poseguard-demo` branch plus the current tracked edits and request-processing component in `web-authenticator-framing-e2e`. The active checkout was not modified. The snapshot contains the actual public request path: camera → optional browser PoseGuard → enclave extraction → staging issuance/storage → proof generation → bridge delivery → optional passkey save.
 
-When the issuer integration lands, add a separate issuance step at the authoritative accepted-issuance callback, before proof generation, with a once-only outcome guard. Add returning-credential, resumed-enrollment, duplicate-callback and issuer-failure tests. Wire each server challenge's actual start/result through the same typed boundary; never derive success from indicator rendering. Do not reuse credential storage or the local completion animation as issuance evidence.
+PoseGuard is client-side; its verdict is not server-issued challenge attestation. The staging credential is signed by the real staging issuer using the demo's synthetic enrollment, **not an attestation of the captured embedding**. Keep it separate from production/native conversion metrics. This PR deliberately does not emit native `selfie_check_succeeded` or `partner_analytics_*`. The issuance marker is guarded per temporary session; it does not deduplicate across page reloads or independently created sessions.
+
+The snapshot still depends on an unpublished local WalletKit tarball (`walletkit-selfie-604/dist-pack/worldcoin-walletkit-web-0.22.1-wasm-serial.tgz`) and a separately prepared staging crypto helper. Those dependencies must be published/provisioned before a clean CI/deployment checkout can run the full end-to-end demo. This analytics PR does not build or publish those dependencies.
 
 ## Consent, privacy and delivery
 
@@ -68,6 +77,6 @@ Set **server-only** `POSTHOG_FUZZY_KEY` to the existing mobile project token and
 
 These hosts come from the [mobile app configuration](https://github.com/worldcoin/app-backend-app-config/blob/main/src/app-config/world-id/dev.ts) and [Android defaults](https://github.com/worldcoin/wld-android/blob/0f5f08b22eb313cbe37cb60945d1b06d608264bd/domain/src/main/java/com/worldcoin/domain/model/appMetadata/AppMetadata.kt). Use the token for the intended app/project/environment; don't copy credentials into source or use a personal API key. No deployment credentials are provisioned by this PR. With both variables absent, the endpoint discards events without forwarding; partial or unapproved configuration fails startup. Keep `POSTHOG_CAPTURE_MODE` unset or `v0` for the mobile `/batch/` endpoint. The browser CSP needs no new destination.
 
-Before enabling production, configure staging, confirm that the fuzzy proxy and downstream warehouse allowlist accept `web_authenticator_step` and its properties, and inspect a consented capture/retry/cancellation sequence in PostHog. Verify stable IDs survive retries, person profiles are absent, and decline produces no outbound collection. Then exercise actual issuance/proof delivery once those integrations are connected. These live ingestion checks are still pending; automated tests use a mocked upstream and never send real analytics.
+Before enabling production, configure staging, confirm that the fuzzy proxy and downstream warehouse allowlist accept `web_authenticator_step` and its properties, and inspect a consented capture/retry/cancellation sequence in PostHog. Verify stable IDs survive retries, person profiles are absent, and decline produces no outbound collection. Then exercise the configured staging issuance/proof path, including a bridge failure after issuance and a retry that does not count another issued credential. These live ingestion checks are still pending; automated tests use a mocked upstream and never send real analytics.
 
 PostHog references: [Node SDK](https://posthog.com/docs/libraries/node), [anonymous event capture](https://posthog.com/docs/data/anonymous-vs-identified-events), [batch API](https://posthog.com/docs/api/capture).

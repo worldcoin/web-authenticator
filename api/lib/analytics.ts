@@ -32,7 +32,9 @@ export function createAnalyticsSink(env: Record<string, string | undefined> = pr
         step: event.step, status: event.status, attempt: event.attempt,
         ...(event.duration_ms === undefined ? {} : { duration_ms: event.duration_ms }),
         ...(event.reason === undefined ? {} : { reason: event.reason }),
-        ...(event.step === "physical_challenge" ? { challenge: "hold_still" } : {}),
+        ...(event.challenge === undefined ? {} : { challenge: event.challenge }),
+        ...(event.challenge_index === undefined ? {} : { challenge_index: event.challenge_index }),
+        ...(event.step === "credential_issuance" ? { issuance_source: "staging_demo" } : {}),
       },
     });
     // captureImmediate swallows network errors in the pinned SDK; flush rejects them.

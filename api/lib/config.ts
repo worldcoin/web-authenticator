@@ -1,9 +1,23 @@
+import { loadSelfieEnrollmentPolicy, selfieEnrollmentConnectSource } from "./selfie-enrollment";
+
+const ENV: Readonly<Record<string, string | undefined>> =
+  process.env;
+
+function envValue(name: string): string | undefined {
+  const value = ENV[name]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+}
+
+// Unset keeps Selfie Check local-only. Removing it is the kill switch for TEE extraction.
+export const SELFIE_ENROLLMENT_POLICY = loadSelfieEnrollmentPolicy(envValue("SELFIE_ENROLLMENT_POLICY_FILE"));
+
 export const AUTHENTICATOR_APP_SECURITY_HEADERS_V0 = Object.freeze({
   "Cache-Control": "no-store",
   "Content-Security-Policy": [
     "default-src 'self'",
     "base-uri 'none'",
-    "connect-src 'self' https://bridge.worldcoin.org https://staging-bridge.worldcoin.org https://gateway.id-infra.worldcoin.dev https://indexer.us.id-infra.worldcoin.dev https://node0.us.staging.world.oprf.taceo.network wss://node0.us.staging.world.oprf.taceo.network https://node1.us.staging.world.oprf.taceo.network wss://node1.us.staging.world.oprf.taceo.network https://node2.us.staging.world.oprf.taceo.network wss://node2.us.staging.world.oprf.taceo.network https://node3.us.staging.world.oprf.taceo.network wss://node3.us.staging.world.oprf.taceo.network https://node4.us.staging.world.oprf.taceo.network wss://node4.us.staging.world.oprf.taceo.network",
+    "connect-src 'self' https://bridge.worldcoin.org https://staging-bridge.worldcoin.org https://gateway.id-infra.worldcoin.dev https://indexer.us.id-infra.worldcoin.dev https://node0.us.staging.world.oprf.taceo.network wss://node0.us.staging.world.oprf.taceo.network https://node1.us.staging.world.oprf.taceo.network wss://node1.us.staging.world.oprf.taceo.network https://node2.us.staging.world.oprf.taceo.network wss://node2.us.staging.world.oprf.taceo.network https://node3.us.staging.world.oprf.taceo.network wss://node3.us.staging.world.oprf.taceo.network https://node4.us.staging.world.oprf.taceo.network wss://node4.us.staging.world.oprf.taceo.network"
+      + (SELFIE_ENROLLMENT_POLICY ? ` ${selfieEnrollmentConnectSource(SELFIE_ENROLLMENT_POLICY)}` : ""),
     "font-src 'self'",
     "form-action 'none'",
     "frame-ancestors 'none'",
@@ -20,14 +34,6 @@ export const AUTHENTICATOR_APP_SECURITY_HEADERS_V0 = Object.freeze({
   "X-Content-Type-Options": "nosniff",
 });
 
-const ENV: Readonly<Record<string, string | undefined>> =
-  process.env;
-
-function envValue(name: string): string | undefined {
-  const value = ENV[name]?.trim();
-  return value === undefined || value === "" ? undefined : value;
-}
-
 function envPort(): number {
   const raw = envValue("PORT") ?? envValue("AUTHENTICATOR_PORT");
   if (raw === undefined) return 4173;
@@ -42,3 +48,8 @@ export const AUTHENTICATOR_APP_CONFIG = Object.freeze({
   host: envValue("AUTHENTICATOR_HOST") ?? "127.0.0.1",
   port: envPort(),
 });
+
+export const LOCAL_STAGING_ISSUANCE = envValue("ENABLE_STAGING_ISSUERS") === "1";
+if (LOCAL_STAGING_ISSUANCE && (ENV.NODE_ENV === "production" || !["localhost", "127.0.0.1", "::1"].includes(AUTHENTICATOR_APP_CONFIG.host))) {
+  throw new Error("Synthetic staging issuance requires a non-production loopback listener.");
+}

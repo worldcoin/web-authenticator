@@ -1,7 +1,8 @@
 /** Deliberately closed vocabulary: no request, account, biometric or error payloads. */
 export const ANALYTICS_STEPS = [
   "request", "request_eligibility", "request_expiry", "request_cancellation", "request_dismissal",
-  "selfie_capture", "camera", "face_guidance", "physical_challenge",
+  "selfie_capture", "camera", "face_guidance", "physical_challenge", "challenge_model", "challenge_step",
+  "enrollment_policy", "selfie_extraction", "temporary_session", "registration_finalization", "credential_issuance",
   "save_decision", "save_access", "authenticator_access", "passkey_create", "passkey_unlock",
   "wallet_initialize", "registration_submit", "registration_poll", "registration_initialize",
   "credential_preparation", "credential_storage", "proof_generation", "proof_delivery",
@@ -9,13 +10,15 @@ export const ANALYTICS_STEPS = [
 export const ANALYTICS_STATUSES = ["started", "completed", "failed", "cancelled", "skipped"] as const;
 export const ANALYTICS_REASONS = [
   "timeout", "cancelled", "permission_denied", "camera_missing", "camera_busy", "unsupported",
-  "invalid_state", "storage_full", "invalid_data", "network_error", "expired", "operation_error",
+  "invalid_state", "storage_full", "invalid_data", "network_error", "expired", "operation_error", "selfie_rejected", "challenge_rejected", "challenge_inconclusive",
 ] as const;
 export type AnalyticsStep = typeof ANALYTICS_STEPS[number];
 export type AnalyticsStatus = typeof ANALYTICS_STATUSES[number];
 export type AnalyticsReason = typeof ANALYTICS_REASONS[number];
 export type AnalyticsEntryPoint = "deeplink" | "direct";
-export type AnalyticsEvent = {
+export type AnalyticsChallenge = "hold_still" | "poseguard";
+export type AnalyticsContext = { challenge?: AnalyticsChallenge; challenge_index?: number };
+export type AnalyticsEvent = AnalyticsContext & {
   uuid: string;
   flow_id: string;
   sequence: number;
@@ -31,7 +34,7 @@ export const ANALYTICS_BATCH_SIZE = 16;
 export const ANALYTICS_BODY_LIMIT = 16_384;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const integer = (value: unknown, max: number) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= max;
-const keys = new Set(["uuid", "flow_id", "sequence", "timestamp", "step", "status", "entry_point", "attempt", "duration_ms", "reason"]);
+const keys = new Set(["uuid", "flow_id", "sequence", "timestamp", "step", "status", "entry_point", "attempt", "duration_ms", "reason", "challenge", "challenge_index"]);
 
 /** Validate at both boundaries; reject unknown fields instead of forwarding them. */
 export function isAnalyticsEvent(value: unknown): value is AnalyticsEvent {
@@ -44,5 +47,9 @@ export function isAnalyticsEvent(value: unknown): value is AnalyticsEvent {
     ANALYTICS_STEPS.includes(e.step as AnalyticsStep) && ANALYTICS_STATUSES.includes(e.status as AnalyticsStatus) &&
     (e.entry_point === "deeplink" || e.entry_point === "direct") &&
     (e.duration_ms === undefined || integer(e.duration_ms, 3_600_000)) &&
-    (e.reason === undefined || ANALYTICS_REASONS.includes(e.reason as AnalyticsReason));
+    (e.reason === undefined || ANALYTICS_REASONS.includes(e.reason as AnalyticsReason)) &&
+    (e.challenge === undefined || ((e.step === "physical_challenge" || e.step === "challenge_step") &&
+      (e.challenge === "hold_still" || e.challenge === "poseguard"))) &&
+    (e.challenge_index === undefined || (e.step === "challenge_step" && e.challenge === "poseguard" &&
+      integer(e.challenge_index, 16) && (e.challenge_index as number) >= 1));
 }

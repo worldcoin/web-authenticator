@@ -5,7 +5,7 @@ import type { AnalyticsEvent } from "../../packages/contracts/src/analytics";
 
 const event = (): AnalyticsEvent => ({
   uuid: crypto.randomUUID(), flow_id: crypto.randomUUID(), sequence: 1, timestamp: new Date().toISOString(),
-  step: "physical_challenge", status: "completed", entry_point: "deeplink", attempt: 1, duration_ms: 1500,
+  step: "physical_challenge", challenge: "hold_still", status: "completed", entry_point: "deeplink", attempt: 1, duration_ms: 1500,
 });
 const request = (body: unknown = [event()], headers: Record<string, string> = {}) => new Request("https://auth.example/api/analytics", {
   method: "POST", body: JSON.stringify(body), headers: {
@@ -30,7 +30,8 @@ test("enforces server consent, version, GPC and same-origin before calling the s
 
 test("rejects arbitrary payloads, unknown properties, oversized bodies and batches", async () => {
   let calls = 0; const handler = createAnalyticsHandler(async () => { calls++; });
-  for (const body of [null, [], {}, [null], [{ ...event(), image: "secret" }], Array.from({ length: 17 }, event)]) {
+  for (const body of [null, [], {}, [null], [{ ...event(), image: "secret" }], [{ ...event(), challenge: "private-pose" }],
+    [{ ...event(), challenge_index: 99 }], [{ ...event(), step: "proof_delivery", challenge: "poseguard" }], Array.from({ length: 17 }, event)]) {
     expect((await handler(request(body))).status).toBe(400);
   }
   expect((await handler(request([{ ...event(), proof: "x".repeat(16_384) }]))).status).toBe(413);
@@ -78,6 +79,11 @@ test("real PostHog SDK sends anonymous allowlisted events to the mobile batch en
     expect(wire.batch[0]?.properties).not.toHaveProperty(key);
   }
   expect((bodies[1] as typeof wire).batch[0]?.uuid).toBe(e.uuid);
+  await sink([{ ...e, step: "challenge_step", challenge: "poseguard", challenge_index: 2 }, { ...e, step: "credential_issuance", challenge: undefined }]);
+  const extra = bodies[2] as typeof wire;
+  expect(extra.batch[0]?.properties).toMatchObject({ step: "challenge_step", challenge: "poseguard", challenge_index: 2 });
+  expect(extra.batch[1]?.properties).toMatchObject({ step: "credential_issuance", issuance_source: "staging_demo" });
+  expect(extra.batch[1]?.properties).not.toHaveProperty("challenge");
 });
 
 test("PostHog SDK network and HTTP failures propagate to the browser retry queue", async () => {
