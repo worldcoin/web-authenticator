@@ -10,12 +10,10 @@ import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 import { Recover } from "./components/Recover";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Stage = "intro" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired";
+type Stage = "intro" | "access" | "capture" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired";
 // `back` is the screen that opened saved access: a completed request or /recover.
 type Flow = { stage: Stage; returnUrl?: string; saved?: boolean; back?: Stage };
 const COMPLETION_STEPS = {
-  "capture-border": { duration: 300, next: "capture-complete", motion: true },
-  "capture-complete": { duration: 500, next: "confirmation", motion: false },
   confirmation: { duration: 1500, next: "confirmation-exit", motion: false },
   "confirmation-exit": { duration: 250, next: "save", motion: true },
 } as const;
@@ -103,7 +101,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
       try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     }
     // Local capture supplies the completion signal until real enrollment is connected.
-    setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
+    setFlow({ stage: "confirmation", returnUrl: incoming?.returnUrl });
     onDispose();
   };
   const finishDecision = (saved: boolean) => {
@@ -163,7 +161,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
   </div>;
 
-  if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
+  if (flow.stage === "capture") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
       <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
     </Suspense>

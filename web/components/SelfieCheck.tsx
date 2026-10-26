@@ -13,7 +13,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
   const completion = useRef(onComplete);
-  const publicCompleted = useRef(false);
   const imageUrl = useRef<string | undefined>(undefined);
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
@@ -40,15 +39,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
       setState({ phase: "paused", title: "Your camera is off", hint: "Return to this page to start fresh.", progress: 0, cameraReady: false });
     };
     const visibility = () => {
-      if (publicCompleted.current) {
-        if (document.hidden) {
-          // Stop the live camera in the background; retain only the already-captured frame for the paused completion.
-          controller.current?.abort();
-          setImage(imageUrl.current);
-          setState(current => ({ ...current, cameraReady: false }));
-        }
-        return;
-      }
       if (document.hidden) pause();
       else { setState(INITIAL_CAPTURE_STATE); setVisible(true); setAttempt(value => value + 1); }
     };
@@ -70,14 +60,16 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     const signal = AbortSignal.any([active.signal, timeout.signal]);
     void captureSelfie(video.current, signal, next => {
       if (!signal.aborted) setState(next);
-    }, { retainPreviewUntilAbort: !!completion.current }).then(result => {
+    }).then(result => {
       if (signal.aborted) return;
+      if (completion.current) {
+        completion.current();
+        return;
+      }
       imageUrl.current = URL.createObjectURL(result.image);
-      publicCompleted.current = !!completion.current;
-      if (!publicCompleted.current) setImage(imageUrl.current);
+      setImage(imageUrl.current);
       setTiming(JSON.stringify(result.timing, null, 2));
-      setState({ phase: "complete", title: publicCompleted.current ? "Selfie completed" : "Selfie captured", hint: publicCompleted.current ? "" : "Saved for this preview only. No verification was submitted.", progress: 1, cameraReady: publicCompleted.current });
-      completion.current?.();
+      setState({ phase: "complete", title: "Selfie captured", hint: "Saved for this preview only. No verification was submitted.", progress: 1, cameraReady: false });
     }).catch(error => {
       if (active.signal.aborted) return;
       active.abort(); clearImage();

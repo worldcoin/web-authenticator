@@ -22,13 +22,11 @@ credentials”), which is also how a later visit recovers an interrupted setup.
 creates an account.
 
 The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
-continuous hold and reset when alignment is lost. Once captured, the dots stretch
-into a continuous green border over 300 ms while the face stays visible and the
-guidance changes to “Selfie completed.” The completed border holds for 500 ms,
-then cuts directly to the sigil confirmation, with no screen fade or scaling.
-The camera stops at that cut, or immediately when the tab is hidden or closed.
-Reduced motion shows the green border immediately with the same 500 ms hold.
+verified IDKit response. The oval’s 64 dots fill clockwise in Human badge blue
+(`#005CFF`) during a 1.2-second continuous hold and reset when alignment is lost.
+Capture stops the camera and cuts directly to the sigil confirmation. There is no
+frozen-photo presentation, solid-border animation, or post-capture hold.
+The page and fixed footer use a white background.
 The button-free sigil confirmation holds for
 1.5 seconds, then automatically opens the one-time **Save with passkey / Not now**
 decision. These timed stages pause while the tab is hidden and stop on exit;
