@@ -20,4 +20,3 @@ The API issues the seed and replays the same unchanged core before the UI can co
 These remain browser-supplied measurements. API replay cannot prove camera provenance or stop a modified client from manufacturing a passing trace. A verdict is not enclave authorization, a credential, or a proof. See [the integration boundary](../../../docs/poseguard.md).
 
 The adapter analyzes the unmirrored oval-preview crop at 720 pixels wide, using transferred ImageBitmaps and at most 20 observations per second. FacePAD's reference uses upright full-frame ImageData. These integration differences have not yet been validated against representative human recordings. Only the displayed camera preview is mirrored.
-

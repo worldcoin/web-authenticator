@@ -104,4 +104,3 @@ self.onmessage = async ({ data }: MessageEvent<PoseWorkerRequest>) => {
     busy = false
   }
 }
-

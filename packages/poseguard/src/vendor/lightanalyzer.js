@@ -76,4 +76,3 @@ export function hypot(x, y) {
   }
   return k !== 0 ? 2 ** k * w : w;
 }
-

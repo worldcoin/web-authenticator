@@ -94,4 +94,3 @@ export function createPoseWorker(signal: AbortSignal, delegate?: 'CPU'): Promise
     catch { fail('Could not initialize the pose worker') }
   })
 }
-

@@ -37,4 +37,3 @@ export function solve(a0, b0) {
   }
   return x;
 }
-

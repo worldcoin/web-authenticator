@@ -462,4 +462,3 @@ test('documentRoundTrip', () => {
   assert.equal(again.metrics.targetsReached, s.result().metrics.targetsReached);
   assert.equal(again.metrics.medianReachSeconds, s.result().metrics.medianReachSeconds);
 });
-

@@ -21,4 +21,3 @@ export type PoseWorkerResponse =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
   | { type: 'result'; id: number; observation: PoseObservation }
   | { type: 'error'; message: string }
-

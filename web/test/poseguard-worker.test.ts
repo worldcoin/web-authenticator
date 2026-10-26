@@ -101,4 +101,3 @@ test('pose worker rejects a response for another frame instead of applying it', 
     assert.equal(h.timers.size, 0)
   })
 })
-
