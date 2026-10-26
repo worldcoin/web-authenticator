@@ -47,6 +47,7 @@ if (!("bun" in process.versions)) {
 
   test("public capture retries failure and automatically completes before optional saving", async ({ page }, info) => {
     await installCamera(page);
+    await page.clock.install();
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
@@ -74,13 +75,19 @@ if (!("bun" in process.versions)) {
       });
       observer.observe(document.body, { attributes: true, childList: true, subtree: true });
     }));
+    // Keep the short hold visible even if WebKit/browser commands are delayed.
+    await page.clock.pauseAt(new Date());
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
     const goldDots = page.locator('.selfie-design-ring circle[data-filled="true"]');
-    await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      await page.clock.runFor(100);
+      return goldDots.count();
+    }).toBeGreaterThan(0);
+    await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
     expect(await goldDots.count()).toBeLessThan(64);
     await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
+    await page.clock.resume();
     expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
