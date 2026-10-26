@@ -1,5 +1,5 @@
 import { PoseGuardRuns } from "../../../api/lib/poseguard";
-import { createPoseGuardHandlers } from "../../../api/routes/api/poseguard";
+import { createPoseGuardHandlers } from "../../../api/routes/api/poseguard/handlers";
 import type { PoseGuardEvidence } from "../../../packages/contracts/src/poseguard";
 import type { Page } from "@playwright/test";
 

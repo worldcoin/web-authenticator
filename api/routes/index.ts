@@ -1,4 +1,4 @@
-import { createPoseGuardHandlers } from "./api/poseguard";
+import { createPoseGuardHandlers } from "./api/poseguard/handlers";
 import type { RouteTable } from "../lib/http";
 import { GET as consentGet, PUT as consentPut } from "./api/consent";
 import { GET as healthLive } from "./api/health/live";

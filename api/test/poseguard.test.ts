@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { authorizePoseGuard, PoseGuardRuns } from '../lib/poseguard';
-import { createPoseGuardHandlers } from '../routes/api/poseguard';
+import { createPoseGuardHandlers } from '../routes/api/poseguard/handlers';
 import { POSEGUARD_BODY_LIMIT, isPoseGuardEvidence, type PoseGuardChallenge } from '../../packages/contracts/src/poseguard';
 import { followingEvidence } from '../../tests/integration/fixtures/poseguard';
 import { targets, angleBetween } from '../../packages/poseguard/src/vendor/posechallenge.js';
@@ -123,12 +123,14 @@ test('authorization validates signature, staging RP, expiry, and supported requi
   await expect(authorizePoseGuard(payload, async id => ({ ...await lookup!(id), active: false }))).rejects.toThrow('invalid_request');
 });
 
-test('parallel creation has one winner and bounds outstanding registry calls', async () => {
+test('parallel creation has one winner and shares the request limit with verification and cancellation', async () => {
   const h = harness(); let resolve!: () => void;
   const wait = new Promise<void>(done => { resolve = done; });
   const handlers = createPoseGuardHandlers(h.runs, async () => { await wait; return { binding: 'same', expiresAt: h.expires }; });
   const pending = Array.from({ length: 4 }, () => handlers.challenge(request('challenge', {})));
   expect((await handlers.challenge(request('challenge', {}))).status).toBe(429);
+  expect((await handlers.verify(request('verify', {}))).status).toBe(429);
+  expect((await handlers.cancel(request('cancel', {}))).status).toBe(429);
   resolve();
   expect((await Promise.all(pending)).map(r => r.status).sort()).toEqual([201, 409, 409, 409]);
 });

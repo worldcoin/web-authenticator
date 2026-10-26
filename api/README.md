@@ -65,6 +65,11 @@ configuration and are not provisioned by this Dockerfile.
 
 ## PoseGuard
 
+Each endpoint has its own `index.ts` under `routes/api/poseguard/challenge/`,
+`verify/` or `cancel/`. `routes/api/poseguard/handlers.ts` wires them to one shared
+context. `lib/poseguard-http.ts` owns the HTTP guards and shared request limit;
+`lib/poseguard.ts` owns authorization, challenge state and movement verification.
+
 `POST /api/poseguard/challenge`, `/verify` and `/cancel` issue, consume and cancel
 request-bound movement challenges. The current store belongs to one Bun process;
 shared atomic storage is required for a multi-instance/Worker deployment. A
