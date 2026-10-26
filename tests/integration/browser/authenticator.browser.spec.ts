@@ -221,6 +221,8 @@ if (!("bun" in process.versions)) {
       await page.goto("/verify");
       await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
       const privacy = page.getByRole("link", { name: "Privacy", exact: true });
+      // Screenshots wait for fonts too; measure the baseline after the font swap.
+      await page.evaluate(async () => { await document.fonts.ready; });
       const position = await privacy.boundingBox();
       expect(position).not.toBeNull();
       expect(position!.y).toBeGreaterThan(viewport.height - 100);
