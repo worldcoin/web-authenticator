@@ -27,7 +27,28 @@ jobs:
     runs-on: ubuntu-latest
     environment: cloudflare-dev
     steps:
-      - uses: worldcoin/gh-actions/cf-worker-config@54326c6ae65ae04bcfed34e937eb32378f4af4db
+      - name: Check private repository credential
+        env:
+          GH_ACTIONS_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+        run: |
+          if [ -z "$GH_ACTIONS_TOKEN" ]; then
+            echo "::error::Configure GIT_HUB_TOKEN with read access to worldcoin/gh-actions and worldcoin/cf-worker-config in the cloudflare-dev environment."
+            exit 1
+          fi
+
+      # Public repositories cannot resolve internal actions through a remote uses reference.
+      - name: Check out shared Cloudflare action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: worldcoin/gh-actions
+          ref: 54326c6ae65ae04bcfed34e937eb32378f4af4db
+          token: ${{ secrets.GIT_HUB_TOKEN }}
+          path: .github/actions/gh-actions
+          sparse-checkout: cf-worker-config
+          persist-credentials: false
+
+      - name: Configure Cloudflare Builds
+        uses: ./.github/actions/gh-actions/cf-worker-config
         with:
           worker: web-authenticator-dev
           config: cf-worker-config.json
