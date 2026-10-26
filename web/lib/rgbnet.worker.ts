@@ -45,7 +45,7 @@ self.onmessage = async ({ data }: MessageEvent<DetectorRequest>) => {
 			ort.env.logLevel = diagnostics ? 'verbose' : 'warning'
 			stage = 'model download'
 			log(`Downloading RGBNet (${model.bytes} bytes expected). Frames remain on this device.`)
-			const response = await fetch(model.url, { signal: AbortSignal.timeout(20_000), credentials: 'omit' })
+			const response = await fetch(model.url, { signal: AbortSignal.timeout(20_000), credentials: 'same-origin' })
 			if (!response.ok)
 				throw new Error(`Model download returned HTTP ${response.status}`)
 			const bytes = await response.arrayBuffer()

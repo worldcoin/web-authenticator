@@ -11,6 +11,8 @@
   },
   "include": [
     "web/vite.config.ts",
-    "tests/e2e/playwright.config.ts"
+    "tests/e2e/playwright.config.ts",
+    "worker-configuration.d.ts",
+    "scripts/**/*.ts"
   ]
 }

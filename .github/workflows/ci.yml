@@ -48,6 +48,12 @@ jobs:
             - name: Build project
               run: bun run build
 
+            - name: Validate Cloudflare deployment bundle
+              if: runner.os == 'Linux'
+              run: |
+                  bun run cf:package
+                  bun run cf:check
+
             - name: Install test browsers
               run: bunx playwright install --with-deps ${{ matrix.browser }}
 
