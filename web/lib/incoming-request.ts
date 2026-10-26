@@ -8,10 +8,12 @@ import {
 	validateSignature,
 	checkExpiry,
 	type ProofRequest,
+	type Payload,
 } from './proof-request'
 
 export type IncomingRequest = {
 	proof: ProofRequest
+	poseguardPayload?: Payload
 	label: string
 	appId?: string
 	actionLabel: string
@@ -47,6 +49,7 @@ export async function loadIncomingRequest(
 		throw new Error('Connector and encrypted request return URLs disagree.')
 	return {
 		proof: payload.proof_request,
+		poseguardPayload: payload,
 		label: payload.proof_request.rp_id,
 		appId: payload.app_id,
 		actionLabel: payload.action,

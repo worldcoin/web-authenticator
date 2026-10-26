@@ -23,7 +23,7 @@ Open [localhost:4173](http://localhost:4173) in a browser with WebAuthn PRF supp
 ```text
 web/         React UI, browser logic and public assets
 api/         Bun HTTP server and API routes
-packages/    Shared contracts and browser admission policy
+packages/    Shared contracts, PoseGuard core and browser admission policy
 tests/       Browser tests and integration fixtures
 ```
 
@@ -51,4 +51,4 @@ bun run build
 bun run start
 ```
 
-[Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
+[PoseGuard API and beta boundary](docs/poseguard.md) · [Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)

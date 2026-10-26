@@ -141,6 +141,15 @@ export function decodeRgbnet(outputs: ModelOutput[]): FaceDetection[] {
 	return suppressDuplicates(faces)
 }
 
+/** Source rectangle [x, y, width, height] that a centered object-fit: cover preview shows of a camera frame. */
+export function previewCrop(width: number, height: number, viewWidth = 1, viewHeight = 1): [number, number, number, number] {
+	const scale = Math.max(viewWidth / width, viewHeight / height)
+	const sw = Math.min(width, Math.round(viewWidth / scale))
+	const sh = Math.min(height, Math.round(viewHeight / scale))
+	return [Math.round((width - sw) / 2), Math.round((height - sh) / 2), sw, sh]
+}
+
+
 // Normalized source coordinates -> mirrored, centered object-cover preview.
 export function previewPoint(x: number, y: number, width: number, height: number, viewWidth = 1, viewHeight = 1): [number, number] {
 	const scale = Math.max(viewWidth / width, viewHeight / height)

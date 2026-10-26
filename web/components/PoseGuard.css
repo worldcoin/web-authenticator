@@ -1,0 +1,28 @@
+.poseguard-steps { position: absolute; top: -30px; left: 50%; display: flex; gap: 8px; transform: translateX(-50%); }
+.poseguard-steps span { width: 24px; height: 4px; border-radius: 4px; background: #e3e3e3; }
+.poseguard-steps span[data-current="true"] { background: var(--capture-accent, #005CFF); }
+.poseguard-steps span[data-done="true"] { background: var(--capture-accent, #005CFF); }
+/* An 8px bumper, 4px outside the aperture, clipped to the target's 45-degree sector. */
+.poseguard-target { position: absolute; inset: -8px; border: 8px solid var(--capture-accent, #005CFF); border-radius: 50%; pointer-events: none; mask-image: conic-gradient(from calc(67.5deg - var(--poseguard-direction)), #000 0deg 45deg, transparent 45deg); }
+.public-request-flow .poseguard-target { inset: calc(11 / 481.637 * 100% - 12px) calc(11 / 345.005 * 100% - 12px); }
+.poseguard-fixation { position: absolute; top: 4px; left: calc(100% - 4px); width: 13px; height: 13px; border: 0; border-radius: 50%; background: #ff0000; transform: translate(-50%, -50%); pointer-events: none; }
+.public-request-flow .poseguard-fixation { top: calc(11 / 481.637 * 100%); left: calc(100% - 11 / 345.005 * 100%); }
+.selfie-check[data-poseguard="true"][data-state="error"] .selfie-camera-stage { margin-bottom: 112px; }
+
+/* Reserve visible space for instructions and controls above the fixed site footer. */
+.public-request-flow .selfie-check[data-poseguard="true"] .selfie-camera-stage {
+  width: min(345px, 100%, max(150px, calc((100svh - 444px) * .71634)));
+}
+.public-request-flow .selfie-check[data-poseguard="true"] .selfie-hint {
+  width: min(330px, calc(100vw - 48px));
+}
+@media (max-height: 740px) {
+  .public-request-flow .selfie-check[data-poseguard="true"] { padding-block: 8px; }
+  .public-request-flow .selfie-check[data-poseguard="true"] .selfie-content { padding-block: 24px 8px; }
+  .public-request-flow .selfie-check[data-poseguard="true"] .selfie-camera-stage {
+    width: min(345px, 100%, max(150px, calc((100svh - 356px) * .71634)));
+    margin-bottom: 64px;
+  }
+  .public-request-flow .selfie-check[data-poseguard="true"] .selfie-hint { top: calc(100% + 16px); }
+  .public-request-flow .selfie-check[data-poseguard="true"] .selfie-guidance { max-width: calc(100% + 24px); }
+}

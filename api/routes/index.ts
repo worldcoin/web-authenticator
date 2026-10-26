@@ -1,3 +1,4 @@
+import { createPoseGuardHandlers } from "./api/poseguard/handlers";
 import type { RouteTable } from "../lib/http";
 import { GET as consentGet, PUT as consentPut } from "./api/consent";
 import { GET as healthLive } from "./api/health/live";
@@ -10,11 +11,15 @@ import { page as verifyPage } from "./verify";
 // Every server route. Folder paths match the URL. Anything unmatched falls
 // through to the static web app, except /api/* which must never return the SPA.
 export function createRoutes({ staticRoot }: { staticRoot: string }): RouteTable {
+  const poseguard = createPoseGuardHandlers();
   return {
     "/api/health/live": { GET: healthLive },
     "/api/health/ready": { GET: healthReady(staticRoot) },
     "/api/consent": { GET: consentGet, PUT: consentPut },
     "/api/staging-rp": { GET: stagingRp },
+    "/api/poseguard/challenge": { POST: poseguard.challenge },
+    "/api/poseguard/verify": { POST: poseguard.verify },
+    "/api/poseguard/cancel": { POST: poseguard.cancel },
     "/api/*": () => Response.json({ error: "Not found" }, { status: 404 }),
     "/": { GET: root },
     "/verify": { GET: verifyPage(staticRoot) },

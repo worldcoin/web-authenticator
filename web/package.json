@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite build --watch",
+    "build": "bun ../scripts/prepare-poseguard.ts && vite build",
+    "dev": "bun ../scripts/prepare-poseguard.ts && vite build --watch",
     "test": "bun test ./test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -13,7 +13,8 @@
     "onnxruntime-web": "1.30.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "viem": "2.56.0"
+    "viem": "2.56.0",
+    "@mediapipe/tasks-vision": "1.0.1"
   },
   "devDependencies": {
     "@types/react": "19.2.18",

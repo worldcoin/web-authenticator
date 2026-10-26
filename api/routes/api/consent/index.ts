@@ -1,3 +1,4 @@
+import { readJsonBody } from "../../../lib/request-body";
 import { consentCookie, effectiveConsent, type ConsentChoice } from "../../../lib/consent";
 
 export function GET(request: Request): Response {
@@ -13,7 +14,7 @@ export async function PUT(request: Request): Promise<Response> {
   }
   let choice: unknown;
   try {
-    choice = ((await request.json()) as { analytics?: unknown }).analytics;
+    choice = ((await readJsonBody(request, 1024)) as { analytics?: unknown }).analytics;
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }

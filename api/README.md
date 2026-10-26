@@ -1,6 +1,6 @@
 # Authenticator API
 
-Bun serves the web build, `/api/consent` and `/api/staging-rp` from the same origin. The RP lookup
+Bun serves the web build, `/api/consent`, `/api/staging-rp` and `/api/poseguard/*` from the same origin. The RP lookup
 reads the staging registry; passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
 browser. Promon sessions and Redis are not implemented yet.
 
@@ -29,8 +29,7 @@ return JSON 404; everything else falls through to the web build.
 - `GET /api/health/live` returns 200 whenever the process can serve requests. It
   never checks dependencies.
 - `GET /api/health/ready` returns 503 when the web build is missing. The staging
-  RP registry is not part of readiness: when it fails, only `/api/staging-rp`
-  degrades (502).
+  RP registry is not part of readiness: when it fails, `/api/staging-rp` degrades (502) and new PoseGuard challenges cannot be authorized.
 
 ## Consent
 
@@ -59,8 +58,20 @@ docker run --rm -p 127.0.0.1:4173:4173 web-authenticator
 
 The image runs as a non-root user and contains the compiled API and web assets.
 It listens on `0.0.0.0:4173` inside the container. Hosting beyond localhost requires
-HTTPS for camera and passkey access. Install the [RGBNet model](../web/README.md#camera-guidance)
-before building if camera guidance is needed.
+HTTPS for camera and passkey access. Web preparation downloads and verifies the pinned MediaPipe model for movement guidance.
 
 This packages the app; AWS hosting, Redis and secrets belong in deployment
 configuration and are not provisioned by this Dockerfile.
+
+## PoseGuard
+
+Each endpoint has its own `index.ts` under `routes/api/poseguard/challenge/`,
+`verify/` or `cancel/`. `routes/api/poseguard/handlers.ts` wires them to one shared
+context. `lib/poseguard-http.ts` owns the HTTP guards and shared request limit;
+`lib/poseguard.ts` owns authorization, challenge state and movement verification.
+
+`POST /api/poseguard/challenge`, `/verify` and `/cancel` issue, consume and cancel
+request-bound movement challenges. The current store belongs to one Bun process;
+shared atomic storage is required for a multi-instance/Worker deployment. A
+browser-supplied passing trace is not trusted liveness or issuer authorization.
+See [the protocol, limits and remaining work](../docs/poseguard.md).

@@ -7,6 +7,7 @@ import {
 	prepareRgbnet,
 	decodeRgbnet,
 	previewPoint,
+	previewCrop,
 	faceGuidance,
 	ANCHOR_COUNT,
 	type ModelOutput,
@@ -87,4 +88,9 @@ test('guidance uses the portrait oval crop rather than a square preview', () => 
 	assert.equal(faceGuidance([face], 640, 480, 260, 364), 'Move farther away')
 	assert.equal(faceGuidance([face, face], 640, 480, 260, 364), 'Keep only one face in view')
 	assert.equal(faceGuidance([face], 640, 480, 0, 0), 'Waiting for camera preview')
+})
+
+test("PoseGuard preview crop matches the visible oval for landscape and portrait cameras", () => {
+	assert.deepEqual(previewCrop(1280, 720, 260, 364), [383, 0, 514, 720])
+	assert.deepEqual(previewCrop(720, 1280, 260, 364), [0, 136, 720, 1008])
 })

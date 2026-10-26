@@ -4,7 +4,7 @@ import { createServerOptions } from "./server";
 Bun.serve({
   hostname: AUTHENTICATOR_APP_CONFIG.host,
   port: AUTHENTICATOR_APP_CONFIG.port,
-  maxRequestBodySize: 1024,
+  maxRequestBodySize: 524_288,
   idleTimeout: 180,
   ...createServerOptions(),
 });
