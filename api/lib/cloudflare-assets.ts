@@ -6,7 +6,7 @@ function encodingQuality(request: Request, encoding: "gzip" | "identity"): numbe
   const encodings = new Map(header.toLowerCase().split(",").map(entry => {
     const [name, ...parameters] = entry.trim().split(";");
     const quality = Number(parameters.find(value => value.trim().startsWith("q="))?.trim().slice(2) ?? "1");
-    return [name, Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0];
+    return [name.trim(), Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0];
   }));
   return encodings.get(encoding) ?? (encoding === "identity" ? (encodings.get("*") === 0 ? 0 : 1) : encodings.get("*") ?? 0);
 }

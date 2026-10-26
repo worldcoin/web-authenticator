@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createAccessVerifier } from "../lib/cloudflare-access";
 import { COMPRESSED_WASM_PREFIX, serveWorkerAsset } from "../lib/cloudflare-assets";
@@ -150,5 +150,29 @@ test("packaging rejects WASM that still exceeds the upload limit after compressi
     await expect(packageCloudflareAssets(source, join(directory, "output"))).rejects.toThrow("Compressed WASM exceeds 25 MiB");
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("WASM encoding negotiation accepts whitespace before quality weights", async () => {
+  const bytes = new Uint8Array([0, 97, 115, 109]);
+  const compressed = gzipSync(bytes);
+  const env = environment(async req => new URL(req.url).pathname.endsWith(".gz")
+    ? new Response(compressed) : new Response("missing", { status: 404 }));
+  for (const [encoding, status, gzip] of [
+    ["gzip ; q=1, identity;q=0", 200, true],
+    ["gzip\t; q=1, identity ; q=0", 200, true],
+    ["gzip ; q=0, identity ; q=0", 406, false],
+    ["gzip ; q=0, * ; q=1", 200, false],
+    ["br, * \t; q=1, identity;q=0", 200, true],
+  ] as const) {
+    const response = await serveWorkerAsset(request("/assets/walletkit.wasm", {
+      headers: { "Accept-Encoding": encoding },
+    }), env.ASSETS);
+    expect(response.status).toBe(status);
+    expect(response.headers.get("content-encoding")).toBe(gzip ? "gzip" : null);
+    if (status === 200) {
+      const body = await response.arrayBuffer();
+      expect(new Uint8Array(gzip ? gunzipSync(body) : body)).toEqual(bytes);
+    }
   }
 });
