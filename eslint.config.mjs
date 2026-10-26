@@ -8,6 +8,8 @@ export default tseslint.config(
   {
     ignores: [
       "experiments/**",
+      "packages/poseguard/src/vendor/**/*.js",
+      "web/public/mediapipe/**",
       "demo/**",
       "**/.next/**",
       "**/target/**",

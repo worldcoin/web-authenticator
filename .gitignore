@@ -30,3 +30,5 @@ public/models/
 
 # Local review screenshots are not application assets.
 /docs/review/
+
+web/public/mediapipe/

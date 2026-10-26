@@ -1,0 +1,11 @@
+.poseguard-steps { position: absolute; top: -30px; left: 50%; display: flex; gap: 8px; transform: translateX(-50%); }
+.poseguard-steps span { width: 24px; height: 4px; border-radius: 4px; background: #e3e3e3; }
+.poseguard-steps span[data-current="true"] { background: var(--capture-accent, #d4af37); }
+.poseguard-steps span[data-done="true"] { background: var(--capture-accent, #28a86b); }
+/* An 8px bumper, 4px outside the aperture, clipped to the target's 45-degree sector. */
+.poseguard-target { position: absolute; inset: -8px; border: 8px solid var(--capture-accent, #28a86b); border-radius: 50%; pointer-events: none; mask-image: conic-gradient(from calc(67.5deg - var(--poseguard-direction)), #000 0deg 45deg, transparent 45deg); }
+.public-request-flow .poseguard-target { inset: calc(11 / 481.637 * 100% - 12px) calc(11 / 345.005 * 100% - 12px); }
+.poseguard-fixation { position: absolute; top: 4px; left: calc(100% - 4px); width: 13px; height: 13px; border: 0; border-radius: 50%; background: #ff0000; transform: translate(-50%, -50%); pointer-events: none; }
+.public-request-flow .poseguard-fixation { top: calc(11 / 481.637 * 100%); left: calc(100% - 11 / 345.005 * 100%); }
+.selfie-check[data-poseguard="true"][data-state="error"] .selfie-camera-stage { margin-bottom: 112px; }
+

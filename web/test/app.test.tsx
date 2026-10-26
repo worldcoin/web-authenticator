@@ -7,7 +7,7 @@ import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
 import type { ConsentClient } from "../lib/consent";
-import * as capture from "../lib/selfie-capture";
+import * as capture from "../lib/poseguard-api";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -20,7 +20,7 @@ async function fixture(schema: number, available = false) {
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
   const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
-    proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
+    proof: payload.proof_request, poseguardPayload: payload, label: "rp_1", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {},
     deliver: async proof => { calls.deliver.push(proof); if (calls.failDelivery) throw new Error("Transport unavailable"); },
   };
@@ -58,7 +58,7 @@ test("request intro names the RP only after validation, then starts the check", 
   resolve(f.incoming);
   expect(await view.findByText("rp_1 is requesting a Selfie Check.")).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Start selfie check" }));
-  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  expect(await view.findByRole("region", { name: "Movement check" })).toBeTruthy();
   expect(opened).toBe(0);  window.history.replaceState(null, "", "/");
 });
 for (const [name, failure, title] of [
@@ -133,22 +133,22 @@ test("an unreachable consent endpoint asks again rather than assuming a choice",
 
 test("cookie settings keeps the same capture attempt mounted", async () => {
   const f = await fixture(11);
-  const captureMock = spyOn(capture, "captureSelfie").mockImplementation((_video, signal, update) => {
+  const captureMock = spyOn(capture, "captureVerifiedPoseGuard").mockImplementation((_video, signal, update) => {
     update({ phase: "holding", title: "Hold still", hint: "", progress: 0.5, cameraReady: true });
     return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
   });
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
-    const preview = await view.findByRole("region", { name: "Selfie capture" });
+    const preview = await view.findByRole("region", { name: "Movement check" });
     await view.findByRole("heading", { name: "Hold still" });
     const signal = captureMock.mock.calls[0]![1];
     fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
     expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
     expect(signal.aborted).toBe(false);
     fireEvent.click(view.getByRole("button", { name: "Decline" }));
-    expect(await view.findByRole("region", { name: "Selfie capture" })).toBe(preview);
+    expect(await view.findByRole("region", { name: "Movement check" })).toBe(preview);
     expect(view.getByRole("heading", { name: "Hold still" })).toBeTruthy();
     expect(captureMock).toHaveBeenCalledTimes(1);
     view.unmount();
@@ -166,7 +166,7 @@ test("cookie settings preserves pending passkey saving and its completed request
     saveSignal = signal;
     return new Promise<WalletKit>(resolve => { finishSave = resolve; });
   } };
-  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+  const captureMock = spyOn(capture, "captureVerifiedPoseGuard").mockResolvedValue({
     image: new Blob(["test"], { type: "image/jpeg" }),
     timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
   });
@@ -212,7 +212,7 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
   const f = await fixture(11);
   let opened = 0;
   f.services.open = async () => { opened++; throw new Error("Public capture must not open a wallet"); };
-  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+  const captureMock = spyOn(capture, "captureVerifiedPoseGuard").mockResolvedValue({
     image: new Blob(["test"], { type: "image/jpeg" }),
     timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
   });
@@ -224,7 +224,7 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
     expect(opened).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Not now" }));
     expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
     expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
     expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
     expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
@@ -241,7 +241,7 @@ test("public non-Selfie requests stop before capture or wallet access", async ()
   expect(await view.findByRole("heading", { name: "This request isn’t supported here" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
   expect(view.queryByRole("button", { name: /passkey|Approve/ })).toBeNull();
-  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
   expect(f.calls.listed).toBe(0);
 });
 
@@ -251,7 +251,7 @@ for (const fails of [false, true]) {
     let opened = 0;
     const open = f.services.open;
     f.services.open = async () => { opened++; if (fails) throw new Error("passkey unavailable"); return open(); };
-    const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    const captureMock = spyOn(capture, "captureVerifiedPoseGuard").mockResolvedValue({
       image: new Blob(["test"], { type: "image/jpeg" }),
       timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
     });
@@ -260,7 +260,7 @@ for (const fails of [false, true]) {
       fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
       const save = await view.findByRole("button", { name: "Save with passkey" }, { timeout: 4000 });
       expect(opened).toBe(0);
-      expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+      expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
       fireEvent.click(save);
       if (fails) {
         expect(await view.findByRole("alert")).toBeTruthy();
@@ -281,7 +281,7 @@ for (const fails of [false, true]) {
         expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
         expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
         expect(opened).toBe(1);
-        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+        expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
         // Saved access requires an explicit sign-in and never restarts the camera.
         fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
         expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
@@ -292,7 +292,7 @@ for (const fails of [false, true]) {
         fireEvent.click(view.getByRole("button", { name: "Back" }));
         expect(await view.findByRole("heading", { name: "Authenticator saved" })).toBeTruthy();
         expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
-        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+        expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
       }
     } finally { captureMock.mockRestore(); localStorage.clear(); }
   });
@@ -331,7 +331,7 @@ test("/recover opens saved access only on an explicit sign-in, and Back returns 
     expect(f.calls.terminated).toBe(1);
     fireEvent.click(view.getByRole("button", { name: "Back" }));
     expect(await view.findByRole("heading", { name: "Retrieve your World ID credentials" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
   } finally { localStorage.clear(); }
 });
 
@@ -346,7 +346,7 @@ test("a visit without a request link has no landing page or authenticator entry"
     expect(await view.findByRole("heading", { name: "This request can’t be verified" })).toBeTruthy();
     expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
     expect(view.queryByRole("button", { name: /Go to authenticator|passkey|Start selfie check/ })).toBeNull();
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Movement check" })).toBeNull();
     expect(opened).toBe(0);
     expect(f.calls.listed).toBe(0);
   } finally { localStorage.clear(); }

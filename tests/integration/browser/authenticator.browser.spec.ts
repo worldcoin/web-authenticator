@@ -67,8 +67,8 @@ if (!("bun" in process.versions)) {
     await expect.poll(async () => {
       await page.clock.runFor(100);
       return filledDots.count();
-    }).toBeGreaterThan(0);
-    await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
+    }, { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect(page.getByRole("heading", { name: "Hold it there" })).toBeVisible();
     expect(await filledDots.count()).toBeLessThan(64);
     await expect(filledDots.first()).toHaveCSS("fill", "rgb(0, 92, 255)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
@@ -106,10 +106,10 @@ if (!("bun" in process.versions)) {
     const before = await cameraState();
     await page.getByRole("button", { name: "Cookie settings" }).click();
     await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Selfie capture" })).toBeHidden();
+    await expect(page.getByRole("region", { name: "Movement check" })).toBeHidden();
     expect(await cameraState()).toEqual(before);
     await page.getByRole("button", { name: "Decline" }).click();
-    await expect(page.getByRole("region", { name: "Selfie capture" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Movement check" })).toBeVisible();
     expect(await cameraState()).toEqual(before);
     await page.evaluate(() => { (window as typeof window & { cameraTest: { aligned: boolean } }).cameraTest.aligned = true; });
     await page.getByRole("button", { name: "Not now" }).click();

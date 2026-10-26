@@ -100,7 +100,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
     if (incoming) {
       try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     }
-    // Local capture supplies the completion signal until real enrollment is connected.
+    // A checked movement sequence completes this slice; enrollment and proof delivery remain separate.
     setFlow({ stage: "confirmation", returnUrl: incoming?.returnUrl });
     onDispose();
   };
@@ -163,7 +163,7 @@ export function PublicRequestFlow({ incoming, recover, loading, failed, expired,
 
   if (flow.stage === "capture") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
+      <SelfieCheck payload={incoming?.poseguardPayload} onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
     </Suspense>
   </div>;
 
