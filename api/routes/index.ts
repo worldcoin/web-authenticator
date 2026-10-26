@@ -8,6 +8,7 @@ import { GET as stagingRp } from "./api/staging-rp";
 import { page as recoverPage } from "./recover";
 import { GET as root } from "./root";
 import { page as verifyPage } from "./verify";
+import { createAnalyticsHandler } from "./api/analytics";
 import { POST as issueSelfie } from "./api/selfie-credential";
 
 // Every server route. Folder paths match the URL. Anything unmatched falls
@@ -17,6 +18,7 @@ export function createRoutes({ staticRoot, selfieEnrollmentPolicy, localStagingI
     "/api/health/live": { GET: healthLive },
     "/api/health/ready": { GET: healthReady(staticRoot) },
     "/api/consent": { GET: consentGet, PUT: consentPut },
+    "/api/analytics": { POST: createAnalyticsHandler() },
     "/api/selfie-enrollment": { GET: selfieEnrollment(selfieEnrollmentPolicy) },
     "/api/staging-rp": { GET: stagingRp },
     ...(localStagingIssuance ? { "/api/selfie-credential": { GET: () => Response.json({ enabled: true }), POST: issueSelfie } } : {}),

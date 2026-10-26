@@ -8,6 +8,8 @@ import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
+import { analytics } from "../lib/analytics";
+import type { AnalyticsEvent } from "../../packages/contracts/src/analytics";
 import { SelfieRejectedError, type SelfieEmbeddingSummary, type SelfieEnrollmentService } from "../lib/selfie-enrollment";
 import type { SelfieProcessingStep, TemporarySelfieSession } from "../lib/temporary-selfie-session";
 
@@ -16,6 +18,35 @@ beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
 afterAll(() => GlobalRegistrator.unregister());
 afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
+
+test("application enables telemetry only after saved consent and revokes it immediately on decline even if saving fails", async () => {
+  const f = await fixture(11);
+  const batches: AnalyticsEvent[][] = [];
+  const send = spyOn(globalThis, "fetch").mockImplementation((async (_url, init) => {
+    batches.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 });
+  }) as typeof fetch);
+  const consent: ConsentClient = {
+    read: async () => "unset",
+    save: async choice => { if (choice === "denied") throw new Error("offline"); return choice; },
+  };
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+    await view.findByRole("button", { name: "Accept" });
+    analytics.record("camera", "started"); await analytics.flush(); expect(batches).toHaveLength(0);
+    fireEvent.click(view.getByRole("button", { name: "Accept" }));
+    await view.findByRole("button", { name: "Start selfie check" });
+    await analytics.flush();
+    expect(batches.flat().map(e => `${e.step}:${e.status}`)).toEqual([
+      "request:started", "request:completed", "request_eligibility:completed",
+    ]);
+    analytics.record("camera", "started");
+    fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+    fireEvent.click(await view.findByRole("button", { name: "Decline" }));
+    await view.findByRole("alert");
+    analytics.record("camera", "completed"); await analytics.flush();
+    expect(batches).toHaveLength(1);
+  } finally { cleanup(); send.mockRestore(); }
+});
 
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);

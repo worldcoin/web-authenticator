@@ -1,6 +1,8 @@
-import { test } from "bun:test";
+import { spyOn, test } from "bun:test";
 import assert from "node:assert/strict";
 import { capturePoseGuard, poseFramingGuidance } from "../lib/poseguard-capture";
+import { analytics } from "../lib/analytics";
+import { Session, Phase } from "../lib/poseguard";
 import type { PoseObservation } from "../lib/poseguard";
 
 const face = (t: number, changes: Partial<PoseObservation> = {}): PoseObservation => ({
@@ -23,6 +25,7 @@ test("PoseGuard framing requires fresh, finite, steady frontal observations", ()
 
 function harness() {
   let time = 10, videoTime = 0, nextTimer = 0;
+  const options = { abortAfterSnapshot: true, encode: false };
   let stopped = 0, terminated = 0, analyzed = 0, encodeAt = -1;
   const timers = new Map<number, () => void>();
   const intervals = new Map<number, () => void>();
@@ -33,7 +36,7 @@ function harness() {
     width: 0, height: 0,
     getContext: () => ({ drawImage() {} }),
     // Deliberately never finish JPEG encoding: it must not stop pose observations.
-    toBlob() { encodeAt = analyzed; },
+    toBlob(callback: (blob: Blob) => void) { encodeAt = analyzed; if (options.encode) callback(new Blob(["private-selfie"])); },
   };
   const video = {
     srcObject: null, readyState: 2, videoWidth: 720, videoHeight: 960, clientWidth: 360, clientHeight: 480,
@@ -48,7 +51,7 @@ function harness() {
       if (data.type === "init") queueMicrotask(() => worker.onmessage?.({ data: { type: "ready", delegate: "GPU" } }));
       else {
         analyzed++;
-        if (encodeAt >= 0 && analyzed >= encodeAt + 2) controller.abort();
+        if (options.abortAfterSnapshot && encodeAt >= 0 && analyzed >= encodeAt + 2) controller.abort();
         const observation = face(data.t!);
         data.frame?.close();
         queueMicrotask(() => worker.onmessage?.({ data: { type: "result", id: data.id, observation } }));
@@ -57,7 +60,7 @@ function harness() {
     terminate() { terminated++; },
   };
   return {
-    controller, stream, video, timers, intervals,
+    controller, stream, video, timers, intervals, options,
     getUserMedia: () => Promise.resolve(stream),
     replacements: {
       Worker: function () { return worker; },
@@ -126,3 +129,53 @@ test("PoseGuard stops a camera permission result that arrives after cancellation
   });
 });
 
+
+for (const verdict of ["passed", "failed", "inconclusive"] as const) {
+  test(`PoseGuard tracks each observed target once; final ${verdict} verdict gates the challenge result`, async () => {
+    const events: { step: string; status: string; challenge?: string; challenge_index?: number; reason?: string }[] = [];
+    const record = spyOn(analytics, "record").mockImplementation((step, status, fields) => {
+      events.push({ step, status, challenge: fields?.challenge, challenge_index: fields?.challenge_index, reason: fields?.reason }); return true;
+    });
+    // Deterministic core outcomes; the pinned core's geometry/evaluation has its own fixture suite.
+    let index = 0, phase: 0 | 1 | 2 = Phase.PAUSE;
+    const spies = [
+      spyOn(Session.prototype, "observe").mockImplementation(function (this: Session) {
+        if (phase === Phase.PAUSE) phase = Phase.TARGET;
+        else { index++; phase = index === this.targets.length ? Phase.DONE : Phase.PAUSE; }
+      }),
+      spyOn(Session.prototype, "phase").mockImplementation(() => phase),
+      spyOn(Session.prototype, "index").mockImplementation(() => index),
+      spyOn(Session.prototype, "done").mockImplementation(() => phase === Phase.DONE),
+      spyOn(Session.prototype, "result").mockImplementation(() => ({ status: verdict, outcome: "private-verdict", reason: "private-reason", metrics: { faceScore: 0.9 } })),
+    ];
+    try {
+      await withCapture(async h => {
+        h.options.abortAfterSnapshot = false; h.options.encode = true;
+        const capture = capturePoseGuard(h.video, h.controller.signal, () => {});
+        if (verdict === "passed") assert.ok((await capture).image);
+        else await assert.rejects(capture);
+      });
+      const targets = events.filter(e => e.step === "challenge_step");
+      assert.ok(index > 0);
+      for (let i = 1; i <= index; i++) assert.deepEqual(targets.filter(e => e.challenge_index === i).map(e => e.status), ["started", "completed"]);
+      const challenge = events.filter(e => e.step === "physical_challenge");
+      assert.deepEqual(challenge.map(e => e.status), ["started", verdict === "passed" ? "completed" : "failed"]);
+      assert.ok(challenge.every(e => e.challenge === "poseguard"));
+      assert.equal(challenge.at(-1)?.reason, verdict === "passed" ? undefined : verdict === "failed" ? "challenge_rejected" : "challenge_inconclusive");
+      assert.equal(events.at(-1)?.step, "selfie_capture");
+      assert.equal(events.at(-1)?.status, verdict === "passed" ? "completed" : "failed");
+      assert.ok(!JSON.stringify(events).includes("private"));
+      assert.ok(!JSON.stringify(events).includes("faceScore"));
+    } finally { spies.reverse().forEach(spy => spy.mockRestore()); record.mockRestore(); }
+  });
+}
+
+test("PoseGuard cancellation terminates its open challenge without successful capture", async () => {
+  const events: { step: string; status: string }[] = [];
+  const record = spyOn(analytics, "record").mockImplementation((step, status) => { events.push({ step, status }); return true; });
+  try {
+    await withCapture(async h => { await assert.rejects(capturePoseGuard(h.video, h.controller.signal, () => {})); });
+    assert.deepEqual(events.filter(e => e.step === "physical_challenge").map(e => e.status), ["started", "cancelled"]);
+    assert.deepEqual(events.at(-1), { step: "selfie_capture", status: "cancelled" });
+  } finally { record.mockRestore(); }
+});

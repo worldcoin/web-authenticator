@@ -1,6 +1,8 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as sdk from "@worldcoin/walletkit-web";
 import * as passkeys from "../lib/wallet-session";
+import { analytics } from "../lib/analytics";
+import type { AnalyticsStatus, AnalyticsStep } from "../../packages/contracts/src/analytics";
 import { WalletKit } from "../lib/walletkit";
 import { prepareTemporarySelfieSession, type SelfieProcessingStep } from "../lib/temporary-selfie-session";
 import { signedRequest } from "../../tests/integration/fixtures/request";
@@ -11,8 +13,13 @@ afterEach(() => { for (const undo of restore.splice(0).reverse()) undo(); });
 function mock<T extends { mockRestore(): void }>(value: T): T { restore.push(() => value.mockRestore()); return value; }
 
 async function fixture() {
+  const events: { step: AnalyticsStep; status: AnalyticsStatus; reason?: string }[] = [];
+  mock(spyOn(analytics, "record").mockImplementation((step, status, fields) => {
+    events.push({ step, status, reason: fields?.reason }); return true;
+  }));
+  mock(spyOn(analytics, "flush").mockResolvedValue());
   const { payload } = await signedRequest(11);
-  const calls = { register: 0, initialize: 0, subject: 0, issue: 0, store: 0, prove: 0, deliver: 0, save: 0, destroy: 0, terminated: 0, failDelivery: false, failRegistration: false, subjectFailures: 0, accountMissingOnce: false, failInitialize: false };
+  const calls = { register: 0, initialize: 0, subject: 0, issue: 0, store: 0, prove: 0, deliver: 0, save: 0, destroy: 0, terminated: 0, failDelivery: false, failIssuance: false, failStorage: false, invalidCredential: false, failRegistration: false, subjectFailures: 0, accountMissingOnce: false, failInitialize: false };
   const incoming: IncomingRequest = { proof: payload.proof_request, label: "test", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {}, deliver: async () => { calls.deliver++; if (calls.failDelivery) throw new Error("delivery unavailable"); } };
   let stopped = false;
@@ -38,7 +45,7 @@ async function fixture() {
     if (calls.subject <= calls.subjectFailures) throw new Error("OPRF temporarily unavailable");
     return { sub: "0x" + "a".repeat(64), blindingFactor: "0x01" };
   }));
-  mock(spyOn(WalletKit.prototype, "storeCredential").mockImplementation(async () => { calls.store++; return { credentialId: 1n, issuerSchemaId: 11n }; }));
+  mock(spyOn(WalletKit.prototype, "storeCredential").mockImplementation(async () => { calls.store++; if (calls.failStorage) throw new Error("storage unavailable"); return { credentialId: 1n, issuerSchemaId: 11n }; }));
   mock(spyOn(WalletKit.prototype, "listCredentials").mockImplementation(async () => calls.store ? [{ credentialId: 1n, issuerSchemaId: 11n, isExpired: false,
     genesisIssuedAt: BigInt(payload.proof_request.created_at), expiresAt: BigInt(payload.proof_request.expires_at + 3600) }] : []));
   mock(spyOn(WalletKit.prototype, "generateProof").mockImplementation(async () => { calls.prove++; return JSON.stringify({ id: incoming.proof.id, responses: [{}] }); }));
@@ -46,10 +53,12 @@ async function fixture() {
   mock(spyOn(globalThis, "fetch").mockImplementation((async (_url, init) => {
     if (!init?.method) return Response.json({ enabled: true });
     calls.issue++;
+    if (calls.failIssuance) return new Response("private upstream detail", { status: 503 });
+    if (calls.invalidCredential) return Response.json({ status: "issued", credential: "invalid!" });
     return Response.json({ status: "issued", credential: btoa("signed-test-credential") });
   }) as typeof fetch));
   const controller = new AbortController();
-  return { calls, incoming, controller, begin: () => prepareTemporarySelfieSession(controller.signal) };
+  return { calls, incoming, controller, events, begin: () => prepareTemporarySelfieSession(controller.signal) };
 }
 
 test("prepares without a passkey, shares the worker for extraction, delivers before optional saving", async () => {
@@ -130,5 +139,38 @@ test("cancelling while waiting for account visibility stops retries and issuance
   f.controller.abort();
   await expect(completion).rejects.toThrow();
   expect(f.calls).toMatchObject({ register: 1, initialize: 1, issue: 0, deliver: 0 });
+  await session.dispose();
+});
+
+for (const failure of ["failIssuance", "invalidCredential"] as const) {
+  test(`issuance ${failure} never records an issued credential or starts proof`, async () => {
+    const f = await fixture(); f.calls[failure] = true;
+    const session = (await f.begin())!;
+    await expect(session.complete(f.incoming, f.controller.signal)).rejects.toThrow();
+    expect(f.events.filter(e => e.step === "credential_issuance").map(e => e.status)).toEqual(["started", "failed"]);
+    expect(f.calls).toMatchObject({ store: 0, prove: 0, deliver: 0 });
+    f.calls[failure] = false;
+    await session.complete(f.incoming, f.controller.signal);
+    expect(f.events.filter(e => e.step === "credential_issuance").map(e => e.status)).toEqual(["started", "failed", "started", "completed"]);
+    await session.dispose();
+  });
+}
+
+test("issuance is counted before storage/proof and once across storage failure, delivery failure and duplicate completion", async () => {
+  const f = await fixture(); f.calls.failStorage = true;
+  const session = (await f.begin())!;
+  await expect(session.complete(f.incoming, f.controller.signal)).rejects.toThrow("storage unavailable");
+  expect(f.events.filter(e => e.step === "credential_issuance").map(e => e.status)).toEqual(["started", "completed"]);
+  expect(f.events.some(e => e.step === "proof_generation")).toBe(false);
+  f.calls.failStorage = false; f.calls.failDelivery = true;
+  await expect(session.complete(f.incoming, f.controller.signal)).rejects.toThrow("delivery unavailable");
+  f.calls.failDelivery = false;
+  await Promise.all([session.complete(f.incoming, f.controller.signal), session.complete(f.incoming, f.controller.signal)]);
+  await session.complete(f.incoming, f.controller.signal);
+  expect(f.events.filter(e => e.step === "credential_issuance" && e.status === "completed")).toHaveLength(1);
+  expect(f.events.filter(e => e.step === "proof_generation" && e.status === "completed")).toHaveLength(1);
+  expect(f.calls).toMatchObject({ issue: 2, prove: 1, deliver: 2 });
+  expect(JSON.stringify(f.events)).not.toContain("signed-test-credential");
+  expect(JSON.stringify(f.events)).not.toContain("blindingFactor");
   await session.dispose();
 });

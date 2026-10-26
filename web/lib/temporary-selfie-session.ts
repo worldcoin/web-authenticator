@@ -1,4 +1,5 @@
 import { initializeWalletKit, type CredentialStore, type WalletKit as Worker } from "@worldcoin/walletkit-web";
+import { analytics, analyticsReason } from "./analytics";
 import { abortable, pause } from "./async";
 import { logFlowStep } from "./flow-logging";
 import type { IncomingRequest } from "./incoming-request";
@@ -41,6 +42,19 @@ async function issue(sub: string, token: string, signal: AbortSignal): Promise<U
 
 /** Explicitly enabled loopback demo. Signing remains with the real staging issuer. */
 export const prepareTemporarySelfieSession: PrepareTemporarySession = async signal => {
+  const sessionStarted = analytics.begin("temporary_session");
+  try {
+    const session = await createTemporarySelfieSession(signal);
+    sessionStarted(session ? "completed" : "skipped");
+    return session;
+  } catch (error) {
+    const reason = analyticsReason(error);
+    sessionStarted(reason === "cancelled" ? "cancelled" : "failed", reason);
+    throw error;
+  }
+};
+
+async function createTemporarySelfieSession(signal: AbortSignal): Promise<TemporarySelfieSession | null> {
   const capability = await fetch("/api/selfie-credential", { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
   if (capability.status === 404) return null;
   if (!capability.ok || (await capability.json() as { enabled?: unknown }).enabled !== true) throw new Error("Temporary issuance is unavailable.");
@@ -54,6 +68,7 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
   let wallet: WalletKit | undefined;
   let prepared: { sub: string; blindingFactor: string } | undefined;
   let credentialStored = false;
+  let issuanceReported = false;
   let delivered = false;
   let boundRequest: string | undefined;
   let proof: string | undefined;
@@ -76,12 +91,14 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
     wallet = new WalletKit(api, store, "staging", "us");
     const step = <T,>(work: Promise<T>) => abortable(work, AbortSignal.any([preparationDeadline, AbortSignal.timeout(30_000)]));
     await logFlowStep("temporary.registration", () => step(wallet!.register(material.seed)));
-    for (;;) {
-      const status = await step(wallet.pollRegistration());
-      if (status.state === "finalized") break;
-      if (!["queued", "batching", "submitted"].includes(status.state)) throw new Error("Temporary account registration failed.");
-      await pause(1000, preparationDeadline);
-    }
+    await analytics.run("registration_finalization", async () => {
+      for (;;) {
+        const status = await step(wallet!.pollRegistration());
+        if (status.state === "finalized") break;
+        if (!["queued", "batching", "submitted"].includes(status.state)) throw new Error("Temporary account registration failed.");
+        await pause(1000, preparationDeadline);
+      }
+    });
     // Gateway finalization can precede the account becoming visible to SDK reads.
     // Retry initialization of this same account, never account registration.
     const accountDeadline = AbortSignal.any([preparationDeadline, AbortSignal.timeout(45_000)]);
@@ -132,7 +149,19 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
         if (!wallet || !prepared) throw new Error("Temporary authenticator is unavailable.");
         if (!credentialStored) {
           onProgress?.("preparing-credential");
-          const bytes = await logFlowStep("temporary.issue_credential", () => issue(prepared!.sub, token, deadline));
+          // Retried storage/delivery can resume the same issuance. Count its accepted result once.
+          const issued = issuanceReported ? undefined : analytics.begin("credential_issuance");
+          let bytes: Uint8Array;
+          try {
+            bytes = await logFlowStep("temporary.issue_credential", () => issue(prepared!.sub, token, deadline));
+            issuanceReported = true;
+            issued?.("completed");
+            void analytics.flush();
+          } catch (error) {
+            const reason = analyticsReason(error);
+            issued?.(reason === "cancelled" ? "cancelled" : "failed", reason);
+            throw error;
+          }
           try {
             const result = await logFlowStep("temporary.store_credential", () => wallet!.storeCredential(bytes, prepared!.blindingFactor));
             if (result.issuerSchemaId !== 11n) throw new Error("Unexpected credential schema.");
@@ -170,4 +199,4 @@ export const prepareTemporarySelfieSession: PrepareTemporarySession = async sign
       return disposal;
     },
   };
-};
+}

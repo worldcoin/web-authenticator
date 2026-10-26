@@ -1,6 +1,12 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { SelfieEmbeddingResult, initializeWalletKit } from "@worldcoin/walletkit-web";
 import { extractSelfieEmbedding, fetchSelfieEnrollmentPolicy, SelfieRejectedError } from "../lib/selfie-enrollment";
+
+import { analytics } from "../lib/analytics";
+const events: { step: string; status: string; reason?: string }[] = [];
+let record: ReturnType<typeof spyOn<typeof analytics, "record">>;
+beforeEach(() => { events.length = 0; record = spyOn(analytics, "record").mockImplementation((step, status, fields) => { events.push({ step, status, reason: fields?.reason }); return true; }); });
+afterEach(() => record.mockRestore());
 
 const POLICY = JSON.stringify({ endpoint: "wss://enclave.test/v1/embeddings", releases: [] });
 const image = () => new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" });
@@ -26,6 +32,8 @@ test("success returns metadata and the encoded length, never the vector, and clo
   expect(JSON.stringify(summary)).not.toContain("c2VjcmV0");
   expect(JSON.stringify(quiet[0]!.mock.calls)).not.toContain("c2VjcmV0");
   expect(calls.sent).toEqual([[1, 2, 3]]);
+  expect(events.filter(e => e.step === "selfie_extraction").map(e => e.status)).toEqual(["started", "completed"]);
+  expect(JSON.stringify(events)).not.toContain("c2VjcmV0");
   expect(calls.terminated).toBe(1);
 });
 
@@ -34,6 +42,8 @@ test("a typed enclave rejection throws SelfieRejectedError with the reason and c
   const error = await extractSelfieEmbedding(POLICY, image(), new AbortController().signal, initialize).catch(e => e);
   expect(error).toBeInstanceOf(SelfieRejectedError);
   expect(error.reason).toBe("invalid_image");
+  expect(events.at(-1)).toEqual({ step: "selfie_extraction", status: "failed", reason: "selfie_rejected" });
+  expect(events.some(e => e.step === "selfie_extraction" && e.status === "completed")).toBe(false);
   expect(calls.terminated).toBe(1);
 });
 
@@ -51,6 +61,7 @@ test("aborting a hung extraction rejects promptly and terminates the worker", as
   controller.abort(new DOMException("Page hidden", "AbortError"));
   await expect(pending).rejects.toThrow("Page hidden");
   expect(calls.terminated).toBeGreaterThanOrEqual(1);
+  expect(events.at(-1)).toEqual({ step: "selfie_extraction", status: "cancelled", reason: "cancelled" });
 });
 
 test("an already-aborted signal never starts a worker", async () => {

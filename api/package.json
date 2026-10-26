@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "posthog-node": "5.57.2",
     "viem": "2.56.0"
   },
   "devDependencies": {

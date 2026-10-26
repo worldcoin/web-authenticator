@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { abortable } from "../lib/async";
 import { hasSavedWallet } from "../lib/wallet-session";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
+import { analytics, analyticsReason } from "../lib/analytics";
 
 /** Explicit access to an existing saved authenticator. No camera or account creation. */
 export function AuthenticatorAccess({ onOpen, onBack }: {
@@ -23,6 +24,7 @@ export function AuthenticatorAccess({ onOpen, onBack }: {
   const open = async () => {
     if (!saved || !hasSavedWallet() || operation.current) return;
     const controller = new AbortController(); operation.current = controller;
+    const finished = analytics.begin("authenticator_access");
     setBusy(true); setError(undefined);
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
@@ -32,7 +34,10 @@ export function AuthenticatorAccess({ onOpen, onBack }: {
       }), deadline);
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));
       deadline.throwIfAborted(); setRecords(credentials);
-    } catch {
+      finished("completed");
+    } catch (error) {
+      const reason = analyticsReason(error);
+      finished(reason === "cancelled" ? "cancelled" : "failed", reason);
       wallet.current?.terminate(); wallet.current = null;
       if (!controller.signal.aborted) setError("Your authenticator couldn’t be opened. Try again with your saved passkey.");
     } finally {

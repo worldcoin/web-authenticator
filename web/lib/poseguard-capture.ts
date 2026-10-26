@@ -1,5 +1,6 @@
 import { createPoseWorker, Session, Phase, secureSeed, words, VERSION, type PoseObservation, type PoseResult, type PoseWorker } from "./poseguard";
 import { withAbort, type CaptureOptions, type CaptureResult, type CaptureState } from "./selfie-capture";
+import { analytics, analyticsReason } from "./analytics";
 import { previewCrop } from "./rgbnet";
 
 export type PoseProgress = { step: number; total: number; direction?: number; holding: boolean };
@@ -46,6 +47,13 @@ export async function capturePoseGuard(
   update: (state: PoseCaptureState) => void,
   options: CaptureOptions = {},
 ): Promise<CaptureResult> {
+  const captureFinished = analytics.begin("selfie_capture");
+  const cameraFinished = analytics.begin("camera");
+  const modelFinished = analytics.begin("challenge_model");
+  let guidanceFinished: ReturnType<typeof analytics.begin> | undefined;
+  let challengeFinished: ReturnType<typeof analytics.begin> | undefined;
+  let targetFinished: ReturnType<typeof analytics.begin> | undefined;
+  let targetIndex = -1;
   const own = new AbortController();
   const attempt = AbortSignal.any([signal, own.signal]);
   let stream: MediaStream | undefined;
@@ -64,6 +72,17 @@ export async function capturePoseGuard(
     video.srcObject = null;
   };
   signal.addEventListener("abort", release, { once: true });
+  // Follow the core's observed target transitions, never the rendered progress/animation.
+  const observeChallenge = () => {
+    if (!session) return;
+    if (targetFinished && session.index() > targetIndex) {
+      targetFinished("completed"); targetFinished = undefined;
+    }
+    if (session.phase() === Phase.TARGET && session.index() !== targetIndex) {
+      targetIndex = session.index();
+      targetFinished = analytics.begin("challenge_step", { challenge: "poseguard", challenge_index: targetIndex + 1 });
+    }
+  };
   const publish = () => {
     if (!session || attempt.aborted || session.done()) return;
     const moving = session.phase() === Phase.TARGET;
@@ -83,13 +102,15 @@ export async function capturePoseGuard(
     update({ phase: "starting", title: "Getting ready", hint: "Allow camera access. The movement check is loading.", progress: 0, cameraReady: false });
     // Warm the model while the permission prompt/camera startup is in progress.
     await withAbort(Promise.all([
-      createPoseWorker(attempt).then(value => { worker = value; }),
+      createPoseWorker(attempt).then(value => { worker = value; attempt.throwIfAborted(); modelFinished("completed"); }),
       navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } }).then(async media => {
         if (attempt.aborted) { media.getTracks().forEach(track => track.stop()); attempt.throwIfAborted(); }
         stream = media;
         for (const track of media.getVideoTracks()) track.addEventListener("ended", () => own.abort(new Error("Camera disconnected. Please try again.")), { once: true });
         video.srcObject = media;
         await withAbort(video.play(), attempt);
+        attempt.throwIfAborted();
+        cameraFinished("completed");
         update({ phase: "starting", title: "Getting ready", hint: "Look at the screen. The movement check is loading.", progress: 0, cameraReady: true });
       }),
     ]), attempt);
@@ -97,13 +118,14 @@ export async function capturePoseGuard(
     attempt.throwIfAborted();
     const context = canvas.getContext("2d");
     if (!context || !worker) throw new Error("Could not start the movement check.");
+    guidanceFinished = analytics.begin("face_guidance");
     let lastVideoTime = -1;
     let lastFrameAt = now();
     let framingStarted: number | undefined;
     let reference: Promise<Blob> | undefined;
     let frames = 0;
     const recent: PoseObservation[] = [];
-    clock = setInterval(() => { session?.tick(now()); publish(); }, 50);
+    clock = setInterval(() => { session?.tick(now()); observeChallenge(); publish(); }, 50);
     for (;;) {
       attempt.throwIfAborted();
       if (session?.done()) break;
@@ -131,7 +153,7 @@ export async function capturePoseGuard(
       const observed = await worker.analyze(bitmap, tick);
       attempt.throwIfAborted();
       frames++;
-      if (session) { session.observe(observed); publish(); }
+      if (session) { session.observe(observed); observeChallenge(); publish(); }
       else {
         // First inference includes shader compilation; it must not use the framing time budget.
         framingStarted ??= now();
@@ -140,6 +162,8 @@ export async function capturePoseGuard(
         const guidance = poseFramingGuidance(recent, now());
         update({ phase: "framing", title: guidance ?? "Looking good", hint: "Keep your camera still. Look at the dot as you turn your head.", progress: 0, cameraReady: true });
         if (guidance === null) {
+          guidanceFinished("completed");
+          challengeFinished = analytics.begin("physical_challenge", { challenge: "poseguard" });
           // toBlob snapshots this frontal frame. Encoding must not pause the observation stream:
           // the unchanged core expires a run after 0.7 seconds without a fresh face result.
           reference = jpeg(canvas, attempt);
@@ -157,11 +181,25 @@ export async function capturePoseGuard(
     console.info("poseguard_complete " + JSON.stringify({ version: VERSION, status: result.status, outcome: result.outcome, frames, totalMs: Math.round(performance.now() - started), delegate: worker.delegate,
       gaze: { yawRange: result.metrics.gazeYawRange, slope: result.metrics.gazeSlope, rSquared: result.metrics.gazeR2, faceFound: result.metrics.gazeFaceFound, samples: result.metrics.gazeResults } }));
     if (result.status !== "passed") throw new PoseGuardRejected(result);
+    challengeFinished?.("completed");
     if (!reference) throw new Error("The reference selfie is missing. Please try again.");
     const image = await reference;
     attempt.throwIfAborted();
     retained = options.retainPreviewUntilAbort === true;
+    captureFinished("completed");
     return { image, timing: { guidanceMs: Math.round((session!.startedAt * 1000) - started), totalMs: Math.round(performance.now() - started), width: canvas.width, height: canvas.height } };
+  } catch (error) {
+    const reason = error instanceof PoseGuardRejected
+      ? error.result.status === "inconclusive" ? "challenge_inconclusive" : "challenge_rejected"
+      : analyticsReason(error);
+    const status = reason === "cancelled" ? "cancelled" : "failed";
+    targetFinished?.(status, reason);
+    challengeFinished?.(status, reason);
+    guidanceFinished?.(status, reason);
+    modelFinished(status, reason);
+    cameraFinished(status, reason);
+    captureFinished(status, reason);
+    throw error;
   } finally {
     if (clock !== undefined) clearInterval(clock);
     worker?.dispose();

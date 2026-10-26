@@ -5,6 +5,7 @@ import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload } from "../lib/proof-request";
 import { createProof } from "../lib/prove";
 import type { WalletKit } from "../lib/walletkit";
+import { analytics } from "../lib/analytics";
 
 let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); });
@@ -93,6 +94,34 @@ test("proof generation revalidates the request and passes its constraints unchan
   serialized = "";
   await expect(createProof(incoming, wallet, signal(), () => {})).rejects.toThrow("Proof generation failed");
   expect(serialized).toBe("");
+});
+
+test("proof delivery completion waits for bridge acceptance; invalid proofs and transport failures cannot report success", async () => {
+  const f = await fixture();
+  const events: string[] = [];
+  const record = spyOn(analytics, "record").mockImplementation((step, status) => { events.push(`${step}:${status}`); return true; });
+  try {
+    const incoming = (await loadIncomingRequest("http://localhost" + f.encrypted.query, signal(), () => {}))!;
+    const proof = JSON.stringify({ id: "test-request", responses: [{ issuer_schema_id: 11, proof: "private-proof" }] });
+    await expect(incoming.deliver("{}", signal())).rejects.toThrow();
+    expect(events).toEqual(["proof_delivery:started", "proof_delivery:failed"]);
+    events.length = 0;
+    await incoming.deliver(proof, signal());
+    expect(f.sent).toHaveLength(1);
+    expect(events).toEqual(["proof_delivery:started", "proof_delivery:completed"]);
+    events.length = 0;
+    restore?.(); restore = undefined;
+    let reject!: (error: Error) => void;
+    const network = spyOn(globalThis, "fetch").mockImplementation(((_url: RequestInfo | URL) => new Promise((_resolve, fail) => { reject = fail; })) as typeof fetch);
+    restore = () => network.mockRestore();
+    const sending = incoming.deliver(proof, signal());
+    void sending.catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(events).toEqual(["proof_delivery:started"]);
+    reject(new Error("private transport details"));
+    await expect(sending).rejects.toThrow();
+    expect(events).toEqual(["proof_delivery:started", "proof_delivery:failed"]);
+  } finally { record.mockRestore(); }
 });
 test("connector rejects unofficial bridges, duplicates, malformed keys and unsafe callbacks", async () => {
   const { payload } = await signedRequest(); const f = await encryptedRequest(payload);

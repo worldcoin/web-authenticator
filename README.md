@@ -51,4 +51,4 @@ bun run build
 bun run start
 ```
 
-[Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
+[Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests) · [Analytics and mobile references](docs/analytics.md)

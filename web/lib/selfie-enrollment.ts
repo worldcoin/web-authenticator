@@ -1,4 +1,5 @@
 import { initializeWalletKit, type SelfieEmbeddingResult, type WalletKit } from "@worldcoin/walletkit-web";
+import { analytics, analyticsReason } from "./analytics";
 import { abortable } from "./async";
 import { logFlowStep } from "./flow-logging";
 
@@ -61,16 +62,18 @@ export async function extractSelfieEmbedding(
   initialize: typeof initializeWalletKit = initializeWalletKit,
   closeOnCompletion = true,
 ): Promise<SelfieEmbeddingSummary> {
+  const finished = analytics.begin("selfie_extraction");
   signal = AbortSignal.any([signal, AbortSignal.timeout(SELFIE_EXTRACTION_TIMEOUT_MS)]);
-  const bytes = new Uint8Array(await image.arrayBuffer());
+  let bytes: Uint8Array | undefined;
   let client: WalletKit | undefined;
   const stop = () => client?.terminate();
   signal.addEventListener("abort", stop, { once: true });
   try {
     signal.throwIfAborted();
+    bytes = new Uint8Array(await image.arrayBuffer());
     client = await logFlowStep("walletkit.worker_initialize", () => initialize({ signal }));
     signal.throwIfAborted();
-    const result = await logFlowStep("selfie.extract_embedding", () => abortable(client!.extractSelfieEmbedding(policy, bytes), signal));
+    const result = await logFlowStep("selfie.extract_embedding", () => abortable(client!.extractSelfieEmbedding(policy, bytes!), signal));
     if (result.status !== "success") {
       // eslint-disable-next-line no-console -- Typed enclave verdict only; no image or embedding material.
       console.warn("selfie_extraction_rejected", { reason: result.reason });
@@ -80,10 +83,15 @@ export async function extractSelfieEmbedding(
     const summary = { embeddingType, embeddingVersion, embeddingInferenceBackend, encodedLength: embedding.length };
     // eslint-disable-next-line no-console -- Staging integration check: model metadata and encoded size, never the vector.
     console.info("selfie_extraction_succeeded", summary);
+    finished("completed");
     return summary;
+  } catch (error) {
+    const reason = analyticsReason(error);
+    finished(reason === "cancelled" ? "cancelled" : "failed", reason);
+    throw error;
   } finally {
     signal.removeEventListener("abort", stop);
-    bytes.fill(0);
+    bytes?.fill(0);
     if (closeOnCompletion) client?.terminate();
   }
 }
