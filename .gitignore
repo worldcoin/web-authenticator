@@ -27,3 +27,6 @@ dist/
 public/models/
 **/target/
 .codex-visualizations/
+
+# Local review screenshots are not application assets.
+/docs/review/
