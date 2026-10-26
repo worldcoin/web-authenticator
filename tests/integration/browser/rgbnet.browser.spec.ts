@@ -41,6 +41,30 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
+    test("a 16:9 camera produces a JPEG matching the portrait preview crop", async ({ page }) => {
+      await page.addInitScript(() => {
+        const original = HTMLCanvasElement.prototype.toBlob;
+        HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+          if (type === "image/jpeg") {
+            const video = document.querySelector("video")!;
+            Object.assign(window, { capturedFrame: {
+              width: this.width, height: this.height,
+              previewRatio: video.clientWidth / video.clientHeight,
+            } });
+          }
+          return original.call(this, callback, type, quality);
+        };
+      });
+      await openSelfieRequest(page, "wide");
+      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
+      const frame = await page.evaluate(() => (window as typeof window & {
+        capturedFrame: { width: number; height: number; previewRatio: number };
+      }).capturedFrame);
+      expect(frame.height).toBe(720);
+      expect(frame.width).toBeLessThan(720);
+      expect(frame.width / frame.height).toBeCloseTo(frame.previewRatio, 2);
+    });
+
     test("losing alignment resets the hold", async ({ page }) => {
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
