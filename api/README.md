@@ -1,6 +1,6 @@
 # Authenticator API
 
-Bun serves the web build, `/api/consent` and `/api/staging-rp` from the same origin. The RP lookup
+Bun serves the web build, `/api/consent`, `/api/analytics` and `/api/staging-rp` from the same origin. The RP lookup
 reads the staging registry; passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
 browser. Promon sessions and Redis are not implemented yet.
 
@@ -37,6 +37,11 @@ return JSON 404; everything else falls through to the web build.
 `GET /api/consent` returns the analytics choice from the `__Host-wid_consent` cookie
 (`unset` without one; Global Privacy Control reads as `denied`). `PUT /api/consent`
 records `granted` or `denied`; only same-origin JSON requests may set it.
+
+`POST /api/analytics` rechecks consent and accepts only the fixed web funnel schema.
+Server-only `POSTHOG_FUZZY_KEY` and `POSTHOG_FUZZY_HOST` enable forwarding to the
+existing mobile pipeline. Both unset means forwarding is disabled. See the
+[event contract, mobile references and rollout checklist](../docs/analytics.md).
 
 ## Configuration
 

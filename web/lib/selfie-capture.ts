@@ -1,6 +1,7 @@
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
 import { faceGuidance } from "./rgbnet";
+import { analytics, analyticsReason } from "./analytics";
 
 /** Local capture only: one frame, taken once the face has held still in the oval. Nothing is uploaded. */
 export const CAPTURE_TIMEOUT_MS = 30_000;
@@ -75,6 +76,10 @@ export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
 
 /** Owns one attempt. A retained live preview must be released by aborting the caller’s signal. */
 export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean } = {}): Promise<CaptureResult> {
+  const captureFinished = analytics.begin("selfie_capture");
+  const cameraFinished = analytics.begin("camera");
+  let guidanceFinished: ReturnType<typeof analytics.begin> | undefined;
+  let challengeFinished: ReturnType<typeof analytics.begin> | undefined;
   let stream: MediaStream | undefined;
   let stopDetector: (() => void) | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -114,6 +119,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     attempt.addEventListener("abort", releaseCamera, { once: true });
     try {
       await withAbort(video.play(), attempt);
+      cameraFinished("completed");
+      guidanceFinished = analytics.begin("face_guidance");
       update({ phase: "framing", title: "Find your light", hint: "Look at the camera. We're getting ready.", progress: 0, cameraReady: true });
       await withAbort(new Promise<void>((resolve, reject) => {
         let alignedSince: number | undefined;
@@ -140,6 +147,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
           if (now - lastResultAt > 1_500) alignedSince = undefined;
           lastResultAt = now;
           if (message === "Face positioned") {
+            guidanceFinished?.("completed");
+            challengeFinished ??= analytics.begin("physical_challenge");
             alignedSince ??= now;
             if (progressFrame === undefined) showHoldProgress();
             // Only a fresh, aligned detector result can complete the hold.
@@ -153,6 +162,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
         }, () => { /* Routine detector diagnostics are omitted; failures reject below. */ }, failure => reject(new Error(`Face guidance couldn't start. ${failure}`)));
       }), attempt);
       const alignedAt = performance.now();
+      challengeFinished?.("completed");
       stopHoldProgress?.();
       stopDetector?.(); stopDetector = undefined;
       update({ phase: "capturing", title: "Looking good. Hold still", hint: "Just a moment. Your selfie is taken automatically.", progress: 1, cameraReady: true });
@@ -162,6 +172,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
         frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
       }), attempt);
       previewRetained = options.retainPreviewUntilAbort === true;
+      captureFinished("completed");
       return {
         image,
         timing: { guidanceMs: Math.round(alignedAt - started), totalMs: Math.round(performance.now() - started), width: frame.width, height: frame.height },
@@ -169,6 +180,12 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     } finally {
       attempt.removeEventListener("abort", releaseCamera);
     }
+  } catch (error) {
+    const reason = analyticsReason(error);
+    const status = reason === "cancelled" ? "cancelled" : "failed";
+    cameraFinished(status, reason); guidanceFinished?.(status, reason);
+    challengeFinished?.(status, reason); captureFinished(status, reason);
+    throw error;
   } finally {
     if (!previewRetained) releaseCamera();
     if (canvas) canvas.width = canvas.height = 0;

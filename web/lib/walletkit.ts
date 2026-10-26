@@ -1,3 +1,4 @@
+import { analytics } from './analytics'
 import {
 	type Authenticator,
 	type CredentialStore,
@@ -97,46 +98,51 @@ export class WalletKit {
 	}
 
 	async prepareCredential(issuerSchemaId: bigint) {
-		const authenticator = this.currentAuthenticator()
-		const factor = await authenticator.generateCredentialBlindingFactorRemote(issuerSchemaId)
-		let sub: FieldElement | undefined
-		try {
-			sub = await authenticator.computeCredentialSub(factor)
-			return { blindingFactor: await factor.toHexString(), sub: await sub.toHexString() }
-		} finally {
-			sub?.free()
-			factor.free()
-		}
+		return analytics.run('credential_preparation', async () => {
+			const authenticator = this.currentAuthenticator()
+			const factor = await authenticator.generateCredentialBlindingFactorRemote(issuerSchemaId)
+			let sub: FieldElement | undefined
+			try {
+				sub = await authenticator.computeCredentialSub(factor)
+				return { blindingFactor: await factor.toHexString(), sub: await sub.toHexString() }
+			} finally {
+				sub?.free()
+				factor.free()
+			}
+		})
 	}
 
 	async storeCredential(serialized: Uint8Array, factor: string, now = nowSeconds()) {
-		const authenticator = this.currentAuthenticator()
-		const credential = await this.client.Credential.fromBytes(serialized)
-		let blindingFactor: FieldElement | undefined
-		let expectedSub: FieldElement | undefined
-		let actualSub: FieldElement | undefined
-		try {
-			blindingFactor = await this.client.FieldElement.tryFromHexString(factor)
-			expectedSub = await authenticator.computeCredentialSub(blindingFactor)
-			actualSub = await credential.sub()
-			if ((await expectedSub.toHexString()) !== (await actualSub.toHexString())) {
-				throw new Error('Credential subject does not match this authenticator')
+		// Storage confirms a usable credential, not a new issuer enrollment.
+		return analytics.run('credential_storage', async () => {
+			const authenticator = this.currentAuthenticator()
+			const credential = await this.client.Credential.fromBytes(serialized)
+			let blindingFactor: FieldElement | undefined
+			let expectedSub: FieldElement | undefined
+			let actualSub: FieldElement | undefined
+			try {
+				blindingFactor = await this.client.FieldElement.tryFromHexString(factor)
+				expectedSub = await authenticator.computeCredentialSub(blindingFactor)
+				actualSub = await credential.sub()
+				if ((await expectedSub.toHexString()) !== (await actualSub.toHexString())) {
+					throw new Error('Credential subject does not match this authenticator')
+				}
+				const issuerSchemaId = await credential.issuerSchemaId()
+				const credentialId = await this.store.storeCredential(
+					credential,
+					blindingFactor,
+					await credential.expiresAt(),
+					undefined,
+					now
+				)
+				return { credentialId, issuerSchemaId }
+			} finally {
+				actualSub?.free()
+				expectedSub?.free()
+				blindingFactor?.free()
+				credential.free()
 			}
-			const issuerSchemaId = await credential.issuerSchemaId()
-			const credentialId = await this.store.storeCredential(
-				credential,
-				blindingFactor,
-				await credential.expiresAt(),
-				undefined,
-				now
-			)
-			return { credentialId, issuerSchemaId }
-		} finally {
-			actualSub?.free()
-			expectedSub?.free()
-			blindingFactor?.free()
-			credential.free()
-		}
+		})
 	}
 
 	async generateProof(json: string, now = nowSeconds()) {

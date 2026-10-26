@@ -1,4 +1,5 @@
-import { test } from 'bun:test'
+import { test, spyOn } from 'bun:test'
+import { analytics } from '../lib/analytics'
 import assert from 'node:assert/strict'
 import { WalletKit } from '../lib/walletkit'
 import type { WalletKit as PublishedWalletKit, CredentialStore } from '@worldcoin/walletkit-web'
@@ -78,6 +79,22 @@ test('published adapter stores a matching credential and returns its schema/id',
 		issuerSchemaId: BigInt(11),
 	})
 	assert.equal(f.writes(), 1)
+})
+
+test('credential analytics requires a successful store and never reports issuance from local storage', async () => {
+	const events: string[] = []
+	const record = spyOn(analytics, 'record').mockImplementation((step, status) => { events.push(`${step}:${status}`); return true })
+	try {
+		const invalid = fixture('0x03')
+		await invalid.wallet.initializeAuthenticator(new Uint8Array(32))
+		await assert.rejects(invalid.wallet.storeCredential(new Uint8Array(), '0x02'))
+		assert.deepEqual(events, ['credential_storage:started', 'credential_storage:failed'])
+		events.length = 0
+		const valid = fixture()
+		await valid.wallet.initializeAuthenticator(new Uint8Array(32))
+		await valid.wallet.storeCredential(new Uint8Array(), '0x02')
+		assert.deepEqual(events, ['credential_storage:started', 'credential_storage:completed'])
+	} finally { record.mockRestore() }
 })
 
 test('failed vault initialization releases the authenticator and never marks the session ready', async () => {

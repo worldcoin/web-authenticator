@@ -8,6 +8,7 @@ import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
+import { analytics, analyticsReason } from "./lib/analytics";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Flow = { stage: "intro" | "home" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
@@ -37,6 +38,9 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   const savingController = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
+  useEffect(() => {
+    if (flow.stage === "save") analytics.once("save_decision", "started");
+  }, [flow.stage]);
   useEffect(() => {
     const stop = () => { cancelling.current?.abort(); savingController.current?.abort(); };
     window.addEventListener("pagehide", stop);
@@ -87,6 +91,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
   }, [flow.stage]);
 
   const finish = (stage: "cancelled" | "expired") => {
+    analytics.once(stage === "expired" ? "request_expiry" : "request_dismissal", "completed", stage === "expired" ? "expired" : "cancelled");
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
@@ -105,12 +110,15 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     onDispose();
   };
   const finishDecision = (saved: boolean) => {
+    analytics.once("save_decision", saved ? "completed" : "skipped");
+    void analytics.flush(true);
     setFlow(current => ({ ...current, stage: "finished", saved }));
   };
   const save = async () => {
     if (flow.stage !== "save" || savingController.current) return;
     const controller = new AbortController();
     savingController.current = controller;
+    const finished = analytics.begin("save_access");
     setSaving(true); setSaveError(undefined);
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
@@ -118,8 +126,10 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
         // Also close a wallet returned after cancellation; saving must never open management UI.
         wallet.terminate();
       }), deadline);
-      if (!controller.signal.aborted) finishDecision(true);
-    } catch {
+      if (!controller.signal.aborted) { finished("completed"); finishDecision(true); }
+    } catch (error) {
+      const reason = analyticsReason(error);
+      finished(reason === "cancelled" ? "cancelled" : "failed", reason);
       if (!controller.signal.aborted) setSaveError("Setup didn’t finish. A passkey may already have been saved. Retry with that passkey, or choose Not now to close.");
     } finally {
       if (savingController.current === controller) savingController.current = null;

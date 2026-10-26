@@ -1,4 +1,5 @@
 import { openBridge } from './bridge'
+import { analytics } from './analytics'
 import type { WalletKit } from './walletkit'
 import { abortable } from './async'
 import { parseConnector, returnUrl } from './connector'
@@ -59,7 +60,7 @@ export async function loadIncomingRequest(
 		validate: async signal => {
 			await validateSignature(payload.proof_request, signal)
 		},
-		deliver: async (proof, signal) => {
+		deliver: (proof, signal) => analytics.run('proof_delivery', async () => {
 			const response = JSON.parse(proof) as {
 				id?: unknown
 				error?: unknown
@@ -75,8 +76,8 @@ export async function loadIncomingRequest(
 				throw new Error('WalletKit returned an error or mismatched proof response.')
 			checkExpiry(payload.proof_request)
 			await bridge.send({ proof_response: response }, signal)
-		},
-		cancel: signal => bridge.send({ error_code: 'verification_rejected' }, signal),
+		}).then(() => { void analytics.flush(true) }),
+		cancel: signal => analytics.run('request_cancellation', () => bridge.send({ error_code: 'verification_rejected' }, signal)),
 	}
 }
 export async function checkRequestCredentials(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal) {

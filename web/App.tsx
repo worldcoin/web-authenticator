@@ -4,9 +4,10 @@ import { ConsentScreen } from "./components/ConsentScreen";
 import { hasConnector } from "./lib/connector";
 import { consentClient, type ConsentChoice, type ConsentClient, type ConsentState } from "./lib/consent";
 import { openAuthenticator } from "./lib/wallet-session";
-import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
+import { loadIncomingRequest, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
 import { PublicRequestFlow } from "./PublicRequestFlow";
+import { analytics } from "./lib/analytics";
 
 const defaults = { open: openAuthenticator, load: loadIncomingRequest };
 export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
@@ -28,14 +29,50 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   useEffect(() => {
     const controller = new AbortController();
     // An unreachable consent endpoint shows the choice again rather than assuming one.
-    consent.read(controller.signal).then(setConsentState, () => { if (!controller.signal.aborted) setConsentState("unset"); });
-    return () => controller.abort();
-  }, [consent]);
+    consent.read(controller.signal).then(state => {
+      if (controller.signal.aborted) return;
+      analytics.setConsent(state, requestLink ? "deeplink" : "direct");
+      setConsentState(state);
+    }, () => { if (!controller.signal.aborted) { analytics.setConsent("unset"); setConsentState("unset"); } });
+    return () => { controller.abort(); analytics.setConsent(null); };
+  }, [consent, requestLink]);
+
+  useEffect(() => {
+    const leave = () => { analytics.setBackground(true); };
+    const visibility = () => { analytics.setBackground(document.hidden); };
+    const online = () => { void analytics.flush(); };
+    window.addEventListener("pagehide", leave);
+    window.addEventListener("online", online);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("pagehide", leave); window.removeEventListener("online", online);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (consentState !== "granted" || (!requestLink && !incoming && !loadFailed)) return;
+    // Observe the current request after consent; do not buffer activity before consent.
+    analytics.once("request", "started");
+    if (!loading && loadFailed) analytics.once("request", "failed", loadExpired ? "expired" : "invalid_data");
+    else if (!loading && incoming) {
+      analytics.once("request", "completed");
+      if (!expired) {
+        const unsupported = publicRequestUnsupportedReason(incoming);
+        analytics.once("request_eligibility", unsupported ? "failed" : "completed", unsupported ? "unsupported" : undefined);
+      }
+    }
+    if (expired) analytics.once("request_expiry", "completed", "expired");
+  }, [consentState, requestLink, incoming, loading, loadFailed, loadExpired, expired]);
 
   const chooseConsent = async (choice: ConsentChoice) => {
+    // Stop immediately on opt-out, including when saving the preference fails.
+    if (choice === "denied") analytics.setConsent("denied");
     setConsentBusy(true); setConsentError(null);
     try {
-      setConsentState(await consent.save(choice));
+      const state = await consent.save(choice);
+      analytics.setConsent(state, requestLink ? "deeplink" : "direct");
+      setConsentState(state);
       setConsentOpen(false);
     } catch {
       setConsentError("Your choice couldn’t be saved. Try again.");
