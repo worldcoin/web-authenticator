@@ -27,12 +27,40 @@ jobs:
     runs-on: ubuntu-latest
     environment: cloudflare-dev
     steps:
-      - name: Check private repository credential
+      - name: Check GitHub App credentials
         env:
-          GH_ACTIONS_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          CF_WORKER_CONFIG_APP_ID: ${{ secrets.CF_WORKER_CONFIG_APP_ID }}
+          CF_WORKER_CONFIG_APP_INSTALLATION_ID: ${{ secrets.CF_WORKER_CONFIG_APP_INSTALLATION_ID }}
+          CF_WORKER_CONFIG_APP_PRIVATE_KEY: ${{ secrets.CF_WORKER_CONFIG_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$GH_ACTIONS_TOKEN" ]; then
-            echo "::error::Configure GIT_HUB_TOKEN with read access to worldcoin/gh-actions and worldcoin/cf-worker-config in the cloudflare-dev environment."
+          missing=0
+          for name in CF_WORKER_CONFIG_APP_ID CF_WORKER_CONFIG_APP_INSTALLATION_ID CF_WORKER_CONFIG_APP_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing $name. Complete the GitHub App credential bootstrap from infrastructure PR #52175."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Create read-only configuration token
+        id: config-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.CF_WORKER_CONFIG_APP_ID }}
+          private-key: ${{ secrets.CF_WORKER_CONFIG_APP_PRIVATE_KEY }}
+          owner: worldcoin
+          repositories: |
+            gh-actions
+            cf-worker-config
+          permission-contents: read
+
+      - name: Verify GitHub App installation
+        env:
+          EXPECTED_INSTALLATION_ID: ${{ secrets.CF_WORKER_CONFIG_APP_INSTALLATION_ID }}
+          ACTUAL_INSTALLATION_ID: ${{ steps.config-token.outputs.installation-id }}
+        run: |
+          if [ "$ACTUAL_INSTALLATION_ID" != "$EXPECTED_INSTALLATION_ID" ]; then
+            echo "::error::The GitHub App installation does not match the configured installation."
             exit 1
           fi
 
@@ -42,7 +70,7 @@ jobs:
         with:
           repository: worldcoin/gh-actions
           ref: 54326c6ae65ae04bcfed34e937eb32378f4af4db
-          token: ${{ secrets.GIT_HUB_TOKEN }}
+          token: ${{ steps.config-token.outputs.token }}
           path: .github/actions/gh-actions
           sparse-checkout: cf-worker-config
           persist-credentials: false
@@ -55,7 +83,7 @@ jobs:
           mode: ${{ inputs.mode || 'plan-and-apply' }}
           app_ref: main
           cf_worker_config_ref: 1ea76554b50c0fa75e7ac363df3d97b51becdae3
-          github_token: ${{ secrets.GIT_HUB_TOKEN }}
+          github_token: ${{ steps.config-token.outputs.token }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AUTHENTICATOR_RGBNET_URL: ${{ secrets.AUTHENTICATOR_RGBNET_URL }}
