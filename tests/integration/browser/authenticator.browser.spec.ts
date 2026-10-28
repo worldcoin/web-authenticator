@@ -17,6 +17,55 @@ async function hideAtStage(page: Page, stage: string) {
 }
 
 if (!("bun" in process.versions)) {
+  test("attested-extraction UI waits for a fixture verdict with the camera off", async ({ page }, info) => {
+    await installCamera(page);
+    await page.route("**/api/selfie-enrollment", route => route.fulfill({ json: {
+      enabled: true, policy: { endpoint: "wss://enclave.test/v1/embeddings", releases: [] },
+    } }));
+    // Exercise the built app's RPC boundary; this is not a real attestation or ML result.
+    await page.addInitScript(() => {
+      const state = { calls: 0, stopped: 0, accept: () => {} };
+      Object.assign(window, { extractionTest: state });
+      class ExtractionWorker {
+        onmessage?: (event: { data: unknown }) => void;
+        postMessage(data: { id: number; op: string; target?: { function?: string } }) {
+          const reply = (result?: unknown) => this.onmessage?.({ data: { id: data.id, ok: true, result } });
+          if (data.op === "initialize") { queueMicrotask(() => reply()); return; }
+          if (data.op !== "call" || data.target?.function !== "extractSelfieEmbedding") throw new Error("Unexpected extraction fixture RPC");
+          state.calls++;
+          state.accept = () => reply({ status: "success", embedding: {
+            embedding: "Zml4dHVyZQ==", embeddingType: "fixture", embeddingVersion: "1", embeddingInferenceBackend: "fixture",
+          } });
+        }
+        terminate() { state.stopped++; this.onmessage = undefined; }
+      }
+      const NativeWorker = window.Worker;
+      Object.assign(window, { Worker: new Proxy(NativeWorker, {
+        construct(target, args) {
+          return String(args[0]).includes("walletkit.worker") ? new ExtractionWorker() : Reflect.construct(target, args);
+        },
+      }) });
+    });
+    await openSelfieRequest(page, "&wide");
+    await expect(page.getByRole("heading", { name: "Checking your selfie" })).toBeVisible();
+    await expect(page.locator(".request-processing")).toHaveText("Checking your selfie");
+    await expect(page.locator("video, .selfie-footer, .selfie-completion-border")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
+    expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);
+    for (const width of [393, 1280]) {
+      await page.setViewportSize({ width, height: width === 393 ? 852 : 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-extraction-${width}.png`, fullPage: true });
+    }
+    await page.evaluate(() => (window as typeof window & { extractionTest: { accept(): void } }).extractionTest.accept());
+    await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
+    expect(await page.evaluate(() => {
+      const { calls, stopped } = (window as typeof window & { extractionTest: { calls: number; stopped: number } }).extractionTest;
+      return { calls, stopped };
+    })).toEqual({ calls: 1, stopped: 1 });
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+  });
+
   test("the bare origin redirects to world.org without forwarding the query", async ({ page }) => {
     for (const path of ["/", "/?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a%2Bb%2Fc%3D"]) {
       const response = await page.request.get(path, { maxRedirects: 0 });
