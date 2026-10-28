@@ -1,5 +1,5 @@
 // Port of biometric-engines RGBNet preprocessing/decoding and pixel-space NMS.
-// Local capture guidance only. Authoritative TEE validation is not connected here.
+// Local capture guidance only; framing mirrors the face engine's checks (ENGINE_FRAMING_V1). Not a verification.
 export const INPUT_SIZE = 256
 export const ANCHOR_COUNT = 2688
 export type FaceDetection = { box: [number, number, number, number]; landmarks: number[]; score: number }
@@ -141,23 +141,45 @@ export function decodeRgbnet(outputs: ModelOutput[]): FaceDetection[] {
 	return suppressDuplicates(faces)
 }
 
-// Normalized source coordinates -> mirrored, centered object-cover preview.
-export function previewPoint(x: number, y: number, width: number, height: number, viewWidth = 1, viewHeight = 1): [number, number] {
+/** Source rectangle [x, y, width, height] that a centered object-fit: cover preview shows of a camera frame. */
+export function previewCrop(width: number, height: number, viewWidth = 1, viewHeight = 1): [number, number, number, number] {
 	const scale = Math.max(viewWidth / width, viewHeight / height)
-	return [1 - (x * width * scale - (width * scale - viewWidth) / 2) / viewWidth, (y * height * scale - (height * scale - viewHeight) / 2) / viewHeight]
+	const sw = Math.min(width, Math.round(viewWidth / scale))
+	const sh = Math.min(height, Math.round(viewHeight / scale))
+	return [Math.round((width - sw) / 2), Math.round((height - sh) / 2), sw, sh]
 }
 
+/**
+ * Geometry checks of the face engine's VanillaSelfie captured-image analyzer, which World App iOS uses too.
+ * Source: worldcoin/biometric-engines biometric-engines-worker/config/vanilla_selfie.yaml and
+ * face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution,bbox_location}.rs.
+ * The engine stays authoritative; matching it here avoids capturing frames it will reject.
+ */
+export const ENGINE_FRAMING_V1 = Object.freeze({
+	// FaceBboxSizeValidator: smaller normalized box axis must exceed min; larger must stay below max.
+	minRelativeSize: 0.52,
+	maxRelativeSize: 0.8,
+	// FaceBboxResolutionValidator: box size in pixels of the analyzed image.
+	minResolutionPx: 112,
+	// BoundingBoxAlignmentQa: box must stay this far inside every image edge.
+	edgeMargin: 0.015,
+})
+
+/** Evaluates the box against the image that will be sent: the preview crop, not the full camera frame. */
 export function faceGuidance(faces: FaceDetection[], width: number, height: number, viewWidth = 1, viewHeight = 1): string {
 	if (![width, height, viewWidth, viewHeight].every(value => Number.isFinite(value) && value > 0)) return 'Waiting for camera preview'
 	if (!faces.length) return 'No face detected'
 	if (faces.length > 1) return 'Keep only one face in view'
+	const [sx, sy, sw, sh] = previewCrop(width, height, viewWidth, viewHeight)
 	const [x1, y1, x2, y2] = faces[0].box
-	const [cx, cy] = previewPoint((x1 + x2) / 2, (y1 + y2) / 2, width, height, viewWidth, viewHeight)
-	const scale = Math.max(viewWidth / width, viewHeight / height)
-	const visibleWidth = (x2 - x1) * width * scale / viewWidth
-	const visibleHeight = (y2 - y1) * height * scale / viewHeight
-	if (Math.hypot(cx - 0.5, cy - 0.5) > 0.12) return 'Center your face'
-	if (visibleWidth < 0.25 || visibleHeight < 0.35) return 'Move closer'
-	if (visibleWidth > 0.8 || visibleHeight > 0.85) return 'Move farther away'
+	const left = (x1 * width - sx) / sw, right = (x2 * width - sx) / sw
+	const top = (y1 * height - sy) / sh, bottom = (y2 * height - sy) / sh
+	const { minRelativeSize, maxRelativeSize, minResolutionPx, edgeMargin } = ENGINE_FRAMING_V1
+	const relativeWidth = right - left, relativeHeight = bottom - top
+	// Size before edges: an oversized face also crosses the margin, and "farther" is the actionable cue.
+	if (Math.min(relativeWidth, relativeHeight) <= minRelativeSize) return 'Move closer'
+	if (relativeWidth * sw <= minResolutionPx || relativeHeight * sh <= minResolutionPx) return 'Move closer'
+	if (Math.max(relativeWidth, relativeHeight) >= maxRelativeSize) return 'Move farther away'
+	if (left < edgeMargin || top < edgeMargin || right > 1 - edgeMargin || bottom > 1 - edgeMargin) return 'Center your face'
 	return 'Face positioned'
 }

@@ -21,6 +21,8 @@ credentials”), which is also how a later visit recovers an interrupted setup.
 **Back** returns to the screen that opened it. Neither entry opens the camera or
 creates an account.
 
+The captured JPEG uses the centered `object-fit: cover` preview crop, not the full camera frame. Framing checks run against that same crop and match the face engine’s size, resolution, and edge-margin limits. Camera resolution requests use 1280×720.
+
 The public flow uses local capture as its completion signal; it does not send a
 verified IDKit response. The oval’s 64 dots fill clockwise in Human badge blue
 (`#005CFF`) during a 1.2-second continuous hold and reset when alignment is lost.
