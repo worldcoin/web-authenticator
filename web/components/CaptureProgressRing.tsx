@@ -34,7 +34,23 @@ const DOTS = Array.from({ length: DOT_COUNT }, (_, index) => {
 
 export function CaptureProgressRing({ progress }: { progress: number }) {
   const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOT_COUNT);
-  return <svg className="selfie-design-ring" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fill="none" aria-hidden="true">
-    {DOTS.map(({ x, y }, index) => <circle key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
-  </svg>;
+  return (
+    <svg
+      className="selfie-design-ring pointer-events-none absolute top-0 left-0 hidden h-auto w-[345.005px] max-w-full [.public-request-flow_&]:block"
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      fill="none"
+      aria-hidden="true"
+    >
+      {DOTS.map(({ x, y }, index) => (
+        <circle
+          key={index}
+          className="fill-[#e3e3e3] data-[filled=true]:fill-[var(--capture-accent,#d4af37)]"
+          cx={x}
+          cy={y}
+          r="2.94866"
+          data-filled={index < filled}
+        />
+      ))}
+    </svg>
+  );
 }

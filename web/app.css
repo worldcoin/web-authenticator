@@ -1,3 +1,9 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(".");
+@source not "./test";
+
+/* Keep the existing base styles while components migrate to Tailwind; omit Preflight. */
 /* Variable font, wght 300–800; same file as developer-portal/web/app/fonts. */
 @font-face {
   font-family: "World Pro MVP";

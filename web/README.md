@@ -3,6 +3,14 @@
 React UI for passkey wallet access and proof requests. Run `bun run dev` from the
 repo root; Bun serves the app at `http://localhost:4173`.
 
+## Styling
+
+Tailwind CSS 4 runs through the Vite plugin, with its theme and utilities loaded
+by `app.css`. Preflight is omitted to preserve the existing base styles. Use
+utilities for new or migrated components and remove their replaced CSS rules;
+unlayered legacy CSS takes precedence over Tailwind utilities. The capture
+progress ring is the first migrated component.
+
 ## App requests
 
 Open `/verify?i=REQUEST_ID&k=URL_ENCODED_KEY`. `/verify` serves the app directly.

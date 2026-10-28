@@ -5,9 +5,6 @@
 .selfie-close { position: absolute; left: 0; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; color: var(--foreground-primary); background: var(--background-secondary); }
 .selfie-close svg { width: 24px; height: 24px; }
 .selfie-close img { display: block; width: 24px; height: 24px; }
-.selfie-design-ring { display: none; }
-.selfie-design-ring circle { fill: #e3e3e3; }
-.selfie-design-ring circle[data-filled="true"] { fill: var(--capture-accent, #d4af37); }
 .selfie-content { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding-block: 24px; text-align: center; }
 .selfie-content h1 { margin: 0 0 28px; font-size: 27px; font-weight: 400; letter-spacing: -.4px; }
 
@@ -70,7 +67,6 @@
 /* 11 units inside the ring viewBox, scaling with the aperture on narrow screens. */
 .public-request-flow .selfie-camera-surface, .public-request-flow .selfie-feedback { inset: calc(11 / 481.637 * 100%) calc(11 / 345.005 * 100%); }
 .public-request-flow .selfie-camera-ring { display: none; }
-.public-request-flow .selfie-design-ring { display: block; position: absolute; top: 0; left: 0; width: 345.005px; max-width: 100%; height: auto; pointer-events: none; }
 .public-request-flow .selfie-guidance { top: 12.2%; min-height: 36px; display: flex; align-items: center; padding: 8px 12px; background: rgb(24 24 24 / 60%); backdrop-filter: blur(10px); }
 .public-request-flow .selfie-guidance h2 { font-size: 15px; line-height: 1.3; font-weight: 350; letter-spacing: -.075px; }
 .public-request-flow .selfie-hint { top: calc(100% + 26px); font-size: 14px; }
