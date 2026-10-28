@@ -48,20 +48,26 @@ if (!("bun" in process.versions)) {
 
   test("public capture retries failure and automatically completes before optional saving", async ({ page }, info) => {
     await installCamera(page);
-    await page.clock.install();
     const { payload, registry } = await signedRequest(11);
+    const captureTime = payload.proof_request.created_at * 1000;
+    // Pause before loading the app, with room to advance from the installed time.
+    // The request timestamp keeps validation and the hold independent of host clock drift.
+    await page.clock.install({ time: captureTime - 60_000 });
+    await page.clock.pauseAt(captureTime);
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query + "&deny");
     await page.getByRole("button", { name: "Start selfie check" }).click();
-    await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
+    // Let the lazy capture screen render while the clock is paused.
+    await expect.poll(async () => {
+      await page.clock.runFor(100);
+      return page.getByRole("heading", { name: "Allow camera access" }).isVisible();
+    }).toBe(true);
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
-    // Keep the short hold visible even if WebKit/browser commands are delayed.
-    await page.clock.pauseAt(new Date());
     await page.getByRole("button", { name: "Try again" }).click();
     const filledDots = page.locator('.selfie-design-ring circle[data-filled="true"]');
     await expect.poll(async () => {
