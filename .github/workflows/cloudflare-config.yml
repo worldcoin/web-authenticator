@@ -28,7 +28,7 @@ jobs:
       group: arc-public-large-amd64-runner
     environment: cloudflare-dev
     steps:
-      - uses: worldcoin/gh-actions-public/cf-worker-config@5519c3f2fac4897dd457b626d439c331aece105a
+      - uses: worldcoin/gh-actions-public/cf-worker-config@4877d8286d7e866849fa9daad49e24491113c8ba
         with:
           worker: web-authenticator-dev
           config: cf-worker-config.json
