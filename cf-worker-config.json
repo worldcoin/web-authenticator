@@ -1,0 +1,18 @@
+{
+  "account_id": "ae97c44fcd31b9289a7455120d2698b2",
+  "repo": "worldcoin/web-authenticator",
+  "workers": {
+    "web-authenticator-dev": {
+      "production_branch": "main",
+      "root_directory": ".",
+      "path_includes": ["*"],
+      "build_caching_enabled": true,
+      "build_command": "bun run build:cf && bun run lint && bun run typecheck && bun run test",
+      "deploy_command": "bun run deploy:cf",
+      "preview": { "enabled": false },
+      "build_vars": {},
+      "build_secrets": ["AUTHENTICATOR_RGBNET_URL"],
+      "runtime_secrets": []
+    }
+  }
+}

@@ -18,5 +18,8 @@
     "api/test/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts"
+  ],
+  "exclude": [
+    "api/test/cloudflare.test.ts"
   ]
 }
