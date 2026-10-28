@@ -28,13 +28,12 @@ jobs:
       group: arc-public-large-amd64-runner
     environment: cloudflare-dev
     steps:
-      - uses: worldcoin/gh-actions-public/cf-worker-config@459184e8935741295a4c64faea68d489b47ada1f
+      - uses: worldcoin/gh-actions-public/cf-worker-config@5519c3f2fac4897dd457b626d439c331aece105a
         with:
           worker: web-authenticator-dev
           config: cf-worker-config.json
           mode: ${{ inputs.mode || 'plan-and-apply' }}
-          app_ref: main
-          cf_worker_config_ref: 1ea76554b50c0fa75e7ac363df3d97b51becdae3
+          cf_worker_config_ref: 7131811e5162e2a98c29728938ee7ff74d131d0f
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AUTHENTICATOR_RGBNET_URL: ${{ secrets.AUTHENTICATOR_RGBNET_URL }}
