@@ -59,7 +59,7 @@ docker run --rm -p 127.0.0.1:4173:4173 web-authenticator
 
 The image runs as a non-root user and contains the compiled API and web assets.
 It listens on `0.0.0.0:4173` inside the container. Hosting beyond localhost requires
-HTTPS for camera and passkey access. Install the [RGBNet model](../web/README.md#camera-guidance)
+HTTPS for camera and passkey access. Install the [RGBNet model](../web/public/models/README.md)
 before building if camera guidance is needed.
 
 This packages the app; AWS hosting, Redis and secrets belong in deployment

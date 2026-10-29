@@ -101,7 +101,7 @@ if (!("bun" in process.versions)) {
     });
 
     test("real RGBNet rejects a faceless stream", async ({ page }) => {
-      test.skip(!existsSync("web/public/models/rgbnet.onnx"), "Supply the private pinned model to test real inference.");
+      test.skip(!existsSync("web/public/models/rgbnet.onnx"), "Run `bun run build:cf` to install the pinned model for real inference.");
       await openSelfie(page, "?real-worker");
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);

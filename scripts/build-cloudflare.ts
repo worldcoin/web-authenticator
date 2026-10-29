@@ -39,11 +39,9 @@ async function installModel(): Promise<void> {
     await mkdir(dirname(destination), { recursive: true });
     if (resolve(source) !== destination) await copyFile(source, destination);
   } else if (!(await Bun.file(destination).exists())) {
-    const url = process.env.AUTHENTICATOR_RGBNET_URL;
-    if (!url || !URL.canParse(url) || new URL(url).protocol !== "https:") throw new Error("Supply AUTHENTICATOR_RGBNET_URL (HTTPS) or AUTHENTICATOR_RGBNET_PATH for the pinned RGBNet model");
     let response: Response;
     try {
-      response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
+      response = await fetch(model.download, { redirect: "error", signal: AbortSignal.timeout(30_000) });
     } catch {
       throw new Error("RGBNet download failed (network error, timeout or redirect)");
     }
