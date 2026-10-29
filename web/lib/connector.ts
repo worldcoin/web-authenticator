@@ -37,10 +37,6 @@ export function returnUrl(value: string | null | undefined): string | undefined 
 		throw new Error('Return URL must use HTTPS or HTTP localhost.')
 	return url.href
 }
-export function hasConnector(href: string): boolean {
-	const params = new URL(href).searchParams
-	return params.has('i') || params.has('k')
-}
 export function parseConnector(href: string): Connector | null {
 	const params = new URL(href).searchParams
 	if (!params.has('i') && !params.has('k')) return null

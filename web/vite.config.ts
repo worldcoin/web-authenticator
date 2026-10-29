@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
@@ -34,7 +35,7 @@ function rejectServerModulesFromBrowser(): Plugin {
 
 export default defineConfig({
   root: appRoot,
-  plugins: [rejectServerModulesFromBrowser(), react()],
+  plugins: [rejectServerModulesFromBrowser(), react(), tailwindcss()],
   publicDir: "public",
   worker: { format: "es", plugins: () => [rejectServerModulesFromBrowser()] },
   // Discover ONNX before entering capture so Vite cannot reload an active camera attempt.

@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Home } from "./components/Home";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
 import { SaveAccessDecision } from "./components/SaveAccessDecision";
@@ -8,20 +7,21 @@ import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
+import { Recover } from "./components/Recover";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "home" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
+type Stage = "intro" | "access" | "capture" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired";
+// `back` is the screen that opened saved access: a completed request or /recover.
+type Flow = { stage: Stage; returnUrl?: string; saved?: boolean; back?: Stage };
 const COMPLETION_STEPS = {
-  "capture-border": { duration: 300, next: "capture-complete", motion: true },
-  "capture-complete": { duration: 500, next: "confirmation", motion: false },
   confirmation: { duration: 1500, next: "confirmation-exit", motion: false },
   "confirmation-exit": { duration: 250, next: "save", motion: true },
 } as const;
 
 /** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
-export function PublicRequestFlow({ incoming, requested, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, recover, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
   incoming: IncomingRequest | null;
-  requested: boolean;
+  recover: boolean;
   loading: boolean;
   failed: boolean;
   expired: boolean;
@@ -101,7 +101,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
       try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
     }
     // Local capture supplies the completion signal until real enrollment is connected.
-    setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
+    setFlow({ stage: "confirmation", returnUrl: incoming?.returnUrl });
     onDispose();
   };
   const finishDecision = (saved: boolean) => {
@@ -142,14 +142,14 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     }
   };
 
-  if (flow.stage === "access") return <AuthenticatorAccess onOpen={onSave} onBack={() => setFlow({ stage: "home" })} />;
+  if (flow.stage === "access") return <AuthenticatorAccess onOpen={onSave} onBack={() => setFlow(current => ({ ...current, stage: current.back ?? "finished", back: undefined }))} />;
 
   if (flow.stage === "save") return <div className="public-request-flow public-request-flow--save">
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(false); }} />
   </div>;
 
   if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className="public-request-flow">
-    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={() => setFlow({ stage: "access" })} />
+    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={() => setFlow(current => ({ ...current, stage: "access", back: current.stage }))} />
   </div>;
 
   if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className="public-request-flow completion-sequence" data-stage={flow.stage} data-paused={paused}>
@@ -161,14 +161,16 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
   </div>;
 
-  if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
+  if (flow.stage === "capture") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
       <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
     </Suspense>
   </div>;
 
-  if (flow.stage === "home" || (!requested && !incoming && !failed && !loading)) return <Home onOpen={() => setFlow({ stage: "access" })} />;
+  // Back from saved access returns here (stage "intro").
+  if (recover && !incoming && !loading && !failed) return <Recover onOpen={() => setFlow(current => ({ ...current, stage: "access", back: current.stage }))} />;
 
+  // Elsewhere without a request link there is no landing page: the intro ends as "can't be verified".
   return <div className="public-request-flow">
     <RequestIntro
       selfieOnly

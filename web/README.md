@@ -3,6 +3,14 @@
 React UI for passkey wallet access and proof requests. Run `bun run dev` from the
 repo root; Bun serves the app at `http://localhost:4173`.
 
+## Styling
+
+Tailwind CSS 4 runs through the Vite plugin, with its theme and utilities loaded
+by `app.css`. Preflight is omitted to preserve the existing base styles. Use
+utilities for new or migrated components and remove their replaced CSS rules;
+unlayered legacy CSS takes precedence over Tailwind utilities. The capture
+progress ring is the first migrated component.
+
 ## App requests
 
 Open `/verify?i=REQUEST_ID&k=URL_ENCODED_KEY`. `/verify` serves the app directly.
@@ -12,20 +20,23 @@ Requests currently must target staging.
 
 The browser fetches and decrypts the request and checks its RP signature. Only Selfie requests (schema 11 in every requirement) can start the
 temporary camera flow. Mixed requests, user-presence requirements and identity
-attributes remain unsupported. Direct visits show the landing page, whose
-**Go to authenticator** button opens a saved-authenticator access screen. The user
-explicitly signs in with their saved passkey to view credentials. Browsers without
-saved access are directed to start from an app request; this button never opens
-the camera or creates an account.
+attributes remain unsupported. There is no landing page: `/` redirects (302) to
+https://world.org/ without its query, and `/verify` without a request ends on
+“This request can’t be verified”. **Go to authenticator** opens saved access,
+where the user explicitly signs in with their passkey to view credentials. It is
+offered after a request is saved and on `/recover` (“Retrieve your World ID
+credentials”), which is also how a later visit recovers an interrupted setup.
+**Back** returns to the screen that opened it. Neither entry opens the camera or
+creates an account.
+
+The captured JPEG uses the centered `object-fit: cover` preview crop, not the full camera frame. Framing checks run against that same crop and match the face engine’s size, resolution, and edge-margin limits. Camera resolution requests use 1280×720.
 
 The public flow uses local capture as its completion signal; it does not send a
-verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
-continuous hold and reset when alignment is lost. Once captured, the dots stretch
-into a continuous green border over 300 ms while the face stays visible and the
-guidance changes to “Selfie completed.” The completed border holds for 500 ms,
-then cuts directly to the sigil confirmation, with no screen fade or scaling.
-The camera stops at that cut, or immediately when the tab is hidden or closed.
-Reduced motion shows the green border immediately with the same 500 ms hold.
+verified IDKit response. The oval’s 64 dots fill clockwise in Human badge blue
+(`#005CFF`) during a 1.2-second continuous hold and reset when alignment is lost.
+Capture stops the camera and cuts directly to the sigil confirmation. There is no
+frozen-photo presentation, solid-border animation, or post-capture hold.
+The page and fixed footer use a white background.
 The button-free sigil confirmation holds for
 1.5 seconds, then automatically opens the one-time **Save with passkey / Not now**
 decision. These timed stages pause while the tab is hidden and stop on exit;

@@ -10,13 +10,14 @@ async function openSelfie(page: Page, query = "") {
 }
 
 if (!("bun" in process.versions)) {
-  test("landing and saved access do not start the camera or load its runtime", async ({ page }) => {
+  test("direct visits, /recover and saved access do not start the camera or load its runtime", async ({ page }) => {
     const modelRequests: string[] = [];
     page.on("request", request => {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await page.goto("/verify");
+    await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
+    await page.goto("/recover");
     await page.getByRole("button", { name: "Go to authenticator" }).click();
     await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
@@ -38,6 +39,30 @@ if (!("bun" in process.versions)) {
       await expect(page.locator("video")).toHaveCount(0);
       await page.getByRole("button", { name: "Not now" }).click();
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    });
+
+    test("a 16:9 camera produces a JPEG matching the portrait preview crop", async ({ page }) => {
+      await page.addInitScript(() => {
+        const original = HTMLCanvasElement.prototype.toBlob;
+        HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+          if (type === "image/jpeg") {
+            const video = document.querySelector("video")!;
+            Object.assign(window, { capturedFrame: {
+              width: this.width, height: this.height,
+              previewRatio: video.clientWidth / video.clientHeight,
+            } });
+          }
+          return original.call(this, callback, type, quality);
+        };
+      });
+      await openSelfieRequest(page, "wide");
+      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
+      const frame = await page.evaluate(() => (window as typeof window & {
+        capturedFrame: { width: number; height: number; previewRatio: number };
+      }).capturedFrame);
+      expect(frame.height).toBe(720);
+      expect(frame.width).toBeLessThan(720);
+      expect(frame.width / frame.height).toBeCloseTo(frame.previewRatio, 2);
     });
 
     test("losing alignment resets the hold", async ({ page }) => {
@@ -115,7 +140,7 @@ if (!("bun" in process.versions)) {
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
         await expect(page.locator(".public-request-flow")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });
       }

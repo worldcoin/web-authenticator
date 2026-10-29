@@ -3,6 +3,8 @@ import { GET as consentGet, PUT as consentPut } from "./api/consent";
 import { GET as healthLive } from "./api/health/live";
 import { ready as healthReady } from "./api/health/ready";
 import { GET as stagingRp } from "./api/staging-rp";
+import { page as recoverPage } from "./recover";
+import { GET as root } from "./root";
 import { page as verifyPage } from "./verify";
 
 // Every server route. Folder paths match the URL. Anything unmatched falls
@@ -14,6 +16,8 @@ export function createRoutes({ staticRoot }: { staticRoot: string }): RouteTable
     "/api/consent": { GET: consentGet, PUT: consentPut },
     "/api/staging-rp": { GET: stagingRp },
     "/api/*": () => Response.json({ error: "Not found" }, { status: 404 }),
+    "/": { GET: root },
     "/verify": { GET: verifyPage(staticRoot) },
+    "/recover": { GET: recoverPage(staticRoot) },
   };
 }

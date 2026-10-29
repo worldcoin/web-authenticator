@@ -52,7 +52,7 @@ export function AuthenticatorAccess({ onOpen, onBack }: {
     </div></div>
     <div className="actions">
       {saved && (records ? <button className="primary-action" onClick={lock}>Lock authenticator</button> : <button className="primary-action" disabled={busy} onClick={() => void open()}>{busy ? "Opening authenticator…" : "Sign in with passkey"}</button>)}
-      <button className="secondary-action" onClick={onBack}>Back to home</button>
+      <button className="secondary-action" onClick={onBack}>Back</button>
     </div>
   </div>;
 }
