@@ -77,8 +77,8 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   // validation keeps running behind it, so the request link is ready once the user chooses.
   const consentScreen = consentState === "unset" || consentOpen;
 
-  const footerActions = <span className="footer-actions">
-    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="footer-link" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
+  const footerActions = <span className="inline-flex items-center gap-3 whitespace-nowrap">
+    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="min-h-8 text-[13px] hover:text-ink hover:underline" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
   </span>;
 
   return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>

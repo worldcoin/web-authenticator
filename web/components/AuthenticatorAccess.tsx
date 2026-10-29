@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { abortable } from "../lib/async";
 import { hasSavedWallet } from "../lib/wallet-session";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
+import { actions, body, centeredLayout, errorCopy, messageBlock, primaryAction, requestFrame, screenContent, secondaryAction, screenTitle } from "./styles";
 
 /** Explicit access to an existing saved authenticator. No camera or account creation. */
 export function AuthenticatorAccess({ onOpen, onBack }: {
@@ -40,19 +41,19 @@ export function AuthenticatorAccess({ onOpen, onBack }: {
       if (!controller.signal.aborted) setBusy(false);
     }
   };
-  return <div className="public-request-flow">
-    <div className="screen-content"><div className="centered-layout">
-      <img className="request-passkey-emblem" src="/assets/figma/request-passkey-emblem.svg" alt="" />
-      <div className="message-block"><h1>Your authenticator</h1>
-        {!saved ? <p>Complete a Selfie Check from an app request, then save access with a passkey to return here.</p>
-          : records ? <><p>{records.length} credential{records.length === 1 ? "" : "s"} in your saved authenticator.</p><ul className="access-credentials">{records.map(record => <li key={record.credentialId.toString()}>{record.issuerSchemaId === 11n ? "Selfie Check" : record.issuerSchemaId === 1n ? "Orb" : record.issuerSchemaId === 128n ? "Faux" : "Credential"}<span>{record.isExpired ? "Expired" : "Active"}</span></li>)}</ul></>
-          : <p>Sign in with your saved passkey to view this browser’s authenticator.</p>}
-        {error && <p className="error-copy" role="alert">{error}</p>}
+  return <div className={requestFrame}>
+    <div className={screenContent}><div className={`${centeredLayout} gap-8`}>
+      <img className="size-14" src="/assets/figma/request-passkey-emblem.svg" alt="" />
+      <div className={`${messageBlock} gap-4`}><h1 className={screenTitle}>Your authenticator</h1>
+        {!saved ? <p className={body}>Complete a Selfie Check from an app request, then save access with a passkey to return here.</p>
+          : records ? <><p className={body}>{records.length} credential{records.length === 1 ? "" : "s"} in your saved authenticator.</p><ul className="mx-0 my-2 grid w-full gap-3 text-left">{records.map(record => <li className="flex justify-between gap-4 rounded-xl border border-stroke-secondary p-3" key={record.credentialId.toString()}>{record.issuerSchemaId === 11n ? "Selfie Check" : record.issuerSchemaId === 1n ? "Orb" : record.issuerSchemaId === 128n ? "Faux" : "Credential"}<span className="text-foreground-secondary">{record.isExpired ? "Expired" : "Active"}</span></li>)}</ul></>
+          : <p className={body}>Sign in with your saved passkey to view this browser’s authenticator.</p>}
+        {error && <p className={errorCopy} role="alert">{error}</p>}
       </div>
     </div></div>
-    <div className="actions">
-      {saved && (records ? <button className="primary-action" onClick={lock}>Lock authenticator</button> : <button className="primary-action" disabled={busy} onClick={() => void open()}>{busy ? "Opening authenticator…" : "Sign in with passkey"}</button>)}
-      <button className="secondary-action" onClick={onBack}>Back to home</button>
+    <div className={actions}>
+      {saved && (records ? <button className={primaryAction} onClick={lock}>Lock authenticator</button> : <button className={primaryAction} disabled={busy} onClick={() => void open()}>{busy ? "Opening authenticator…" : "Sign in with passkey"}</button>)}
+      <button className={secondaryAction} onClick={onBack}>Back to home</button>
     </div>
   </div>;
 }

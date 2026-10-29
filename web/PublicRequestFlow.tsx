@@ -8,6 +8,7 @@ import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
+import { captureFrame, requestFrame } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Flow = { stage: "intro" | "home" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
@@ -17,6 +18,8 @@ const COMPLETION_STEPS = {
   confirmation: { duration: 1500, next: "confirmation-exit", motion: false },
   "confirmation-exit": { duration: 250, next: "save", motion: true },
 } as const;
+// Pausing the clock also pauses every animation in the sequence.
+const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
 /** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
 export function PublicRequestFlow({ incoming, requested, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
@@ -144,24 +147,24 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
 
   if (flow.stage === "access") return <AuthenticatorAccess onOpen={onSave} onBack={() => setFlow({ stage: "home" })} />;
 
-  if (flow.stage === "save") return <div className="public-request-flow public-request-flow--save">
+  if (flow.stage === "save") return <div className={`${requestFrame} motion-safe:animate-completion-in`} data-testid="save-decision">
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(false); }} />
   </div>;
 
-  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className="public-request-flow">
+  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
     <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={() => setFlow({ stage: "access" })} />
   </div>;
 
-  if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className="public-request-flow completion-sequence" data-stage={flow.stage} data-paused={paused}>
+  if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className={`${requestFrame} ${sequence}`} data-stage={flow.stage} data-paused={paused}>
     <RequestCompletion state="complete" transient />
   </div>;
 
   // Expiry unmounts an unfinished capture. Accepted completion has already disposed the request.
-  if (flow.stage === "capture" && expired) return <div className="public-request-flow">
+  if (flow.stage === "capture" && expired) return <div className={requestFrame}>
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
   </div>;
 
-  if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className="public-request-flow public-request-flow--capture completion-sequence" data-stage={flow.stage} data-paused={paused}>
+  if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
       <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
     </Suspense>
@@ -169,7 +172,7 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
 
   if (flow.stage === "home" || (!requested && !incoming && !failed && !loading)) return <Home onOpen={() => setFlow({ stage: "access" })} />;
 
-  return <div className="public-request-flow">
+  return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
