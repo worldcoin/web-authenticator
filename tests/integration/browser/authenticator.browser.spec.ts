@@ -270,9 +270,9 @@ if (!("bun" in process.versions)) {
   });
 
   test.describe("first visit without a consent choice", () => {
-    test.use({ extraHTTPHeaders: {} });
+    test.use({ storageState: { cookies: [], origins: [] } });
 
-    test("the consent screen comes first, is accessible, and is recorded in an HttpOnly cookie", async ({ page, context, browserName }, info) => {
+    test("the consent screen comes first, is accessible, and is recorded only in this browser", async ({ page, context }, info) => {
       await page.addInitScript({ content: axe.source });
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
@@ -285,11 +285,8 @@ if (!("bun" in process.versions)) {
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
       await page.getByRole("button", { name: "Accept" }).click();
       await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-      // WebKit refuses Secure cookies on plain-http loopback; production is HTTPS.
-      if (browserName !== "chromium") return;
-      const cookie = (await context.cookies()).find(c => c.name === "__Host-wid_consent");
-      expect(cookie).toMatchObject({ value: "v1.granted", httpOnly: true, secure: true, sameSite: "Lax" });
-      expect(await page.evaluate(() => document.cookie)).toBe("");
+      expect(JSON.parse(await page.evaluate(() => localStorage.getItem("wid_consent") ?? "null"))).toMatchObject({ choice: "granted", version: "v1" });
+      expect(await context.cookies()).toEqual([]);
       await page.reload();
       await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);

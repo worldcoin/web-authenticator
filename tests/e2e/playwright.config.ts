@@ -12,9 +12,11 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: resolve(repositoryRoot, "playwright-report"), open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:4194",
-    // Global Privacy Control reads as a declined analytics choice, so flows other than the
-    // consent tests start past the first-visit consent screen.
-    extraHTTPHeaders: { "Sec-GPC": "1" },
+    // A stored declined analytics choice, so flows other than the consent tests start past
+    // the first-visit consent screen.
+    storageState: { cookies: [], origins: [{ origin: "http://127.0.0.1:4194", localStorage: [
+      { name: "wid_consent", value: JSON.stringify({ choice: "denied", version: "v1", at: Date.now() }) },
+    ] }] },
     trace: "off",
     video: "off",
     screenshot: "only-on-failure",

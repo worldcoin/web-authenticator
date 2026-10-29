@@ -88,7 +88,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["web/lib/wallet-session.ts", "web/lib/wallet-persistence.ts"],
+    files: ["web/lib/wallet-session.ts", "web/lib/wallet-persistence.ts", "web/lib/consent.ts"],
     rules: {
       "no-restricted-properties": ["error",
         { object: "document", property: "cookie" },

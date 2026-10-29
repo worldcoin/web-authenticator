@@ -2,7 +2,7 @@ import type { ConsentChoice } from "../lib/consent";
 import { SigninPage } from "./SigninPage";
 
 /**
- * First-visit analytics choice, shown before any page content until the server
+ * First-visit analytics choice, shown before any page content until this browser
  * holds a decision. Copy is a placeholder pending legal review.
  */
 export function ConsentScreen({ busy, error, onChoose }: {

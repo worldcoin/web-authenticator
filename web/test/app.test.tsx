@@ -124,7 +124,7 @@ test("a failed consent save keeps the consent screen with an error", async () =>
   expect(view.getByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
 });
 
-test("an unreachable consent endpoint asks again rather than assuming a choice", async () => {
+test("unreadable consent storage asks again rather than assuming a choice", async () => {
   const f = await fixture(1); f.services.load = async () => null;
   const consent: ConsentClient = { read: async () => { throw new Error("offline"); }, save: async choice => choice };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);

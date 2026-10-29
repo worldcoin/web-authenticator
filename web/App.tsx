@@ -15,7 +15,7 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const [loadFailed, setLoadFailed] = useState(false);
   const [expired, setExpired] = useState(false);
   const [completionAnimating, setCompletionAnimating] = useState(false);
-  // null until the server answers; analytics stays off unless the state is "granted".
+  // null until the stored choice is read; analytics stays off unless the state is "granted".
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
@@ -26,10 +26,10 @@ export function AuthenticatorAppV1({ services = defaults, consent = consentClien
   const source = useRef<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    // An unreachable consent endpoint shows the choice again rather than assuming one.
-    consent.read(controller.signal).then(setConsentState, () => { if (!controller.signal.aborted) setConsentState("unset"); });
-    return () => controller.abort();
+    let active = true;
+    // Unreadable storage shows the choice again rather than assuming one.
+    consent.read().then(state => { if (active) setConsentState(state); }, () => { if (active) setConsentState("unset"); });
+    return () => { active = false; };
   }, [consent]);
 
   const chooseConsent = async (choice: ConsentChoice) => {

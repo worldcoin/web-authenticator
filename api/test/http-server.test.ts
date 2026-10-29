@@ -120,27 +120,3 @@ test("all responses include no-referrer/no-store and bounded CSP destinations", 
   expect(response.headers.get("content-security-policy")).toContain("https://staging-bridge.worldcoin.org");
   expect(response.headers.get("content-security-policy")).not.toContain("connect-src *");
 });
-
-test("consent is unset by default, denied under Global Privacy Control, and read from the cookie", async () => {
-  expect(await (await get("/api/consent")).json()).toEqual({ analytics: "unset" });
-  expect(await (await get("/api/consent", { headers: { "sec-gpc": "1" } })).json()).toEqual({ analytics: "denied" });
-  expect(await (await get("/api/consent", { headers: { cookie: "__Host-wid_consent=v1.granted" } })).json()).toEqual({ analytics: "granted" });
-  expect(await (await get("/api/consent", { headers: { cookie: "__Host-wid_consent=v0.granted" } })).json()).toEqual({ analytics: "unset" });
-});
-test("saving consent sets a hardened cookie holding only the versioned choice", async () => {
-  const response = await get("/api/consent", { method: "PUT", headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" }, body: JSON.stringify({ analytics: "granted" }) });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ analytics: "granted" });
-  const cookie = response.headers.get("set-cookie") ?? "";
-  expect(cookie).toStartWith("__Host-wid_consent=v1.granted;");
-  for (const attribute of ["Path=/", "Secure", "HttpOnly", "SameSite=Lax", "Max-Age="]) expect(cookie).toContain(attribute);
-  expectSecurityHeaders(response);
-});
-test("consent cannot be set cross-site or with a malformed body", async () => {
-  const put = (headers: Record<string, string>, body: string) => get("/api/consent", { method: "PUT", headers, body });
-  const json = { "content-type": "application/json" };
-  expect((await put({ ...json, "sec-fetch-site": "cross-site" }, JSON.stringify({ analytics: "granted" }))).status).toBe(403);
-  expect((await put({ "content-type": "text/plain" }, JSON.stringify({ analytics: "granted" }))).status).toBe(403);
-  expect((await put(json, "{")).status).toBe(400);
-  expect((await put(json, JSON.stringify({ analytics: "yes" }))).status).toBe(400);
-});
