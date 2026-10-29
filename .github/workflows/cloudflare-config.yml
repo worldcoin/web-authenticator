@@ -24,17 +24,16 @@ concurrency:
 jobs:
   configure:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     environment: cloudflare-dev
     steps:
-      - uses: worldcoin/gh-actions/cf-worker-config@54326c6ae65ae04bcfed34e937eb32378f4af4db
+      - uses: worldcoin/gh-actions-public/cf-worker-config@4877d8286d7e866849fa9daad49e24491113c8ba
         with:
           worker: web-authenticator-dev
           config: cf-worker-config.json
           mode: ${{ inputs.mode || 'plan-and-apply' }}
-          app_ref: main
-          cf_worker_config_ref: 1ea76554b50c0fa75e7ac363df3d97b51becdae3
-          github_token: ${{ secrets.GIT_HUB_TOKEN }}
+          cf_worker_config_ref: 7131811e5162e2a98c29728938ee7ff74d131d0f
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AUTHENTICATOR_RGBNET_URL: ${{ secrets.AUTHENTICATOR_RGBNET_URL }}
