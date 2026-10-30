@@ -42,14 +42,14 @@ if (!("bun" in process.versions)) {
     test("losing alignment resets the hold", async ({ page }) => {
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      await expect.poll(() => page.locator(".selfie-ring-progress").getAttribute("style")).not.toBe("stroke-dashoffset: 100;");
+      await expect.poll(() => page.getByTestId("selfie-ring-progress").getAttribute("style")).not.toBe("stroke-dashoffset: 100;");
       await page.evaluate(() => { (window as any).cameraTest.aligned = false; });
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible();
-      await expect(page.locator(".selfie-ring-progress")).toHaveAttribute("style", "stroke-dashoffset: 100;");
-      await expect(page.locator('.selfie-design-ring circle[data-filled="true"]')).toHaveCount(0);
+      await expect(page.getByTestId("selfie-ring-progress")).toHaveAttribute("style", "stroke-dashoffset: 100;");
+      await expect(page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]')).toHaveCount(0);
       await page.evaluate(() => { (window as any).cameraTest.aligned = true; });
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      expect(await page.locator(".selfie-ring-progress").evaluate(el => Number((el as SVGElement).style.strokeDashoffset))).toBeGreaterThan(70);
+      expect(await page.getByTestId("selfie-ring-progress").evaluate(el => Number((el as SVGElement).style.strokeDashoffset))).toBeGreaterThan(70);
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
@@ -112,7 +112,7 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
-        await expect(page.locator(".public-request-flow")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+        await expect(page.getByTestId("request-frame")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });

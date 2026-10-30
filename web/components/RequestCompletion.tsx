@@ -1,3 +1,5 @@
+import { actions, centeredLayout, completionTitle, copy, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, signinPrimary } from "./styles";
+
 export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, transient = false, saved = false }: {
   state: "complete" | "cancelled" | "expired" | "error";
   returnUrl?: string;
@@ -20,16 +22,16 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, t
   const showAuthenticator = state === "complete" && saved && onOpen;
 
   return <>
-    <div className="screen-content request-completion" role="status">
-      <div className="centered-layout">
-        <img className={state === "complete" ? "request-completion-emblem" : "request-selfie-emblem"} src={state === "complete" ? "/assets/figma/request-completion-emblem.svg" : "/assets/figma/request-selfie-emblem.svg"} alt="" />
-        <div className="message-block"><h1>{title}</h1><p>{description}</p>{detail && <p className="detail-copy">{detail}</p>}</div>
+    <div className={`${screenContent} group-data-[stage=confirmation-exit]/sequence:motion-safe:animate-completion-out`} data-testid="request-completion" role="status">
+      <div className={`${centeredLayout} gap-6`}>
+        <img className={state === "complete" ? "size-22" : "h-14 w-[56.0035px]"} src={state === "complete" ? "/assets/figma/request-completion-emblem.svg" : "/assets/figma/request-selfie-emblem.svg"} alt="" />
+        <div className={`${messageBlock} gap-3`}><h1 className={completionTitle}>{title}</h1><p className={`${copy} text-[17px] text-foreground-secondary`}>{description}</p>{detail && <p className={`${detailCopy} text-foreground-secondary`}>{detail}</p>}</div>
       </div>
     </div>
-    {!transient && <div className="actions">
-      {showAuthenticator && <button className="signin-primary home-authenticator" onClick={onOpen}>Go to authenticator</button>}
-      {onRetry && <button className="primary-action" onClick={onRetry}>Try again</button>}
-      {returnUrl && <a className={onRetry || showAuthenticator ? "secondary-action return-link" : "primary-action return-link"} href={returnUrl}>Return to the app</a>}
+    {!transient && <div className={actions}>
+      {showAuthenticator && <button className={`${signinPrimary} max-w-[345px]`} onClick={onOpen}>Go to authenticator</button>}
+      {onRetry && <button className={primaryAction} onClick={onRetry}>Try again</button>}
+      {returnUrl && <a className={`${onRetry || showAuthenticator ? secondaryAction : primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
     </div>}
   </>;
 }

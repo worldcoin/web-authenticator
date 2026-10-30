@@ -7,7 +7,7 @@ import { signedRequest, encryptedRequest, openSelfieRequest } from "../fixtures/
 async function hideAtStage(page: Page, stage: string) {
   await page.evaluate(stage => {
     const observer = new MutationObserver(() => {
-      if (document.querySelector(".completion-sequence")?.getAttribute("data-stage") !== stage) return;
+      if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== stage) return;
       observer.disconnect();
       Object.defineProperty(document, "hidden", { configurable: true, value: true });
       document.dispatchEvent(new Event("visibilitychange"));
@@ -52,22 +52,22 @@ if (!("bun" in process.versions)) {
     // Record completion atomically instead of racing it with separate browser round trips.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
       const observer = new MutationObserver(() => {
-        if (document.querySelector('.completion-sequence')?.getAttribute("data-stage") !== "capture-border") return;
+        if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          goldDots: document.querySelectorAll('.selfie-design-ring circle[data-filled="true"]').length,
-          still: !!document.querySelector('.selfie-photo'),
-          checkmark: !!document.querySelector('.selfie-complete'),
+          goldDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
+          still: !!document.querySelector('[data-testid=selfie-photo]'),
+          checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
-          title: document.querySelector('.selfie-guidance h2')?.textContent,
-          animationDuration: getComputedStyle(document.querySelector('.selfie-completion-border')!).animationDuration,
+          title: document.querySelector('[data-testid=selfie-guidance] h2')?.textContent,
+          animationDuration: getComputedStyle(document.querySelector('[data-testid=selfie-completion-border]')!).animationDuration,
         });
       });
       observer.observe(document.body, { attributes: true, childList: true, subtree: true });
     }));
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-    const goldDots = page.locator('.selfie-design-ring circle[data-filled="true"]');
+    const goldDots = page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]');
     await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
     expect(await goldDots.count()).toBeLessThan(64);
     await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
@@ -79,10 +79,10 @@ if (!("bun" in process.versions)) {
     await expect(page.locator("video")).toHaveCount(0);
     expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
-    await expect(page.locator(".request-completion")).toHaveCSS("opacity", "1");
+    await expect(page.getByTestId("request-completion")).toHaveCSS("opacity", "1");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-capture-success.png`, fullPage: true });
     await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
-    await expect(page.locator(".public-request-flow--save")).toHaveCSS("opacity", "1");
+    await expect(page.getByTestId("save-decision")).toHaveCSS("opacity", "1");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-save-choice.png`, fullPage: true });
     await page.getByRole("button", { name: "Not now" }).click();
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
@@ -108,20 +108,20 @@ if (!("bun" in process.versions)) {
         const footerPosition = await page.getByRole("button", { name: "Cookie settings" }).boundingBox();
         await hideAtStage(page, "capture-complete");
         await page.getByRole("button", { name: "Start selfie check" }).click();
-        await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-complete");
+        await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
         const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
         await page.clock.runFor(10_000);
-        await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-complete");
+        await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
         await expect(page.getByAltText("Your captured selfie")).toBeAttached();
         await expect(page.getByRole("heading", { name: "Selfie completed" })).toBeVisible();
-        await expect(page.locator(".selfie-camera-stage")).toHaveCSS("opacity", "1");
-        await expect(page.locator(".selfie-camera-stage")).toHaveCSS("transform", "none");
-        const border = page.locator(".selfie-completion-border");
-        await expect(page.locator(".selfie-success-fill")).toHaveCount(0);
+        await expect(page.getByTestId("selfie-camera-stage")).toHaveCSS("opacity", "1");
+        await expect(page.getByTestId("selfie-camera-stage")).toHaveCSS("transform", "none");
+        const border = page.getByTestId("selfie-completion-border");
+        await expect(page.getByTestId("selfie-success-fill")).toHaveCount(0);
         await expect(border).toHaveCSS("fill", "none");
         await expect(border).toHaveCSS("stroke", "rgb(40, 168, 107)");
         await expect(border).toHaveCSS("stroke-dasharray", "1px, 0px");
-        await expect(page.locator(".selfie-design-ring circle").first()).toBeHidden();
+        await expect(page.locator("[data-testid=selfie-design-ring] circle").first()).toBeHidden();
         await expect(border).toHaveCSS("animation-name", "none");
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-green-completion.png`, fullPage: true });
         expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);
@@ -137,10 +137,10 @@ if (!("bun" in process.versions)) {
         expect(await page.evaluate(async url => {
           try { await fetch(url!); return false; } catch { return true; }
         }, photoUrl)).toBe(true);
-        await expect(page.locator(".request-completion")).toHaveCSS("animation-name", "none");
-        await expect(page.locator(".request-completion")).toHaveCSS("opacity", "1");
+        await expect(page.getByTestId("request-completion")).toHaveCSS("animation-name", "none");
+        await expect(page.getByTestId("request-completion")).toHaveCSS("opacity", "1");
         await page.clock.runFor(10_000);
-        await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "confirmation");
+        await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "confirmation");
         await expect(page.getByRole("button")).toHaveCount(0);
         await page.evaluate(() => {
           Object.defineProperty(document, "hidden", { configurable: true, value: false });
@@ -161,7 +161,7 @@ if (!("bun" in process.versions)) {
     test("leaving during completion cancels advancement and clears the image", async ({ page }) => {
       await hideAtStage(page, "capture-complete");
       await page.getByRole("button", { name: "Start selfie check" }).click();
-      await expect(page.locator('.completion-sequence')).toHaveAttribute("data-stage", "capture-complete");
+      await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
       const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
       await page.clock.runFor(10_000);
