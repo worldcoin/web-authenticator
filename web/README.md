@@ -44,4 +44,12 @@ query parameter alone does not enable a return link.
 
 ## Routing
 
-`web/App.tsx` mounts a TanStack Router with `/` (landing) and `/verify` (request links); both render `AuthenticatorApp`. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because the app reads the request from the raw URL and the default JSON codec would re-encode the bridge key. A new page needs a route in `web/App.tsx`, a server route in `api/routes/index.ts` and an entry in `serveWorkerAsset` (`api/lib/cloudflare-assets.ts`).
+`web/App.tsx` mounts a TanStack Router with three routes. Each also needs a server route in `api/routes/index.ts` and an entry in `APP_PAGES` (`api/lib/cloudflare-assets.ts`), so a reload does not 404.
+
+| Path | Screen |
+| ---- | ------ |
+| `/` | Landing page. Ignores request parameters. |
+| `/verify` | Request links (`?i=…&k=…`). Loads and validates the request, then runs the selfie flow. Without a valid request it shows the invalid-request screen. |
+| `/authenticator` | Saved-authenticator access. |
+
+The request flow's stages (capture, confirmation, save) stay in memory rather than in the URL: a reload already drops the request. After saving, the flow navigates to `/authenticator` with `replace`, because the spent `/verify` URL is not worth returning to. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because `/verify` reads the request from the raw URL and the default JSON codec would re-encode the bridge key.

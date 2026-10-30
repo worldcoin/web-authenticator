@@ -2,6 +2,7 @@ import type { RouteTable } from "../lib/http";
 import { GET as healthLive } from "./api/health/live";
 import { ready as healthReady } from "./api/health/ready";
 import { GET as stagingRp } from "./api/staging-rp";
+import { page as authenticatorPage } from "./authenticator";
 import { page as verifyPage } from "./verify";
 
 // Every server route. Folder paths match the URL. Anything unmatched falls
@@ -12,6 +13,7 @@ export function createRoutes({ staticRoot }: { staticRoot: string }): RouteTable
     "/api/health/ready": { GET: healthReady(staticRoot) },
     "/api/staging-rp": { GET: stagingRp },
     "/api/*": () => Response.json({ error: "Not found" }, { status: 404 }),
+    "/authenticator": { GET: authenticatorPage(staticRoot) },
     "/verify": { GET: verifyPage(staticRoot) },
   };
 }

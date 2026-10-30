@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Home } from "./components/Home";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
 import { SaveAccessDecision } from "./components/SaveAccessDecision";
@@ -7,11 +6,10 @@ import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/inco
 import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
-import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 import { captureFrame, requestFrame } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "home" | "access" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
+type Flow = { stage: "intro" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -21,14 +19,14 @@ const COMPLETION_STEPS = {
 // Pausing the clock also pauses every animation in the sequence.
 const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
-/** App requests hold a temporary capture; saved authenticator access requires explicit sign-in. */
-export function PublicRequestFlow({ incoming, requested, loading, failed, expired, onDispose, onSave, onTransitionChange }: {
+/** App requests hold a temporary capture; saved authenticator access lives on its own route. */
+export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onOpenAuthenticator, onSave, onTransitionChange }: {
   incoming: IncomingRequest | null;
-  requested: boolean;
   loading: boolean;
   failed: boolean;
   expired: boolean;
   onDispose: () => void;
+  onOpenAuthenticator: () => void;
   onTransitionChange: (active: boolean) => void;
   onSave: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
 }) {
@@ -145,14 +143,12 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
     }
   };
 
-  if (flow.stage === "access") return <AuthenticatorAccess onOpen={onSave} onBack={() => setFlow({ stage: "home" })} />;
-
   if (flow.stage === "save") return <div className={`${requestFrame} motion-safe:animate-completion-in`} data-testid="save-decision">
     <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(false); }} />
   </div>;
 
   if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
-    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={() => setFlow({ stage: "access" })} />
+    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={onOpenAuthenticator} />
   </div>;
 
   if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className={`${requestFrame} ${sequence}`} data-stage={flow.stage} data-paused={paused}>
@@ -169,8 +165,6 @@ export function PublicRequestFlow({ incoming, requested, loading, failed, expire
       <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
     </Suspense>
   </div>;
-
-  if (flow.stage === "home" || (!requested && !incoming && !failed && !loading)) return <Home onOpen={() => setFlow({ stage: "access" })} />;
 
   return <div className={requestFrame}>
     <RequestIntro

@@ -75,6 +75,9 @@ test("Worker preserves verify URLs, API methods and security headers", async () 
   const head = await handle(request("/verify", { method: "HEAD" }), env);
   expect(head.status).toBe(200);
   expect(await head.text()).toBe("");
+  paths.length = 0;
+  expect((await handle(request("/authenticator"), env)).status).toBe(200);
+  expect(paths).toEqual([origin + "/index.html"]);
 });
 
 test("large WASM uploads as one gzip file and decodes byte-for-byte at its original URL", async () => {
