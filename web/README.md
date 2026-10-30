@@ -44,7 +44,7 @@ query parameter alone does not enable a return link.
 
 ## Routing
 
-`web/App.tsx` mounts a TanStack Router with three routes. Each also needs a server route in `api/routes/index.ts` and an entry in `APP_PAGES` (`api/lib/cloudflare-assets.ts`), so a reload does not 404.
+`web/App.tsx` mounts a TanStack Router with three routes. No server change is needed: both servers answer every path that is not `/api/*` or a file (a last segment with a dot) with `index.html` (`api/lib/client-routes.ts`), so a reload on any route works.
 
 | Path | Screen |
 | ---- | ------ |

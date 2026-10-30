@@ -13,8 +13,7 @@ import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
 const parseSearch = (search: string) => (search.length > 1 ? { query: search.slice(1) } : {});
 const stringifySearch = (search: Record<string, unknown>) => (typeof search.query === "string" ? `?${search.query}` : "");
 
-// A new page needs a route here, a server route in api/routes/index.ts and an entry in the
-// Worker's asset lookup (api/lib/cloudflare-assets.ts).
+// A new page needs only a route here: the servers serve index.html for every non-file path.
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
   const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
   const routeTree = root.addChildren([

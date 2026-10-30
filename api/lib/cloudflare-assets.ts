@@ -1,3 +1,5 @@
+import { isClientRoute } from "./client-routes";
+
 export const COMPRESSED_WASM_PREFIX = "/_cf/wasm";
 
 function encodingQuality(request: Request, encoding: "gzip" | "identity"): number {
@@ -19,14 +21,11 @@ function assetRequest(request: Request, pathname: string): Request {
   return new Request(url, { headers: { "Accept-Encoding": "identity" } });
 }
 
-// Client routes of the web app (web/App.tsx); each is served the app shell.
-const APP_PAGES = new Set(["/", "/verify", "/authenticator"]);
-
 export async function serveWorkerAsset(request: Request, assets: Env["ASSETS"]): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/_cf/")) return new Response("Not found", { status: 404 });
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-  const pathname = APP_PAGES.has(url.pathname) ? "/index.html" : url.pathname;
+  const pathname = isClientRoute(url.pathname) ? "/index.html" : url.pathname;
   const response = await assets.fetch(assetRequest(request, pathname));
   if (response.status !== 404 || !pathname.endsWith(".wasm")) {
     if (request.method === "HEAD") {

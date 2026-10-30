@@ -12,7 +12,7 @@ run `bun run build` followed by `bun run start`.
 ```
 main.ts                    Bun.serve listener settings
 server.ts                  wires the route table, static fallback and error handler
-routes/index.ts            every server route, using Bun's built-in router
+routes/index.ts            every API route, using Bun's built-in router
 routes/<url-path>/index.ts one folder per endpoint, named after its URL
 lib/                       config, security headers, static serving, registry client
 test/                      runs against a real server on an ephemeral port

@@ -77,7 +77,11 @@ test("Worker preserves verify URLs, API methods and security headers", async () 
   expect(await head.text()).toBe("");
   paths.length = 0;
   expect((await handle(request("/authenticator"), env)).status).toBe(200);
-  expect(paths).toEqual([origin + "/index.html"]);
+  expect((await handle(request("/authenticator/deep/link"), env)).status).toBe(200);
+  expect(paths).toEqual([origin + "/index.html", origin + "/index.html"]);
+  paths.length = 0;
+  await handle(request("/assets/missing.js"), env);
+  expect(paths).toEqual([origin + "/assets/missing.js"]);
 });
 
 test("large WASM uploads as one gzip file and decodes byte-for-byte at its original URL", async () => {

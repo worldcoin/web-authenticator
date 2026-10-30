@@ -1,4 +1,5 @@
 import { resolve, relative, sep } from "node:path";
+import { isClientRoute } from "./client-routes";
 
 // Both api/lib/ (source) and api/dist/ (bundle) sit two levels below the repo root.
 export const DEFAULT_STATIC_ROOT = resolve(import.meta.dir, "../../web/dist");
@@ -38,12 +39,9 @@ export async function serveStatic(request: Request, staticRoot: string): Promise
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const response = await serveFile(new URL(request.url).pathname, staticRoot);
+  const pathname = new URL(request.url).pathname;
+  const response = await serveFile(isClientRoute(pathname) ? "/" : pathname, staticRoot);
   return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
-}
-
-export function serveIndex(staticRoot: string): Promise<Response> {
-  return serveFile("/", staticRoot);
 }
 
 export function webBundleAvailable(staticRoot: string): Promise<boolean> {
