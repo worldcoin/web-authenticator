@@ -1,10 +1,11 @@
 import { logFlowStep } from './flow-logging';
+import { currentProtocolEnvironment } from './environment';
 import { parseLegacyProfile } from './legacy-profile';
 import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy-passkey-secrets';
 import { registrationState, saveRegistrationState } from './wallet-persistence';
 import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
-import { activateStagingWallet } from "./wallet-registration";
+import { activateWallet } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
@@ -73,8 +74,8 @@ export async function openPasskeyWallet(signal: AbortSignal): Promise<WalletSess
 export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void): Promise<AccountWallet> {
   let account: AccountWallet | undefined;
   await openWithPasskey(signal, async (session, seed, credentialId, deadline) => {
-    account = new AccountWallet(session.client, session.store, "staging", "us");
-    await activateStagingWallet(account, seed, credentialId, deadline, progress);
+    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
+    await activateWallet(account, seed, credentialId, deadline, progress);
   });
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
   return account;

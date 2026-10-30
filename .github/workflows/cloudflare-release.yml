@@ -1,0 +1,74 @@
+name: Cloudflare release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize the whole promotion, including approval, so a later sandbox version
+# cannot replace the version awaiting production promotion.
+concurrency:
+  group: cloudflare-release
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ae97c44fcd31b9289a7455120d2698b2
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_RELEASE_CONFIGURED == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  sandbox:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: cloudflare-sandbox
+      url: https://web.sandbox.world.org
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build:cf
+      - name: Deploy tested commit to sandbox
+        run: bunx wrangler deploy --env sandbox --tag "$GITHUB_SHA"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Check sandbox origin, assets, and release commit
+        run: bun scripts/smoke-cloudflare.ts sandbox "$GITHUB_SHA"
+
+  production:
+    needs: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Terraform configures Protocol reviewers and main-only deployment rules.
+    environment:
+      name: cloudflare-production
+      url: https://web.world.org
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Recheck approved sandbox version
+        run: bun scripts/smoke-cloudflare.ts sandbox "$GITHUB_SHA"
+      - run: bun run build:cf
+      - name: Promote tested commit to production
+        run: bunx wrangler deploy --env production --tag "$GITHUB_SHA"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Check production origin, assets, and release commit
+        run: bun scripts/smoke-cloudflare.ts production "$GITHUB_SHA"

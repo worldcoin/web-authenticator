@@ -15,6 +15,8 @@ const request = (path = "/", init?: RequestInit) => new Request(origin + path, i
 const environment = (fetchAsset: (request: Request) => Promise<Response>): Env => ({
   CF_ACCESS_TEAM_DOMAIN: "tfh-test.cloudflareaccess.com",
   CF_ACCESS_AUD: "test-audience",
+  DEPLOYMENT_ENVIRONMENT: "internal",
+  CF_VERSION_METADATA: { id: "test-version", tag: "a".repeat(40), timestamp: "2026-10-30T00:00:00.000Z" },
   ASSETS: { fetch: fetchAsset } as Fetcher,
 });
 
@@ -169,4 +171,33 @@ test("WASM encoding negotiation accepts whitespace before quality weights", asyn
       expect(new Uint8Array(gzip ? gunzipSync(body) : body)).toEqual(bytes);
     }
   }
+});
+
+
+test("public deployments require the exact configured HTTPS origin and expose their version", async () => {
+  let authentications = 0;
+  let reads = 0;
+  const handle = createWorkerHandler(async () => { authentications++; return new Response("private", { status: 403 }); });
+  for (const [name, origin, protocol] of [
+    ["sandbox", "https://web.sandbox.world.org", "staging"],
+    ["production", "https://web.world.org", "production"],
+  ] as const) {
+    const env = { ...environment(async () => { reads++; return new Response("<html>app</html>"); }), DEPLOYMENT_ENVIRONMENT: name };
+    const response = await handle(new Request(origin + "/api/health/ready"), env);
+    expect(response.status).toBe(200);
+    expect(await response.json() as Record<string, unknown>).toEqual({ status: "ready", environment: name, protocol, origin, commit: "a".repeat(40) });
+    const before = reads;
+    for (const bad of ["http://" + new URL(origin).host, "https://attacker.example", "https://authenticator.toolsforhumanity.dev", "https://web-authenticator-prod.worldcoin.workers.dev",
+      name === "sandbox" ? "https://web.world.org" : "https://web.sandbox.world.org"]) {
+      expect((await handle(new Request(bad + "/verify", { headers: { Origin: origin, "X-Forwarded-Host": new URL(origin).host } }), env)).status).toBe(421);
+    }
+    expect(reads).toBe(before);
+    expect((await handle(new Request(origin + "/api/rp?id=invalid"), env)).status).toBe(400);
+    if (name === "production") expect((await handle(new Request(origin + "/api/staging-rp?id=invalid"), env)).status).toBe(404);
+  }
+  expect(authentications).toBe(0);
+  const env = { ...environment(async () => new Response("private")), DEPLOYMENT_ENVIRONMENT: "unknown" };
+  expect((await handle(request(), env)).status).toBe(503);
+  expect((await handle(request(), { ...env, DEPLOYMENT_ENVIRONMENT: "internal" })).status).toBe(403);
+  expect(authentications).toBe(1);
 });

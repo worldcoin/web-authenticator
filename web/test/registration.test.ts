@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { activateStagingWallet } from "../lib/wallet-registration";
+import { activateWallet } from "../lib/wallet-registration";
 import { registrationState, saveRegistrationState } from "../lib/wallet-persistence";
 import type { WalletKit } from "../lib/walletkit";
 import { WalletRegistrationError } from "../lib/wallet-errors";
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
 beforeEach(() => window.localStorage.clear());
 function fixture() {
@@ -19,7 +19,7 @@ function fixture() {
   } as unknown as WalletKit;
   return { wallet, calls, fail: () => { fail = true; } };
 }
-const activate = (wallet: WalletKit) => activateStagingWallet(wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {});
+const activate = (wallet: WalletKit) => activateWallet(wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {});
 test("registers once and initializes the encrypted wallet", async () => {
   const f = fixture(); await activate(f.wallet);
   expect(f.calls).toEqual(["register", "init"]);
