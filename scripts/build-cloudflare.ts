@@ -1,7 +1,6 @@
-import { copyFile, mkdir, readdir, rm, stat, writeFile, cp } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile, cp } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
-import model from "../web/lib/rgbnet-model.json";
 import { COMPRESSED_WASM_PREFIX } from "../api/lib/cloudflare-assets";
 
 const LIMIT = 25 * 1024 * 1024;
@@ -32,46 +31,8 @@ export async function packageCloudflareAssets(source: string, output: string): P
   return compressedCount;
 }
 
-async function installModel(): Promise<void> {
-  const destination = join(root, "web/public", model.url);
-  const source = process.env.AUTHENTICATOR_RGBNET_PATH;
-  if (source) {
-    await mkdir(dirname(destination), { recursive: true });
-    if (resolve(source) !== destination) await copyFile(source, destination);
-  } else if (!(await Bun.file(destination).exists())) {
-    const url = process.env.AUTHENTICATOR_RGBNET_URL;
-    if (!url || !URL.canParse(url) || new URL(url).protocol !== "https:") throw new Error("Supply AUTHENTICATOR_RGBNET_URL (HTTPS) or AUTHENTICATOR_RGBNET_PATH for the pinned RGBNet model");
-    let response: Response;
-    try {
-      response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
-    } catch {
-      throw new Error("RGBNet download failed (network error, timeout or redirect)");
-    }
-    if (!response.ok) throw new Error(`RGBNet download failed (HTTP ${response.status})`);
-    // Bound the download even when the server omits Content-Length.
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("RGBNet download was empty");
-    const parts: Uint8Array[] = [];
-    let length = 0;
-    while (true) {
-      const part = await reader.read();
-      if (part.done) break;
-      length += part.value.byteLength;
-      if (length > model.bytes) { await reader.cancel(); throw new Error("RGBNet length mismatch"); }
-      parts.push(part.value);
-    }
-    await mkdir(dirname(destination), { recursive: true });
-    await Bun.write(destination, new Blob(parts.map(part => new Uint8Array(part))));
-  }
-  const file = Bun.file(destination);
-  if (file.size !== model.bytes) throw new Error("RGBNet length mismatch");
-  const hash = new Bun.CryptoHasher("sha256").update(await file.arrayBuffer()).digest("hex");
-  if (hash !== model.sha256) throw new Error("RGBNet SHA-256 mismatch");
-}
-
 if (import.meta.main) {
   if (!process.argv.includes("--package-only")) {
-    await installModel();
     const build = Bun.spawn(["bun", "run", "build:web"], { cwd: root, stdout: "inherit", stderr: "inherit" });
     if (await build.exited !== 0) throw new Error("Web build failed");
   }

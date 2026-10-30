@@ -11,7 +11,7 @@
       "deploy_command": "bun run deploy:cf",
       "preview": { "enabled": false },
       "build_vars": {},
-      "build_secrets": ["AUTHENTICATOR_RGBNET_URL"],
+      "build_secrets": [],
       "runtime_secrets": []
     }
   }

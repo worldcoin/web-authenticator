@@ -3,7 +3,7 @@ export const AUTHENTICATOR_APP_SECURITY_HEADERS_V0 = Object.freeze({
   "Content-Security-Policy": [
     "default-src 'self'",
     "base-uri 'none'",
-    "connect-src 'self' https://bridge.worldcoin.org https://staging-bridge.worldcoin.org https://gateway.id-infra.worldcoin.dev https://indexer.us.id-infra.worldcoin.dev https://node0.us.staging.world.oprf.taceo.network wss://node0.us.staging.world.oprf.taceo.network https://node1.us.staging.world.oprf.taceo.network wss://node1.us.staging.world.oprf.taceo.network https://node2.us.staging.world.oprf.taceo.network wss://node2.us.staging.world.oprf.taceo.network https://node3.us.staging.world.oprf.taceo.network wss://node3.us.staging.world.oprf.taceo.network https://node4.us.staging.world.oprf.taceo.network wss://node4.us.staging.world.oprf.taceo.network",
+    "connect-src 'self' https://wld-ml-face-engine-public.worldcoin.org https://bridge.worldcoin.org https://staging-bridge.worldcoin.org https://gateway.id-infra.worldcoin.dev https://indexer.us.id-infra.worldcoin.dev https://node0.us.staging.world.oprf.taceo.network wss://node0.us.staging.world.oprf.taceo.network https://node1.us.staging.world.oprf.taceo.network wss://node1.us.staging.world.oprf.taceo.network https://node2.us.staging.world.oprf.taceo.network wss://node2.us.staging.world.oprf.taceo.network https://node3.us.staging.world.oprf.taceo.network wss://node3.us.staging.world.oprf.taceo.network https://node4.us.staging.world.oprf.taceo.network wss://node4.us.staging.world.oprf.taceo.network",
     "font-src 'self'",
     "form-action 'none'",
     "frame-ancestors 'none'",

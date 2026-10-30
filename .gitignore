@@ -18,9 +18,6 @@ coverage/
 .wrangler/
 
 
-web/public/models/*
-!web/public/models/README.md
-
 .next/
 demo/
 dist/

@@ -36,4 +36,3 @@ jobs:
           cf_worker_config_ref: 7131811e5162e2a98c29728938ee7ff74d131d0f
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          AUTHENTICATOR_RGBNET_URL: ${{ secrets.AUTHENTICATOR_RGBNET_URL }}

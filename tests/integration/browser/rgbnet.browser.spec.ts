@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync } from "node:fs";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
 import { openSelfieRequest } from "../fixtures/request";
@@ -101,7 +100,6 @@ if (!("bun" in process.versions)) {
     });
 
     test("real RGBNet rejects a faceless stream", async ({ page }) => {
-      test.skip(!existsSync("web/public/models/rgbnet.onnx"), "Supply the private pinned model to test real inference.");
       await openSelfie(page, "?real-worker");
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByAltText("Your captured selfie")).toHaveCount(0);
