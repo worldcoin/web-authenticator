@@ -1,90 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import { AppLayout } from "./components/AppLayout";
-import { ConsentScreen } from "./components/ConsentScreen";
-import { hasConnector } from "./lib/connector";
-import { consentClient, type ConsentChoice, type ConsentClient, type ConsentState } from "./lib/consent";
-import { openAuthenticator } from "./lib/wallet-session";
-import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
-import { RequestExpiredError } from "./lib/proof-request";
-import { PublicRequestFlow } from "./PublicRequestFlow";
+import { createRootRoute, createRoute, createRouter, RouterProvider, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { AppShell } from "./AppShell";
+import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
+import { Home } from "./components/Home";
+import { consentClient, type ConsentClient } from "./lib/consent";
+import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
 
-const defaults = { open: openAuthenticator, load: loadIncomingRequest };
-export function AuthenticatorAppV1({ services = defaults, consent = consentClient }: { services?: typeof defaults; consent?: ConsentClient }) {
-  const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [expired, setExpired] = useState(false);
-  const [completionAnimating, setCompletionAnimating] = useState(false);
-  // null until the stored choice is read; analytics stays off unless the state is "granted".
-  const [consentState, setConsentState] = useState<ConsentState | null>(null);
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [consentBusy, setConsentBusy] = useState(false);
-  const [consentError, setConsentError] = useState<string | null>(null);
-  // Read before the effect strips the query: was this page opened from a request link?
-  const [requestLink] = useState(() => hasConnector(window.location.href));
-  const [loadExpired, setLoadExpired] = useState(false);
-  const source = useRef<string | null>(null);
+// Only /verify reads the request in the URL. It loads the request from the raw URL and removes
+// the bridge key `k` itself, so the router must not interpret the query: the default JSON codec
+// would re-encode values and rewrite the address bar before the page sees it. The query stays an
+// opaque string.
+const parseSearch = (search: string) => (search.length > 1 ? { query: search.slice(1) } : {});
+const stringifySearch = (search: Record<string, unknown>) => (typeof search.query === "string" ? `?${search.query}` : "");
 
-  useEffect(() => {
-    let active = true;
-    // Unreadable storage shows the choice again rather than assuming one.
-    consent.read().then(state => { if (active) setConsentState(state); }, () => { if (active) setConsentState("unset"); });
-    return () => { active = false; };
-  }, [consent]);
+// A new page needs only a route here: the servers serve index.html for every non-file path.
+function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
+  const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
+  const routeTree = root.addChildren([
+    createRoute({ getParentRoute: () => root, path: "/", component: function HomeRoute() {
+      const navigate = useNavigate();
+      return <Home onOpen={() => void navigate({ to: "/authenticator" })} />;
+    } }),
+    createRoute({ getParentRoute: () => root, path: "/verify", component: () => <VerifyPage services={services} /> }),
+    createRoute({ getParentRoute: () => root, path: "/authenticator", component: function AuthenticatorRoute() {
+      const navigate = useNavigate();
+      return <AuthenticatorAccess onOpen={services.open} onBack={() => void navigate({ to: "/" })} />;
+    } }),
+  ]);
+  return createRouter({ routeTree, parseSearch, stringifySearch });
+}
 
-  const chooseConsent = async (choice: ConsentChoice) => {
-    setConsentBusy(true); setConsentError(null);
-    try {
-      setConsentState(await consent.save(choice));
-      setConsentOpen(false);
-    } catch {
-      setConsentError("Your choice couldn’t be saved. Try again.");
-    } finally {
-      setConsentBusy(false);
-    }
-  };
+declare module "@tanstack/react-router" {
+  interface Register { router: ReturnType<typeof createAppRouter> }
+}
 
-  useEffect(() => {
-    const controller = new AbortController();
-    source.current ??= window.location.href;
-    const url = new URL(source.current);
-    // Keep the response capability in memory; remove the bridge key from browser history immediately.
-    if (url.searchParams.has("k")) window.history.replaceState(null, "", window.location.pathname);
-    void services.load(source.current, controller.signal, () => {}).then(request => {
-      if (!controller.signal.aborted) { source.current = null; setIncoming(request); setLoading(false); }
-    }).catch(cause => {
-      if (!controller.signal.aborted) {
-        source.current = null;
-        setLoadExpired(cause instanceof RequestExpiredError);
-        setLoadFailed(true);
-        setLoading(false);
-      }
-    });
-    const stop = () => controller.abort();
-    const restore = (event: PageTransitionEvent) => { if (event.persisted) window.location.reload(); };
-    window.addEventListener("pagehide", stop);
-    window.addEventListener("pageshow", restore);
-    return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
-  }, [services]);
-
-  useEffect(() => {
-    if (!incoming) return;
-    const timer = setTimeout(() => setExpired(true), Math.max(0, incoming.proof.expires_at * 1000 - Date.now()));
-    return () => clearTimeout(timer);
-  }, [incoming]);
-
-  // A first visit (no recorded choice) sees the consent screen before anything else. Request
-  // validation keeps running behind it, so the request link is ready once the user chooses.
-  const consentScreen = consentState === "unset" || consentOpen;
-
-  const footerActions = <span className="inline-flex items-center gap-3 whitespace-nowrap">
-    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="min-h-8 text-[13px] hover:text-ink hover:underline" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
-  </span>;
-
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
-    {consentState === null ? null
-      : consentScreen ? <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />
-      : <PublicRequestFlow incoming={incoming} requested={requestLink} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-        onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }} />}
-  </AppLayout>;
+export function AuthenticatorAppV1({ services = defaultServices, consent = consentClient }: { services?: Services; consent?: ConsentClient }) {
+  const [router] = useState(() => createAppRouter({ services, consent }));
+  return <RouterProvider router={router} />;
 }
