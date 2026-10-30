@@ -41,3 +41,7 @@ request and does not reopen a camera or wallet. Start a fresh request at the RP.
 
 Return navigation uses `return_to_url` from the encrypted request. A `return_to`
 query parameter alone does not enable a return link.
+
+## Routing
+
+`web/App.tsx` mounts a TanStack Router with `/` (landing) and `/verify` (request links); both render `AuthenticatorApp`. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because the app reads the request from the raw URL and the default JSON codec would re-encode the bridge key. A new page needs a route in `web/App.tsx`, a server route in `api/routes/index.ts` and an entry in `serveWorkerAsset` (`api/lib/cloudflare-assets.ts`).

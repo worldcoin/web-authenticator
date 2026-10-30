@@ -50,9 +50,9 @@ test("request intro names the RP only after validation, then starts the check", 
   const open = f.services.open; f.services.open = async (...args) => { opened++; return open(...args); };
   window.history.replaceState(null, "", "/verify?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  expect(window.location.search).toBe("");
   // Load is pending: the RP is unverified, so it is not shown and the check cannot start.
   await view.findByRole("heading", { name: "Complete a Selfie Check" });
+  expect(window.location.search).toBe("");
   expect(view.queryByText("rp_1")).toBeNull();
   expect((view.getByRole("button", { name: "Verifying request…" }) as HTMLButtonElement).disabled).toBe(true);
   resolve(f.incoming);
