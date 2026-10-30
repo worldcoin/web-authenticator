@@ -1,5 +1,4 @@
 import type { RouteTable } from "../lib/http";
-import { GET as consentGet, PUT as consentPut } from "./api/consent";
 import { GET as healthLive } from "./api/health/live";
 import { ready as healthReady } from "./api/health/ready";
 import { GET as stagingRp } from "./api/staging-rp";
@@ -11,7 +10,6 @@ export function createRoutes({ staticRoot }: { staticRoot: string }): RouteTable
   return {
     "/api/health/live": { GET: healthLive },
     "/api/health/ready": { GET: healthReady(staticRoot) },
-    "/api/consent": { GET: consentGet, PUT: consentPut },
     "/api/staging-rp": { GET: stagingRp },
     "/api/*": () => Response.json({ error: "Not found" }, { status: 404 }),
     "/verify": { GET: verifyPage(staticRoot) },

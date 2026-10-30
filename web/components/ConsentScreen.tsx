@@ -3,7 +3,7 @@ import { SigninPage } from "./SigninPage";
 import { signinError, signinHeading, signinPrimary, signinSecondary } from "./styles";
 
 /**
- * First-visit analytics choice, shown before any page content until the server
+ * First-visit analytics choice, shown before any page content until this browser
  * holds a decision. Copy is a placeholder pending legal review.
  */
 export function ConsentScreen({ busy, error, onChoose }: {

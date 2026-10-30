@@ -25,7 +25,8 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
-    expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
+    // Only the analytics consent choice is stored before a passkey is saved.
+    expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: ["wid_consent"], session: [] });
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -88,7 +89,7 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-finished.png`, fullPage: true });
-    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(["wid_consent"]);
   });
 
   test.describe("automatic completion lifecycle", () => {
@@ -270,9 +271,9 @@ if (!("bun" in process.versions)) {
   });
 
   test.describe("first visit without a consent choice", () => {
-    test.use({ extraHTTPHeaders: {} });
+    test.use({ storageState: { cookies: [], origins: [] } });
 
-    test("the consent screen comes first, is accessible, and is recorded in an HttpOnly cookie", async ({ page, context, browserName }, info) => {
+    test("the consent screen comes first, is accessible, and is recorded only in this browser", async ({ page, context }, info) => {
       await page.addInitScript({ content: axe.source });
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
@@ -285,11 +286,8 @@ if (!("bun" in process.versions)) {
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
       await page.getByRole("button", { name: "Accept" }).click();
       await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-      // WebKit refuses Secure cookies on plain-http loopback; production is HTTPS.
-      if (browserName !== "chromium") return;
-      const cookie = (await context.cookies()).find(c => c.name === "__Host-wid_consent");
-      expect(cookie).toMatchObject({ value: "v1.granted", httpOnly: true, secure: true, sameSite: "Lax" });
-      expect(await page.evaluate(() => document.cookie)).toBe("");
+      expect(JSON.parse(await page.evaluate(() => localStorage.getItem("wid_consent") ?? "null"))).toMatchObject({ choice: "granted", version: "v1" });
+      expect(await context.cookies()).toEqual([]);
       await page.reload();
       await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);

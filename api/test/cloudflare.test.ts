@@ -54,7 +54,7 @@ test("Worker protects every route and asset before reaching storage", async () =
   expect(reads).toBe(0);
 });
 
-test("Worker preserves verify URLs, API methods, consent bounds and security headers", async () => {
+test("Worker preserves verify URLs, API methods and security headers", async () => {
   const paths: string[] = [];
   const env = environment(async req => {
     paths.push(req.url);
@@ -71,13 +71,7 @@ test("Worker preserves verify URLs, API methods, consent bounds and security hea
   expect((await handle(request("/api/staging-rp?id=bad"), env)).status).toBe(400);
   expect((await handle(request("/api/health/live", { method: "POST" }), env)).status).toBe(404);
   expect((await handle(request("/api/unknown"), env)).status).toBe(404);
-  const consent = await handle(request("/api/consent", {
-    method: "PUT", headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
-    body: JSON.stringify({ analytics: "granted" }),
-  }), env);
-  expect(consent.status).toBe(200);
-  expect(consent.headers.get("set-cookie")).toContain("Secure; HttpOnly");
-  expect((await handle(request("/api/consent", { method: "PUT", body: " ".repeat(1025) }), env)).status).toBe(413);
+  expect((await handle(request("/api/consent"), env)).status).toBe(404);
   const head = await handle(request("/verify", { method: "HEAD" }), env);
   expect(head.status).toBe(200);
   expect(await head.text()).toBe("");
