@@ -1,6 +1,7 @@
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
 import { faceGuidance } from "./rgbnet";
+import { analytics, analyticsReason } from "./analytics";
 
 /** Local capture only: one frame, taken once the face has held still in the oval. Nothing is uploaded. */
 export const CAPTURE_TIMEOUT_MS = 30_000;
@@ -74,7 +75,8 @@ export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
 }
 
 /** Owns one attempt. A retained live preview must be released by aborting the caller’s signal. */
-export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean } = {}): Promise<CaptureResult> {
+export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void, options: { retainPreviewUntilAbort?: boolean; trackAnalytics?: boolean } = {}): Promise<CaptureResult> {
+  const finish = options.trackAnalytics ? analytics.begin("selfie_capture") : undefined;
   let stream: MediaStream | undefined;
   let stopDetector: (() => void) | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -162,6 +164,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
         frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
       }), attempt);
       previewRetained = options.retainPreviewUntilAbort === true;
+      finish?.("completed");
       return {
         image,
         timing: { guidanceMs: Math.round(alignedAt - started), totalMs: Math.round(performance.now() - started), width: frame.width, height: frame.height },
@@ -169,6 +172,10 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     } finally {
       attempt.removeEventListener("abort", releaseCamera);
     }
+  } catch (error) {
+    const reason = analyticsReason(error);
+    finish?.(reason === "cancelled" ? "cancelled" : "failed", reason);
+    throw error;
   } finally {
     if (!previewRetained) releaseCamera();
     if (canvas) canvas.width = canvas.height = 0;

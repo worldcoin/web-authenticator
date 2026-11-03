@@ -9,7 +9,8 @@ export interface ConsentClient {
 }
 
 // Bump when the consent text materially changes; older choices then read as unset.
-export const CONSENT_VERSION = "v1";
+import { CONSENT_VERSION } from "../../packages/contracts/src/consent";
+export { CONSENT_VERSION };
 export const CONSENT_KEY = "wid_consent";
 const MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 

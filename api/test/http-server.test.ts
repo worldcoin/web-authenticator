@@ -77,6 +77,12 @@ test("simulated endpoints are gone", async () => {
     expect((await get(path)).status).toBe(404);
   }
 });
+test("Bun exposes only POST analytics and requires the current consent declaration", async () => {
+  expect((await get("/api/analytics")).status).toBe(404);
+  const response = await get("/api/analytics", { method: "POST", headers: { "Content-Type": "application/json" }, body: "[]" });
+  expect(response.status).toBe(403);
+  expectSecurityHeaders(response);
+});
 test("synthetic enrollment is absent even for valid localhost requests", async () => {
   const body = { sub: "0x" + "a".repeat(64), token: "b".repeat(64) };
   for (const path of ["/api/faux-credential", "/api/selfie-credential"]) {

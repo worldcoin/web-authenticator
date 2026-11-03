@@ -46,12 +46,28 @@ test("Worker protects every route and asset before reaching storage", async () =
   let reads = 0;
   const env = environment(async () => { reads++; return new Response("private"); });
   const handle = createWorkerHandler();
-  for (const path of ["/", "/verify?k=secret", "/api/health/live", "/assets/walletkit.wasm", "/_cf/wasm/assets/walletkit.wasm.gz"]) {
+  for (const path of ["/", "/verify?k=secret", "/api/analytics", "/api/health/live", "/assets/walletkit.wasm", "/_cf/wasm/assets/walletkit.wasm.gz"]) {
     const response = await handle(request(path), env);
     expect(response.status).toBe(403);
     expect(response.headers.get("cache-control")).toBe("no-store");
   }
   expect(reads).toBe(0);
+});
+
+test("Worker analytics shares the Bun handler's method, consent and schema checks behind Access", async () => {
+  const env = environment(async () => new Response("asset"));
+  const handle = createWorkerHandler(async () => undefined);
+  const e = {
+    uuid: crypto.randomUUID(), flow_id: crypto.randomUUID(), sequence: 1, timestamp: new Date().toISOString(),
+    step: "selfie_capture", status: "completed", attempt: 1,
+  };
+  const headers = { "Content-Type": "application/json", Origin: origin, "Sec-Fetch-Site": "same-origin", "X-Analytics-Consent": "v1.granted" };
+  expect((await handle(request("/api/analytics"), env)).status).toBe(404);
+  expect((await handle(request("/api/analytics", { method: "POST", body: "[]" }), env)).status).toBe(403);
+  expect((await handle(request("/api/analytics", { method: "POST", headers, body: JSON.stringify([{ ...e, proof: "private" }]) }), env)).status).toBe(400);
+  const response = await handle(request("/api/analytics", { method: "POST", headers, body: JSON.stringify([e]) }), env);
+  expect(response.status).toBe(204);
+  expect(response.headers.get("cache-control")).toBe("no-store");
 });
 
 test("Worker preserves verify URLs, API methods and security headers", async () => {
