@@ -354,3 +354,21 @@ for (const [cause, expected] of [
     } finally { localStorage.clear(); }
   });
 }
+
+test("restoring a cached page reloads after its wallet session is terminated", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  visit("/authenticator");
+  const f = await fixture(11);
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    await view.findByText("0 credentials in your authenticator.");
+    fireEvent(window, new Event("pagehide"));
+    expect(f.calls.terminated).toBe(1);
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    fireEvent(window, restored);
+    expect(reload).toHaveBeenCalledTimes(1);
+  } finally { reload.mockRestore(); localStorage.clear(); }
+});

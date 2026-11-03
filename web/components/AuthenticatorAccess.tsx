@@ -13,21 +13,22 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   const [saved, setSaved] = useState(hasSavedWallet);
   const [records, setRecords] = useState<CredentialMetadata[] | null>(null);
   const [preview, setPreview] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState("");
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const wallet = useRef<WalletKit | null>(null);
   const operation = useRef<AbortController | null>(null);
   useEffect(() => {
     const stop = () => { operation.current?.abort(); wallet.current?.terminate(); wallet.current = null; };
+    const restore = (event: PageTransitionEvent) => { if (event.persisted) window.location.reload(); };
     window.addEventListener("pagehide", stop);
-    return () => { stop(); window.removeEventListener("pagehide", stop); };
+    window.addEventListener("pageshow", restore);
+    return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
   }, []);
   const lock = () => { wallet.current?.terminate(); wallet.current = null; setRecords(null); setSaved(hasSavedWallet()); };
   const startAccess = async (mode: "open" | "create") => {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
-    setBusy(true); setError(undefined);
+    setError(undefined);
     setProgress(mode === "create" ? "Create your passkey to continue." : "Use your passkey to sign in.");
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
@@ -43,7 +44,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
     } finally {
       if (operation.current === controller) operation.current = null;
-      if (!controller.signal.aborted) { setBusy(false); setSaved(hasSavedWallet()); }
+      if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
     }
   };
   if (preview) return <Suspense fallback={<p role="status">Opening Selfie Check preview…</p>}>
@@ -60,7 +61,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       </div>
       {records
         ? <CredentialsPanel records={records} onPreview={() => setPreview(true)} onLock={lock} />
-        : <AccessOptions saved={saved} busy={busy} progress={progress} onOpen={startAccess} />}
+        : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
       {error && <p className="mt-4 rounded-lg bg-[#fff1f1] p-3 text-[14px] text-[#a32424]" role="alert">{error}</p>}
     </article>
   </div>;
@@ -93,10 +94,9 @@ function CredentialsPanel({ records, onPreview, onLock }: {
   </div>;
 }
 
-function AccessOptions({ saved, busy, progress, onOpen }: {
+function AccessOptions({ saved, progress, onOpen }: {
   saved: boolean;
-  busy: boolean;
-  progress: string;
+  progress: string | null;
   onOpen: (mode: "open" | "create") => Promise<void>;
 }) {
   const disabledAction = "disabled:cursor-not-allowed disabled:border-[#d6dde7] disabled:bg-[#e7ebf0] disabled:text-[#657184] disabled:opacity-100";
@@ -104,7 +104,7 @@ function AccessOptions({ saved, busy, progress, onOpen }: {
   return <div className="flex flex-1 flex-col pt-9">
     <h1 className="text-[40px] leading-[1.04] tracking-[-.033em]">Your World ID,<br />in this browser.</h1>
     <p className="mt-4 max-w-[22em] text-[16px] leading-[1.45] text-[#5c6879]">Sign in with your saved passkey, or create a new World ID.</p>
-    {busy ? <div className="mt-8 flex items-center gap-3 text-[15px] text-[#5c6879]" role="status" aria-live="polite">
+    {progress !== null ? <div className="mt-8 flex items-center gap-3 text-[15px] text-[#5c6879]" role="status" aria-live="polite">
       <span aria-hidden="true" className="size-6 shrink-0 rounded-full border-2 border-[#d6dde7] border-t-[#0a5cfe] motion-safe:animate-spin" />
       <span>{progress}</span>
     </div> : <div className="mt-8 grid gap-2">

@@ -20,7 +20,7 @@
   --color-stroke-secondary: #f1f1f1;
   --color-accent: #007cfb;
 
-  /* Sign-in, consent and home screens. */
+  /* Sign-in and consent screens. */
   --color-ink: #181818;
   --color-ink-muted: #75726f;
   --color-line: #e1dfda;
@@ -47,9 +47,6 @@
     to { stroke: #28a86b; stroke-dasharray: 1 0; stroke-dashoffset: 0.5; }
   }
 }
-
-/* Viewports too short for the capture screen's top padding. */
-@custom-variant short (@media (max-height: 740px));
 
 @layer base {
   :root {

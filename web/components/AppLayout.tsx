@@ -4,19 +4,19 @@ import { menuItem } from "./styles";
 const PRIVACY_URL = "https://www.toolsforhumanity.com/legal/privacy-notice";
 
 /** Shared chrome stays mounted while the current screen changes. */
-export function AppLayout({ menuItems, hideControls = false, tintedBackground = false, children }: {
-  menuItems: (close: () => void) => ReactNode;
+export function AppLayout({ onCookieSettings, hideControls = false, tintedBackground = false, children }: {
+  onCookieSettings?: () => void;
   hideControls?: boolean;
   tintedBackground?: boolean;
   children: ReactNode;
 }) {
   return <div className="flex min-h-dvh flex-col bg-white">
     <main className={`relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-x-clip min-[600px]:justify-center ${tintedBackground ? "bg-[#e8ecf2]" : "bg-white"}`}>{children}</main>
-    {!hideControls && <WorldMenu menuItems={menuItems} />}
+    {!hideControls && <WorldMenu onCookieSettings={onCookieSettings} />}
   </div>;
 }
 
-function WorldMenu({ menuItems }: { menuItems: (close: () => void) => ReactNode }) {
+function WorldMenu({ onCookieSettings }: { onCookieSettings?: () => void }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -40,7 +40,7 @@ function WorldMenu({ menuItems }: { menuItems: (close: () => void) => ReactNode 
         <a className={menuItem} onClick={() => setOpen(false)} href="https://world.org/ecosystem">Mini Apps</a>
         <a className={menuItem} onClick={() => setOpen(false)} href="https://docs.world.org/world-id/overview">Build with World ID</a>
         <a className={menuItem} onClick={() => setOpen(false)} href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy</a>
-        {menuItems(() => setOpen(false))}
+        {onCookieSettings && <button className={`${menuItem} w-full text-left`} onClick={() => { setOpen(false); onCookieSettings(); }}>Cookie settings</button>}
       </nav>}
     </div>;
 }

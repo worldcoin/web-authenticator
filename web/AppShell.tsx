@@ -2,7 +2,6 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import { createContext, useEffect, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
-import { menuItem } from "./components/styles";
 import type { ConsentChoice, ConsentClient, ConsentState } from "./lib/consent";
 
 /** Hides shared chrome while the full-screen camera is open. */
@@ -46,11 +45,11 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
   // the user chooses.
   const consentScreen = consentState === "unset" || consentOpen;
 
-  const menuItems = (close: () => void) => consentState !== null && consentState !== "unset" && !consentOpen
-    ? <button className={`${menuItem} w-full text-left`} onClick={() => { close(); setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
-    : null;
+  const onCookieSettings = consentState !== null && consentState !== "unset" && !consentOpen
+    ? () => { setConsentError(null); setConsentOpen(true); }
+    : undefined;
 
-  return <AppLayout menuItems={menuItems} hideControls={completionAnimating || captureActive} tintedBackground={isAuthenticator && !consentScreen}>
+  return <AppLayout onCookieSettings={onCookieSettings} hideControls={completionAnimating || captureActive} tintedBackground={isAuthenticator && !consentScreen && !captureActive}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
       <CompletionAnimationContext value={setCompletionAnimating}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></CompletionAnimationContext>
