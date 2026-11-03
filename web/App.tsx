@@ -1,8 +1,7 @@
-import { createRootRoute, createRoute, createRouter, RouterProvider, useNavigate } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "./AppShell";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
-import { Home } from "./components/Home";
 import { consentClient, type ConsentClient } from "./lib/consent";
 import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
 
@@ -17,15 +16,9 @@ const stringifySearch = (search: Record<string, unknown>) => (typeof search.quer
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
   const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/", component: function HomeRoute() {
-      const navigate = useNavigate();
-      return <Home onOpen={() => void navigate({ to: "/authenticator" })} />;
-    } }),
+    createRoute({ getParentRoute: () => root, path: "/", component: () => <AuthenticatorAccess onOpen={services.open} /> }),
     createRoute({ getParentRoute: () => root, path: "/verify", component: () => <VerifyPage services={services} /> }),
-    createRoute({ getParentRoute: () => root, path: "/authenticator", component: function AuthenticatorRoute() {
-      const navigate = useNavigate();
-      return <AuthenticatorAccess onOpen={services.open} onBack={() => void navigate({ to: "/" })} />;
-    } }),
+    createRoute({ getParentRoute: () => root, path: "/authenticator", component: () => <AuthenticatorAccess onOpen={services.open} /> }),
   ]);
   return createRouter({ routeTree, parseSearch, stringifySearch });
 }

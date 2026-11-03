@@ -15,9 +15,7 @@ if (!("bun" in process.versions)) {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
     await expect(page.locator("video")).toHaveCount(0);
     expect(modelRequests).toEqual([]);

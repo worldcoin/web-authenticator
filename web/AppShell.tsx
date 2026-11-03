@@ -1,4 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { createContext, useEffect, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
@@ -9,6 +9,7 @@ export const CompletionAnimationContext = createContext<(active: boolean) => voi
 
 /** Chrome and cookie consent around every route. */
 export function AppShell({ consent }: { consent: ConsentClient }) {
+  const isAuthenticator = useRouterState({ select: state => state.location.pathname === "/" || state.location.pathname === "/authenticator" });
   const [completionAnimating, setCompletionAnimating] = useState(false);
   // null until the stored choice is read; analytics stays off unless the state is "granted".
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
@@ -40,11 +41,11 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
   // the user chooses.
   const consentScreen = consentState === "unset" || consentOpen;
 
-  const footerActions = <span className="inline-flex items-center gap-3 whitespace-nowrap">
-    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="min-h-8 text-[13px] hover:text-ink hover:underline" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
+  const footerActions = <span className="inline-flex w-[100px] shrink-0 items-center gap-3 whitespace-nowrap">
+    <button className="min-h-8 text-[13px] hover:text-ink hover:underline" aria-hidden={consentState === null || consentState === "unset" || consentOpen || undefined} tabIndex={consentState === null || consentState === "unset" || consentOpen ? -1 : 0} style={{ visibility: consentState === null || consentState === "unset" || consentOpen ? "hidden" : undefined }} onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
   </span>;
 
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
+  return <AppLayout footerActions={footerActions} hideControls={completionAnimating} authenticator={isAuthenticator && !consentScreen}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
       <CompletionAnimationContext value={setCompletionAnimating}><Outlet /></CompletionAnimationContext>

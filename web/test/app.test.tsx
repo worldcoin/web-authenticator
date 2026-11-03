@@ -98,14 +98,14 @@ test("a first visit sees the consent screen before the home page, and the choice
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
   expect(view.getByText(/Never photos, face data, or account identifiers/)).toBeTruthy();
-  expect(view.queryByRole("heading", { name: "Download World ID" })).toBeNull();
+  expect(view.queryByRole("heading", { name: "Your World ID, in this browser." })).toBeNull();
   expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Accept" }));
-  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
   expect(saved).toEqual(["granted"]);
   fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
   fireEvent.click(await view.findByRole("button", { name: "Decline" }));
-  expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
+  expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
   expect(saved).toEqual(["granted", "denied"]);
 });
 
@@ -205,12 +205,10 @@ for (const fails of [false, true]) {
       } else {
         localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
         fireEvent.click(view.getByRole("button", { name: "Go to authenticator" }));
-        expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+        expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
         expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
         expect(opened).toBe(1);
         expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-        fireEvent.click(view.getByRole("button", { name: "Back to home" }));
-        expect(await view.findByRole("heading", { name: "Download World ID" })).toBeTruthy();
         expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
       }
     } finally { captureMock.mockRestore(); localStorage.clear(); }
@@ -228,24 +226,24 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
-test("landing entry explains request-first setup without opening camera or creating a wallet", async () => {
-  localStorage.clear();
-  visit("/");
+test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {
+  localStorage.clear(); visit("/");
   const f = await fixture(11);
-  f.services.load = async () => null;
-  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  fireEvent.click(await view.findByRole("button", { name: "Go to authenticator" }));
-  expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
-  expect(view.getByText(/Complete a Selfie Check from an app request/)).toBeTruthy();
-  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-  expect(view.queryByRole("button", { name: /passkey/ })).toBeNull();
-  expect(f.calls.listed).toBe(0);
-  expect(window.location.pathname).toBe("/authenticator");
-  view.unmount();
-  visit("/");
-  const reopened = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  expect(await reopened.findByRole("button", { name: "Go to authenticator" })).toBeTruthy();
-  expect(reopened.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  let mode: string | undefined;
+  const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async (_signal, _progress, selected) => {
+    mode = selected;
+    localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+    return f.wallet;
+  } }} consent={decidedConsent} />);
+  expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((view.getByRole("button", { name: /Link an authenticator/ }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
+  expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+  expect(mode).toBe("create");
+  expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  localStorage.clear();
 });
 
 test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
@@ -258,17 +256,26 @@ test("saved access requires explicit sign-in and shows credentials without start
     const open = f.services.open;
     f.services.open = async () => { opened++; return open(); };
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-    const button = await view.findByRole("button", { name: "Go to authenticator" });
-    expect(opened).toBe(0);
-    fireEvent.click(button);
-    expect(await view.findByRole("heading", { name: "Your authenticator" })).toBeTruthy();
+    expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
     expect(opened).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
-    expect(await view.findByText("0 credentials in your saved authenticator.")).toBeTruthy();
+    expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
     expect(opened).toBe(1);
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
     expect(f.calls.terminated).toBe(1);
     expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+  } finally { localStorage.clear(); }
+});
+
+test("an active Selfie Check does not offer setup", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  try {
+    visit("/");
+    const f = await fixture(11, true);
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("1 credential in your authenticator.")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
   } finally { localStorage.clear(); }
 });

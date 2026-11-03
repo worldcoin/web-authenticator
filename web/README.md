@@ -12,11 +12,10 @@ Requests currently must target staging.
 
 The browser fetches and decrypts the request and checks its RP signature. Only Selfie requests (schema 11 in every requirement) can start the
 temporary camera flow. Mixed requests, user-presence requirements and identity
-attributes remain unsupported. Direct visits show the landing page, whose
-**Go to authenticator** button opens a saved-authenticator access screen. The user
-explicitly signs in with their saved passkey to view credentials. Browsers without
-saved access are directed to start from an app request; this button never opens
-the camera or creates an account.
+attributes remain unsupported. Direct visits open the authenticator. A user can create a World ID with a passkey
+or sign in to an existing authenticator in this browser. Linking is not available.
+A signed-in user without an active Selfie Check can open the camera preview;
+credential issuance is not yet connected.
 
 The public flow uses local capture as its completion signal; it does not send a
 verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
@@ -48,8 +47,8 @@ query parameter alone does not enable a return link.
 
 | Path | Screen |
 | ---- | ------ |
-| `/` | Landing page. Ignores request parameters. |
+| `/` | Authenticator access. Ignores request parameters. |
 | `/verify` | Request links (`?i=…&k=…`). Loads and validates the request, then runs the selfie flow. Without a valid request it shows the invalid-request screen. |
-| `/authenticator` | Saved-authenticator access. |
+| `/authenticator` | Authenticator access. |
 
 The request flow's stages (capture, confirmation, save) stay in memory rather than in the URL: a reload already drops the request. After saving, the flow navigates to `/authenticator` with `replace`, because the spent `/verify` URL is not worth returning to. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because `/verify` reads the request from the raw URL and the default JSON codec would re-encode the bridge key.

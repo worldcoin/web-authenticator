@@ -21,8 +21,9 @@ if (!("bun" in process.versions)) {
     const external: string[] = [];
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
     // Only the analytics consent choice is stored before a passkey is saved.
@@ -179,7 +180,7 @@ if (!("bun" in process.versions)) {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       const privacy = page.getByRole("link", { name: "Privacy", exact: true });
       const position = await privacy.boundingBox();
       expect(position).not.toBeNull();
@@ -188,8 +189,7 @@ if (!("bun" in process.versions)) {
       expect(await privacy.boundingBox()).toEqual(position);
       await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
       await expect(page.locator("#developer-panel")).toHaveCount(0);
-      await page.getByRole("button", { name: "Go to authenticator" }).click();
-      await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       expect(await privacy.boundingBox()).toEqual(position);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
       await page.getByRole("button", { name: "Cookie settings" }).click();
@@ -210,19 +210,15 @@ if (!("bun" in process.versions)) {
       };
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-    await expect(page.getByText(/Complete a Selfie Check from an app request/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
     expect(cameraCalls).toBe(0);
-    expect(new URL(page.url()).pathname).toBe("/authenticator");
+    expect(new URL(page.url()).pathname).toBe("/");
     // The server serves the app on this path, so a reload keeps the screen.
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-    await page.getByRole("button", { name: "Back to home" }).click();
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe("/");
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
   });
 
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
@@ -281,7 +277,7 @@ if (!("bun" in process.versions)) {
       await page.addInitScript({ content: axe.source });
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toHaveCount(0);
       const violations = await page.evaluate(async () => {
         const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
         return (await runtime.run()).violations;
@@ -289,11 +285,11 @@ if (!("bun" in process.versions)) {
       expect(violations).toEqual([]);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
       await page.getByRole("button", { name: "Accept" }).click();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       expect(JSON.parse(await page.evaluate(() => localStorage.getItem("wid_consent") ?? "null"))).toMatchObject({ choice: "granted", version: "v1" });
       expect(await context.cookies()).toEqual([]);
       await page.reload();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
@@ -313,7 +309,7 @@ if (!("bun" in process.versions)) {
   test("built app passes automated accessibility checks", async ({ page }) => {
     await page.addInitScript({ content: axe.source });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     const violations = await page.evaluate(async () => {
       const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
       return (await runtime.run()).violations;
@@ -355,7 +351,6 @@ if (!("bun" in process.versions)) {
     const before = registrations;
     expect(before).toBe(1);
     await page.goto("http://localhost:4194/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
     expect(registrations).toBe(before);
