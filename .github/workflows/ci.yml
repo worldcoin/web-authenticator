@@ -7,7 +7,7 @@ on:
     workflow_call:
         inputs:
             ref:
-                description: Immutable commit to validate for production promotion
+                description: Immutable commit to validate for deployment
                 required: true
                 type: string
 
