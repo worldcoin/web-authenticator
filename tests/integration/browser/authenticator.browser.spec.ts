@@ -61,7 +61,7 @@ if (!("bun" in process.versions)) {
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
-          title: document.querySelector('[data-testid=selfie-guidance] h2')?.textContent,
+          title: document.querySelector('[data-testid=selfie-guidance]')?.textContent,
           animationDuration: getComputedStyle(document.querySelector('[data-testid=selfie-completion-border]')!).animationDuration,
         });
       });

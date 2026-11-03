@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
+import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
 
@@ -13,6 +14,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   backLabel: string;
   diagnostics?: boolean;
 }) {
+  const setCaptureActive = use(CaptureScreenContext);
+  useEffect(() => { setCaptureActive(true); return () => setCaptureActive(false); }, [setCaptureActive]);
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
   const completion = useRef(onComplete);
@@ -98,13 +101,14 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const transitioning = complete && !!onComplete;
   const showVideo = !(complete && !transitioning) && !(transitioning && !state.cameraReady);
   const showPlaceholder = state.phase === "paused" || state.phase === "error" || (!state.cameraReady && !complete);
-  return <section className="group/selfie m-auto flex w-full max-w-[393px] min-h-(--request-frame-min-height) flex-col px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
+  return <section className="group/selfie fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col overflow-y-auto bg-white px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
     <header className="relative flex min-h-11 items-center justify-center" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <button className="absolute left-0 grid size-11 place-items-center rounded-full bg-background-secondary text-foreground hover:bg-[#ededed]" type="button" aria-label={backLabel} onClick={close}><img className="size-6" src="/assets/figma/close.svg" alt="" /></button>
     </header>
-    <div className="flex flex-1 flex-col items-center justify-center pt-16 pb-6 text-center short:pt-8">
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      <div className="relative mb-[76px] aspect-[345.005/481.637] w-[345px] max-w-full" data-testid="selfie-camera-stage">
+      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center"><h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>{state.hint && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{state.hint}</p>}</div>
+      <div className="relative aspect-[345.005/481.637] w-[min(345px,max(60px,calc((100svh_-_292px)*0.7163)))] max-w-full" data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
           {image && <img className="size-full object-cover -scale-x-100" data-testid="selfie-photo" src={image} alt="Your captured selfie" />}
@@ -113,10 +117,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         </div>
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
         <CaptureProgressRing progress={state.progress} />
-        <div className={`${APERTURE_INSET} pointer-events-none`} role="status" aria-live="polite" aria-atomic="true">
-          <div className="absolute top-[12.2%] left-1/2 flex min-h-9 w-max max-w-[calc(100%_-_48px)] -translate-x-1/2 items-center rounded-xl bg-[rgb(24_24_24/60%)] px-3 py-2 text-white backdrop-blur-[10px]" data-testid="selfie-guidance"><h2 className="text-[15px] font-[350] leading-[1.3] tracking-[-0.075px]">{state.title}</h2></div>
-          <p className="absolute top-[calc(100%_+_26px)] left-1/2 w-[min(330px,calc(100%_+_30px))] -translate-x-1/2 text-[14px] leading-[1.45] text-foreground-secondary">{state.hint}</p>
-        </div>
       </div>
       {(!transitioning && (complete || state.phase === "error")) && <div className="flex w-full justify-center gap-2">
         <button className={RETRY} type="button" onClick={restart}>{complete ? "Retake selfie" : "Try again"}</button>

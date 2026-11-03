@@ -3,14 +3,15 @@ import type { ReactNode } from "react";
 const PRIVACY_URL = "https://www.toolsforhumanity.com/legal/privacy-notice";
 
 /** Shared chrome stays mounted while the current screen changes. */
-export function AppLayout({ footerActions, hideControls = false, authenticator = false, children }: {
+export function AppLayout({ footerActions, hideControls = false, hideHeader = false, authenticator = false, children }: {
   footerActions: ReactNode;
   hideControls?: boolean;
+  hideHeader?: boolean;
   authenticator?: boolean;
   children: ReactNode;
 }) {
   return <div className="flex min-h-dvh flex-col bg-white pb-(--site-footer-height)">
-    <header className="flex min-h-(--site-header-height) items-center px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-4 md:px-8">
+    <header inert={hideHeader} aria-hidden={hideHeader || undefined} className="data-[hidden=true]:invisible flex min-h-(--site-header-height) items-center px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-4 md:px-8" data-hidden={hideHeader}>
       <p className="z-5 max-w-full self-center text-center text-[13px] leading-[1.2] text-[#4e4e4e] md:text-[15px]">World ID</p>
     </header>
     <main className={`relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-x-clip min-[600px]:justify-center ${authenticator ? "bg-[#e8ecf2]" : "bg-white"}`}>{children}</main>
