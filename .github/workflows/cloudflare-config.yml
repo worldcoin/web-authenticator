@@ -9,10 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Plan or apply the main branch deployment configuration
+        description: Plan/apply configuration, or read an existing build's logs
         type: choice
         default: plan
-        options: [plan, plan-and-apply]
+        options: [plan, plan-and-apply, build-logs]
+      build_id:
+        description: Cloudflare build UUID from the failed check's Details link (build-logs only)
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +26,7 @@ concurrency:
 
 jobs:
   configure:
-    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_RELEASE_CONFIGURED == 'true'
+    if: inputs.mode != 'build-logs' && github.ref == 'refs/heads/main' && vars.CLOUDFLARE_RELEASE_CONFIGURED == 'true'
     runs-on:
       group: arc-public-large-amd64-runner
     environment: staging-cloudflare
@@ -36,3 +39,21 @@ jobs:
           cf_worker_config_ref: 7131811e5162e2a98c29728938ee7ff74d131d0f
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  build-logs:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'build-logs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - name: Read Cloudflare build logs
+        run: bun scripts/cloudflare-build-logs.ts
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ae97c44fcd31b9289a7455120d2698b2
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_BUILD_ID: ${{ inputs.build_id }}
