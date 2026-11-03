@@ -223,13 +223,23 @@ if (!("bun" in process.versions)) {
 
   test("creating a World ID shows progress while the passkey request is pending", async ({ page }) => {
     await page.addInitScript(() => {
-      navigator.credentials.create = () => new Promise(() => {});
+      Object.defineProperty(navigator, "locks", { configurable: true, value: {
+        request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}),
+      } });
+      if (typeof PublicKeyCredential === "undefined") {
+        Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: class {} });
+      }
+      Object.defineProperty(navigator, "credentials", { configurable: true, value: { create: () => {
+        document.documentElement.dataset.passkeyRequested = "true";
+        return new Promise(() => {});
+      } } });
     });
     await page.goto("/");
     const signIn = page.getByRole("button", { name: "Sign in with passkey" });
     await expect(signIn).toBeDisabled();
     await expect(signIn).toHaveCSS("background-color", "rgb(231, 235, 240)");
     await page.getByRole("button", { name: "Create a new World ID" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
     await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");
     await page.screenshot({ path: "test-results/screenshots/passkey-progress.png" });
     await expect(signIn).toHaveCount(0);
