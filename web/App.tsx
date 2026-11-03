@@ -2,7 +2,6 @@ import { createRootRoute, createRoute, createRouter, RouterProvider, useNavigate
 import { useState } from "react";
 import { AppShell } from "./AppShell";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
-import { Home } from "./components/Home";
 import { consentClient, type ConsentClient } from "./lib/consent";
 import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
 
@@ -16,16 +15,17 @@ const stringifySearch = (search: Record<string, unknown>) => (typeof search.quer
 // A new page needs only a route here: the servers serve index.html for every non-file path.
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
   const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
+  // Both paths share this layout so navigation keeps the unlocked wallet mounted.
+  const authenticator = createRoute({ getParentRoute: () => root, id: "authenticator-layout", component: function AuthenticatorRoute() {
+    const navigate = useNavigate();
+    return <AuthenticatorAccess onOpen={services.open} onSignedIn={() => void navigate({ to: "/authenticator", replace: true })} />;
+  } });
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/", component: function HomeRoute() {
-      const navigate = useNavigate();
-      return <Home onOpen={() => void navigate({ to: "/authenticator" })} />;
-    } }),
+    authenticator.addChildren([
+      createRoute({ getParentRoute: () => authenticator, path: "/" }),
+      createRoute({ getParentRoute: () => authenticator, path: "/authenticator" }),
+    ]),
     createRoute({ getParentRoute: () => root, path: "/verify", component: () => <VerifyPage services={services} /> }),
-    createRoute({ getParentRoute: () => root, path: "/authenticator", component: function AuthenticatorRoute() {
-      const navigate = useNavigate();
-      return <AuthenticatorAccess onOpen={services.open} onBack={() => void navigate({ to: "/" })} />;
-    } }),
   ]);
   return createRouter({ routeTree, parseSearch, stringifySearch });
 }

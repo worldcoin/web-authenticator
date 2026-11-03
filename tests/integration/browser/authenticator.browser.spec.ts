@@ -21,8 +21,9 @@ if (!("bun" in process.versions)) {
     const external: string[] = [];
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
     // Only the analytics consent choice is stored before a passkey is saved.
@@ -60,7 +61,7 @@ if (!("bun" in process.versions)) {
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
-          title: document.querySelector('[data-testid=selfie-guidance] h2')?.textContent,
+          title: document.querySelector('[data-testid=selfie-guidance]')?.textContent,
           animationDuration: getComputedStyle(document.querySelector('[data-testid=selfie-completion-border]')!).animationDuration,
         });
       });
@@ -106,7 +107,7 @@ if (!("bun" in process.versions)) {
     for (const reducedMotion of ["no-preference", "reduce"] as const) {
       test(`pauses hidden stages, clears the face, and finishes once (${reducedMotion})`, async ({ page }, info) => {
         await page.emulateMedia({ reducedMotion });
-        const footerPosition = await page.getByRole("button", { name: "Cookie settings" }).boundingBox();
+        const footerPosition = await page.getByRole("button", { name: "Menu" }).boundingBox();
         await hideAtStage(page, "capture-complete");
         await page.getByRole("button", { name: "Start selfie check" }).click();
         await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
@@ -149,7 +150,7 @@ if (!("bun" in process.versions)) {
         });
         await page.clock.runFor(2000);
         await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
-        expect(await page.getByRole("button", { name: "Cookie settings" }).boundingBox()).toEqual(footerPosition);
+        expect(await page.getByRole("button", { name: "Menu" }).boundingBox()).toEqual(footerPosition);
         await page.getByRole("button", { name: "Not now" }).click();
         await page.clock.runFor(10_000);
         await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
@@ -175,28 +176,31 @@ if (!("bun" in process.versions)) {
     });
   });
 
-  test("shared chrome stays in place across public screens without developer controls", async ({ page }, info) => {
+  test("menu keeps links and cookie settings available across viewport sizes", async ({ page, browserName }, info) => {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-      const privacy = page.getByRole("link", { name: "Privacy", exact: true });
-      const position = await privacy.boundingBox();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+      const menu = page.getByRole("button", { name: "Menu" });
+      const position = await menu.boundingBox();
       expect(position).not.toBeNull();
-      expect(position!.y).toBeGreaterThan(viewport.height - 100);
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      expect(await privacy.boundingBox()).toEqual(position);
-      await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
-      await expect(page.locator("#developer-panel")).toHaveCount(0);
-      await page.getByRole("button", { name: "Go to authenticator" }).click();
-      await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-      expect(await privacy.boundingBox()).toEqual(position);
+      expect(position!.y).toBeGreaterThan(viewport.height - 80);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
+      await menu.focus();
+      await menu.press("Enter");
+      await expect(page.getByRole("link", { name: "Privacy" })).toBeVisible();
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-menu-${viewport.width}.png`, fullPage: true });
+      // macOS WebKit uses Option-Tab to include links in keyboard navigation.
+      await page.keyboard.press(browserName === "webkit" && process.platform === "darwin" ? "Alt+Tab" : "Tab");
+      await expect(page.getByRole("link", { name: "World ID", exact: true })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("link", { name: "Privacy" })).toHaveCount(0);
+      await expect(menu).toBeFocused();
+      await menu.click();
       await page.getByRole("button", { name: "Cookie settings" }).click();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      expect(await privacy.boundingBox()).toEqual(position);
-      await expect(page.getByRole("banner")).toHaveCount(1);
-      await expect(page.getByRole("contentinfo")).toHaveCount(1);
+      expect(await menu.boundingBox()).toEqual(position);
+      await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
     }
   });
 
@@ -210,19 +214,41 @@ if (!("bun" in process.versions)) {
       };
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-    await expect(page.getByText(/Complete a Selfie Check from an app request/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
     expect(cameraCalls).toBe(0);
-    expect(new URL(page.url()).pathname).toBe("/authenticator");
+    expect(new URL(page.url()).pathname).toBe("/");
     // The server serves the app on this path, so a reload keeps the screen.
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
-    await page.getByRole("button", { name: "Back to home" }).click();
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe("/");
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+  });
+
+  test("creating a World ID shows progress while the passkey request is pending", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: {
+        request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}),
+      } });
+      if (typeof PublicKeyCredential === "undefined") {
+        Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: class {} });
+      }
+      Object.defineProperty(navigator, "credentials", { configurable: true, value: { create: () => {
+        document.documentElement.dataset.passkeyRequested = "true";
+        return new Promise(() => {});
+      } } });
+    });
+    await page.goto("/");
+    const signIn = page.getByRole("button", { name: "Sign in with passkey" });
+    await expect(signIn).toBeDisabled();
+    await expect(signIn).toHaveCSS("background-color", "rgb(231, 235, 240)");
+    await page.getByRole("button", { name: "Create a new World ID" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
+    await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");
+    await page.screenshot({ path: "test-results/screenshots/passkey-progress.png" });
+    await expect(signIn).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Link an authenticator/ })).toHaveCount(0);
   });
 
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
@@ -281,7 +307,7 @@ if (!("bun" in process.versions)) {
       await page.addInitScript({ content: axe.source });
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toHaveCount(0);
       const violations = await page.evaluate(async () => {
         const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
         return (await runtime.run()).violations;
@@ -289,11 +315,11 @@ if (!("bun" in process.versions)) {
       expect(violations).toEqual([]);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-consent.png`, fullPage: true });
       await page.getByRole("button", { name: "Accept" }).click();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       expect(JSON.parse(await page.evaluate(() => localStorage.getItem("wid_consent") ?? "null"))).toMatchObject({ choice: "granted", version: "v1" });
       expect(await context.cookies()).toEqual([]);
       await page.reload();
-      await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
@@ -313,7 +339,7 @@ if (!("bun" in process.versions)) {
   test("built app passes automated accessibility checks", async ({ page }) => {
     await page.addInitScript({ content: axe.source });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     const violations = await page.evaluate(async () => {
       const runtime = (window as typeof window & { axe: { run(): Promise<{ violations: unknown[] }> } }).axe;
       return (await runtime.run()).violations;
@@ -355,9 +381,8 @@ if (!("bun" in process.versions)) {
     const before = registrations;
     expect(before).toBe(1);
     await page.goto("http://localhost:4194/");
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
+    await expect(page.getByRole("alert")).toContainText("Retry with your existing passkey", { timeout: 90_000 });
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });

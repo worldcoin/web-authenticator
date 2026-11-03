@@ -15,9 +15,7 @@ if (!("bun" in process.versions)) {
       if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
-    await page.getByRole("button", { name: "Go to authenticator" }).click();
-    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
     await expect(page.locator("video")).toHaveCount(0);
     expect(modelRequests).toEqual([]);
@@ -115,6 +113,8 @@ if (!("bun" in process.versions)) {
         await expect(page.getByTestId("request-frame")).toHaveCSS("background-color", "rgb(255, 255, 255)");
         await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
+        expect(await page.getByRole("region", { name: "Selfie capture" }).evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(0);
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-selfie-${viewport.width}.png`, fullPage: true });
       }
       const violations = await page.evaluate(async () => {

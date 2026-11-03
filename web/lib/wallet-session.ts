@@ -16,6 +16,8 @@ export const PRF_INPUT_LABEL = "world-id/web-authenticator/prf/v1";
 const PRF_INPUT = new TextEncoder().encode(PRF_INPUT_LABEL);
 const KEY_SALT = new TextEncoder().encode("world-id/web-authenticator/keys/v1");
 
+export type WalletOpenMode = "open" | "create" | "either";
+
 export interface WalletProfile {
   readonly version: 1;
   readonly credentialId: string;
@@ -41,7 +43,9 @@ export function hasSavedWallet(): boolean {
 }
 
 export function parseWalletProfile(raw: string): WalletProfile {
-  const value: unknown = JSON.parse(raw);
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch { throw new WalletOpenError("Saved wallet metadata is invalid. Do not clear site data if you need this wallet."); }
   if (
     typeof value !== "object" || value === null ||
     !("version" in value) || value.version !== 1 ||
@@ -69,20 +73,23 @@ export async function openPasskeyWallet(signal: AbortSignal): Promise<WalletSess
   return openWithPasskey(signal);
 }
 
-/** The seed stays inside the unlock scope and is erased after account activation. */
-export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void): Promise<AccountWallet> {
+/**
+ * Opens or creates an authenticator according to the requested mode.
+ * The seed stays inside the unlock scope and is erased after account activation.
+ */
+export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void, mode: WalletOpenMode = "either"): Promise<AccountWallet> {
   let account: AccountWallet | undefined;
   await openWithPasskey(signal, async (session, seed, credentialId, deadline) => {
     account = new AccountWallet(session.client, session.store, "staging", "us");
     await activateStagingWallet(account, seed, credentialId, deadline, progress);
-  });
+  }, mode);
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
   return account;
 }
 
 type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal) => Promise<void>;
 
-async function openWithPasskey(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
+async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: WalletOpenMode = "either"): Promise<WalletSession> {
   if (!window.isSecureContext || typeof PublicKeyCredential === "undefined") {
     throw new WalletOpenError("Use a secure browser with a PRF-capable passkey provider.");
   }
@@ -94,6 +101,9 @@ async function openWithPasskey(signal: AbortSignal, activate?: Activate): Promis
   }
   return navigator.locks.request("world-id-wallet-setup-v1", { ifAvailable: true }, async (lock) => {
     if (lock === null) throw new WalletOpenError("Wallet setup is already running in another tab.");
+    const saved = window.localStorage.getItem(PROFILE_KEY) !== null || window.localStorage.getItem(LEGACY_PROFILE_KEY) !== null;
+    if (mode === "open" && !saved) throw new WalletOpenError("No saved authenticator was found in this browser.");
+    if (mode === "create" && saved) throw new WalletOpenError("An authenticator already exists in this browser. Sign in to continue.");
     return openWalletUnderLock(signal, activate);
   });
 }

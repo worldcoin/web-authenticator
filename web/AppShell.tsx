@@ -1,15 +1,20 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { createContext, useEffect, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
 import type { ConsentChoice, ConsentClient, ConsentState } from "./lib/consent";
 
-/** Lets a page hide the shared footer controls while a timed sequence plays. */
+/** Hides shared chrome while the full-screen camera is open. */
+export const CaptureScreenContext = createContext<(active: boolean) => void>(() => {});
+
+/** Hides the menu while a timed sequence plays. */
 export const CompletionAnimationContext = createContext<(active: boolean) => void>(() => {});
 
 /** Chrome and cookie consent around every route. */
 export function AppShell({ consent }: { consent: ConsentClient }) {
+  const isAuthenticator = useRouterState({ select: state => state.location.pathname === "/" || state.location.pathname === "/authenticator" });
   const [completionAnimating, setCompletionAnimating] = useState(false);
+  const [captureActive, setCaptureActive] = useState(false);
   // null until the stored choice is read; analytics stays off unless the state is "granted".
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
@@ -40,14 +45,14 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
   // the user chooses.
   const consentScreen = consentState === "unset" || consentOpen;
 
-  const footerActions = <span className="inline-flex items-center gap-3 whitespace-nowrap">
-    {consentState !== null && consentState !== "unset" && !consentOpen && <button className="min-h-8 text-[13px] hover:text-ink hover:underline" onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>}
-  </span>;
+  const onCookieSettings = consentState !== null && consentState !== "unset" && !consentOpen
+    ? () => { setConsentError(null); setConsentOpen(true); }
+    : undefined;
 
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating}>
+  return <AppLayout onCookieSettings={onCookieSettings} hideControls={completionAnimating || captureActive} tintedBackground={isAuthenticator && !consentScreen && !captureActive}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
-      <CompletionAnimationContext value={setCompletionAnimating}><Outlet /></CompletionAnimationContext>
+      <CompletionAnimationContext value={setCompletionAnimating}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></CompletionAnimationContext>
     </div>
   </AppLayout>;
 }

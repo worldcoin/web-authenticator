@@ -20,7 +20,7 @@
   --color-stroke-secondary: #f1f1f1;
   --color-accent: #007cfb;
 
-  /* Sign-in, consent and home screens. */
+  /* Sign-in and consent screens. */
   --color-ink: #181818;
   --color-ink-muted: #75726f;
   --color-line: #e1dfda;
@@ -48,14 +48,9 @@
   }
 }
 
-/* Viewports too short for the capture screen's top padding. */
-@custom-variant short (@media (max-height: 740px));
-
 @layer base {
   :root {
-    --site-header-height: calc(64px + env(safe-area-inset-top));
-    --site-footer-height: calc(76px + env(safe-area-inset-bottom));
-    --request-frame-min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height)));
+    --request-frame-min-height: min(720px, 100svh);
     color: var(--color-foreground);
     background: var(--color-surface-page);
     line-height: normal;
