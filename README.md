@@ -53,5 +53,3 @@ bun run start
 ```
 
 [Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
-
-[Cloudflare environments and release workflow](docs/cloudflare-release.md)
