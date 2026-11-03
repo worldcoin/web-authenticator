@@ -63,13 +63,26 @@ jobs:
                   bun run cf:package
                   bun run cf:check
                   bun run cf:check --env staging
-                  bun run cf:check --env production
 
             - name: Install test browsers
               run: bunx playwright install --with-deps ${{ matrix.browser }}
 
             - name: Browser regression tests
               run: bunx playwright test -c tests/e2e/playwright.config.ts --project=desktop-${{ matrix.browser }}
+
+            - name: Build and test production environment configuration
+              env:
+                  VITE_APP_ENV: production
+                  AUTHENTICATOR_TEST_ENVIRONMENT: production
+              run: |
+                  bun run build:web
+                  bunx playwright test -c tests/e2e/playwright.config.ts deployment.browser.spec.ts --project=desktop-${{ matrix.browser }}
+
+            - name: Validate production Cloudflare bundle
+              if: runner.os == 'Linux'
+              run: |
+                  bun run cf:package
+                  bun run cf:check --env production
 
             - name: Build and smoke-test container
               if: runner.os == 'Linux'

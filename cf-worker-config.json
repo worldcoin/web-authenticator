@@ -10,7 +10,7 @@
       "build_command": "bun run build:cf && bun run lint && bun run typecheck && bun run test",
       "deploy_command": "bunx wrangler deploy --env staging --tag \"${WORKERS_CI_COMMIT_SHA:?Missing build commit}\"",
       "preview": { "enabled": false },
-      "build_vars": {},
+      "build_vars": { "VITE_APP_ENV": "staging" },
       "build_secrets": [],
       "runtime_secrets": []
     }

@@ -1,7 +1,7 @@
 # Authenticator API
 
-Bun serves the web build and `/api/rp` from the same origin. RP lookup uses the
-site origin to select the network; `/api/staging-rp` remains a staging alias. Passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
+Bun serves the web build and `/api/rp` from the same origin. RP lookup uses
+`APP_ENV` (`staging` by default in Bun) to select the network; `/api/staging-rp` remains a staging alias. Passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
 browser. Promon sessions and Redis are not implemented yet.
 
 Run `bun run dev` from the repo root to watch both apps. For the compiled app,

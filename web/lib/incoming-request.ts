@@ -1,5 +1,5 @@
 import { openBridge } from './bridge'
-import { protocolEnvironmentForOrigin } from '../../packages/contracts/src/deployment'
+import { currentProtocolEnvironment } from './environment'
 import type { WalletKit } from './walletkit'
 import { abortable } from './async'
 import { parseConnector, returnUrl } from './connector'
@@ -35,7 +35,7 @@ export async function loadIncomingRequest(
 	signal: AbortSignal,
 	progress: (message: string) => void
 ): Promise<IncomingRequest | null> {
-	const environment = protocolEnvironmentForOrigin(new URL(href).origin)
+	const environment = currentProtocolEnvironment()
 	const connector = parseConnector(href)
 	if (!connector) return null
 	progress('Fetching the encrypted request from the World ID bridge…')

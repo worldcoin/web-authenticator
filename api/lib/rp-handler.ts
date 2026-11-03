@@ -1,6 +1,6 @@
 import { readRp } from './rp-registry'
 
-import type { ProtocolEnvironment } from '../../packages/contracts/src/deployment'
+import type { ProtocolEnvironment } from '../../config/environment'
 
 export async function lookupRp(request: Request, environment: ProtocolEnvironment) {
 	const id = new URL(request.url).searchParams.get('id')

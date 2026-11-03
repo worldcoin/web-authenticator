@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { signedRequest, encryptedRequest } from "../fixtures/request";
 
+const configuredEnvironment = process.env.AUTHENTICATOR_TEST_ENVIRONMENT ?? "staging";
+if (!["staging", "production"].includes(configuredEnvironment)) throw new Error("Invalid browser test environment");
 const origins = ["https://web.world.org", "https://authenticator.toolsforhumanity.dev"];
 
 // Serve the built app locally under its real browser origins; no live deployment is contacted.
@@ -10,9 +12,9 @@ if (!("bun" in process.versions)) {
   ] })) } });
 
   for (const [origin, environment, accepted, endpoint] of [
-    [origins[0]!, "production", true, "/api/rp"],
+    [origins[0]!, "production", configuredEnvironment === "production", "/api/rp"],
     [origins[0]!, "sandbox", false, "/api/rp"],
-    [origins[1]!, "sandbox", true, "/api/staging-rp"],
+    [origins[1]!, "sandbox", configuredEnvironment === "staging", "/api/staging-rp"],
     [origins[1]!, "production", false, "/api/staging-rp"],
   ] as const) {
     test(`${new URL(origin).hostname} ${accepted ? "accepts" : "rejects"} ${environment} requests`, async ({ page }) => {

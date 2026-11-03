@@ -66,6 +66,8 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run build:cf
+        env:
+          VITE_APP_ENV: production
       - name: Deploy the approved and tested commit
         run: bunx wrangler deploy --env production --tag "$RELEASE_COMMIT"
         env:

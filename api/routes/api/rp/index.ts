@@ -1,4 +1,4 @@
 import { lookupRp } from "../../../lib/rp-handler";
-import { protocolEnvironmentForOrigin } from "../../../../packages/contracts/src/deployment";
+import { parseAppEnvironment } from "../../../../config/environment";
 
-export const GET = (request: Request) => lookupRp(request, protocolEnvironmentForOrigin(new URL(request.url).origin));
+export const GET = (request: Request) => lookupRp(request, parseAppEnvironment(process.env.APP_ENV ?? "staging"));

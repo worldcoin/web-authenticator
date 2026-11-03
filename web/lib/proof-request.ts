@@ -1,5 +1,5 @@
 import type { CredentialMetadata } from './walletkit'
-import { acceptsRequestEnvironment, type ProtocolEnvironment } from '../../packages/contracts/src/deployment'
+import { acceptsRequestEnvironment, type ProtocolEnvironment } from '../../config/environment'
 import { currentProtocolEnvironment } from './environment'
 import { hexToBytes, keccak256, stringToHex, verifyMessage, type Hex } from 'viem'
 

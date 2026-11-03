@@ -1,7 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
+
+import { parseAppEnvironment } from "../config/environment";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const appRoot = fileURLToPath(new URL("./", import.meta.url));
@@ -33,23 +35,27 @@ function rejectServerModulesFromBrowser(): Plugin {
   };
 }
 
-export default defineConfig({
-  root: appRoot,
-  plugins: [rejectServerModulesFromBrowser(), react(), tailwindcss()],
-  publicDir: "public",
-  worker: { format: "es", plugins: () => [rejectServerModulesFromBrowser()] },
-  // Discover ONNX before entering capture so Vite cannot reload an active camera attempt.
-  optimizeDeps: { include: ["onnxruntime-web/wasm"] },
-  server: {
-    host: "127.0.0.1",
-    port: 4173,
-    strictPort: true,
-    fs: { allow: [repositoryRoot] },
-  },
-  build: {
-    target: "es2022",
-    outDir: path("./web/dist"),
-    emptyOutDir: true,
-    sourcemap: false,
-  },
+export default defineConfig(({ mode }) => {
+  // Fail the build on typos; Vite exposes this public setting to browser code.
+  parseAppEnvironment(loadEnv(mode, appRoot, "VITE_").VITE_APP_ENV ?? "staging");
+  return {
+    root: appRoot,
+    plugins: [rejectServerModulesFromBrowser(), react(), tailwindcss()],
+    publicDir: "public",
+    worker: { format: "es", plugins: () => [rejectServerModulesFromBrowser()] },
+    // Discover ONNX before entering capture so Vite cannot reload an active camera attempt.
+    optimizeDeps: { include: ["onnxruntime-web/wasm"] },
+    server: {
+      host: "127.0.0.1",
+      port: 4173,
+      strictPort: true,
+      fs: { allow: [repositoryRoot] },
+    },
+    build: {
+      target: "es2022",
+      outDir: path("./web/dist"),
+      emptyOutDir: true,
+      sourcemap: false,
+    },
+  };
 });

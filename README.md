@@ -1,7 +1,11 @@
 # World ID Web Authenticator
 
 Unlock your World ID wallet with a passkey and approve requests from apps.
-Uses staging contracts on `authenticator.toolsforhumanity.dev` and production contracts on `web.world.org`.
+Deployment settings select staging or production services: `VITE_APP_ENV` is baked
+into the browser build and `APP_ENV` configures the API/Worker. Both accept `staging`
+or `production`; local development defaults to staging. The hostname is validated
+against that setting and cannot switch networks. Production releases set both to
+`production` for `web.world.org`; staging uses `authenticator.toolsforhumanity.dev`.
 
 ## Dependencies
 

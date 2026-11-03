@@ -89,16 +89,25 @@ test("an unsuccessful account check after timeout preserves the uncertain regist
 
 test("environment selection preserves existing staging registration and isolates production", () => {
   const href = window.location.href;
+  const configuredEnvironment = process.env.VITE_APP_ENV;
   try {
+    process.env.VITE_APP_ENV = "staging";
     window.localStorage.setItem("world-id-staging-registration-v1:ab", "submitting");
     window.location.href = "https://authenticator.toolsforhumanity.dev";
     expect(registrationState("ab")).toBe("submitting");
     window.location.href = "https://web.world.org";
+    expect(() => registrationState("ab")).toThrow("not configured for this origin");
+    process.env.VITE_APP_ENV = "production";
     expect(registrationState("ab")).toBeNull();
     saveRegistrationState("ab", "finalized");
     expect(window.localStorage.getItem("world-id-production-registration-v1:ab")).toBe("finalized");
     expect(window.localStorage.getItem("world-id-staging-registration-v1:ab")).toBe("submitting");
+    process.env.VITE_APP_ENV = "staging";
     window.location.href = "https://authenticator.toolsforhumanity.dev";
     expect(registrationState("ab")).toBe("submitting");
-  } finally { window.location.href = href; }
+  } finally {
+    window.location.href = href;
+    if (configuredEnvironment === undefined) delete process.env.VITE_APP_ENV;
+    else process.env.VITE_APP_ENV = configuredEnvironment;
+  }
 });

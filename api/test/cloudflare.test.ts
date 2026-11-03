@@ -15,7 +15,7 @@ const request = (path = "/", init?: RequestInit) => new Request(origin + path, i
 const environment = (fetchAsset: (request: Request) => Promise<Response>): Env => ({
   CF_ACCESS_TEAM_DOMAIN: "tfh-test.cloudflareaccess.com",
   CF_ACCESS_AUD: "test-audience",
-  DEPLOYMENT_ENVIRONMENT: "staging",
+  APP_ENV: "staging",
   CF_VERSION_METADATA: { id: "test-version", tag: "a".repeat(40), timestamp: "2026-10-30T00:00:00.000Z" },
   ASSETS: { fetch: fetchAsset } as Fetcher,
 });
@@ -186,7 +186,7 @@ test("production requires its configured HTTPS origin and exposes its version", 
   let reads = 0;
   const handle = createWorkerHandler(async () => { authentications++; return new Response("private", { status: 403 }); });
   const origin = "https://web.world.org";
-  const env = { ...environment(async () => { reads++; return new Response("<html>app</html>"); }), DEPLOYMENT_ENVIRONMENT: "production" };
+  const env = { ...environment(async () => { reads++; return new Response("<html>app</html>"); }), APP_ENV: "production" };
   const response = await handle(new Request(origin + "/api/health/ready"), env);
   expect(response.status).toBe(200);
   expect(await response.json() as Record<string, unknown>).toEqual({
@@ -201,7 +201,7 @@ test("production requires its configured HTTPS origin and exposes its version", 
   expect((await handle(new Request(origin + "/api/rp?id=invalid"), env)).status).toBe(400);
   expect((await handle(new Request(origin + "/api/staging-rp?id=invalid"), env)).status).toBe(404);
   expect(authentications).toBe(0);
-  expect((await handle(request(), { ...env, DEPLOYMENT_ENVIRONMENT: "unknown" })).status).toBe(503);
-  expect((await handle(request(), { ...env, DEPLOYMENT_ENVIRONMENT: "staging" })).status).toBe(403);
+  expect((await handle(request(), { ...env, APP_ENV: "unknown" })).status).toBe(503);
+  expect((await handle(request(), { ...env, APP_ENV: "staging" })).status).toBe(403);
   expect(authentications).toBe(1);
 });

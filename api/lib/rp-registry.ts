@@ -1,6 +1,6 @@
 import { createPublicClient, http, parseAbi } from 'viem'
 
-import type { ProtocolEnvironment } from '../../packages/contracts/src/deployment'
+import type { ProtocolEnvironment } from '../../config/environment'
 
 // World ID protocol RP registries on World Chain (chain 480).
 // Source: world-id-deploy/developer-portal/stacks/web/parameters.ts.
