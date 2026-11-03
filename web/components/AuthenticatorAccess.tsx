@@ -53,8 +53,6 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
 
   return <div className="mx-auto my-6 w-[calc(100%-28px)] max-w-[470px] text-[#0d1421] sm:my-10">
     <article className={`relative flex min-h-[606px] flex-col overflow-hidden rounded border border-[#d6dde7] border-t-[3px] bg-[#fcfdfe] p-6 shadow-[0_18px_40px_-28px_rgba(13,20,33,.34)] ${records ? "border-t-[#0a5cfe]" : "border-t-[#0d1421]"}`}>
-      <span aria-hidden="true" className="absolute top-2 right-2 text-[#c3cddb]">+</span>
-      <span aria-hidden="true" className="absolute bottom-2 left-2 text-[#c3cddb]">+</span>
       <div className="flex items-center justify-between border-b border-[#d6dde7] pb-4 text-[13px] font-medium">
         <span className="flex items-center gap-2"><img className="size-5" src="/assets/brand/human-badge.svg" alt="" />World ID</span>
         <span className={records ? "rounded bg-[#e6f5ee] px-2 py-1 text-[#0a5c40]" : "text-[#657184]"}>{records ? "●  Signed in" : "Signed out"}</span>
