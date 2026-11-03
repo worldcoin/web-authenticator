@@ -1,4 +1,5 @@
 import { openBridge } from './bridge'
+import { protocolEnvironmentForOrigin } from '../../packages/contracts/src/deployment'
 import type { WalletKit } from './walletkit'
 import { abortable } from './async'
 import { parseConnector, returnUrl } from './connector'
@@ -34,13 +35,14 @@ export async function loadIncomingRequest(
 	signal: AbortSignal,
 	progress: (message: string) => void
 ): Promise<IncomingRequest | null> {
+	const environment = protocolEnvironmentForOrigin(new URL(href).origin)
 	const connector = parseConnector(href)
 	if (!connector) return null
 	progress('Fetching the encrypted request from the World ID bridge…')
 	const bridge = await openBridge(connector, signal)
-	progress('Request decrypted. Checking staging metadata and signature…')
-	const payload = parsePayload(bridge.json)
-	await validateSignature(payload.proof_request, signal)
+	progress('Request decrypted. Checking metadata and signature…')
+	const payload = parsePayload(bridge.json, environment)
+	await validateSignature(payload.proof_request, signal, environment)
 	const callback = returnUrl(payload.return_to_url)
 	// Connector metadata may confirm a payload callback, but cannot supply one.
 	if (callback && connector.returnUrl && callback !== connector.returnUrl)
@@ -57,7 +59,7 @@ export async function loadIncomingRequest(
 				? 'Identity attribute attestation is not implemented by this web authenticator.'
 				: undefined,
 		validate: async signal => {
-			await validateSignature(payload.proof_request, signal)
+			await validateSignature(payload.proof_request, signal, environment)
 		},
 		deliver: async (proof, signal) => {
 			const response = JSON.parse(proof) as {

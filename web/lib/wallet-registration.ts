@@ -4,7 +4,7 @@ import type { WalletKit } from "./walletkit";
 import { abortable, pause } from "./async";
 import { registrationState, saveRegistrationState } from "./wallet-persistence";
 
-export async function activateStagingWallet(
+export async function activateWallet(
   wallet: WalletKit,
   seed: Uint8Array,
   credentialId: string,
@@ -18,7 +18,7 @@ export async function activateStagingWallet(
       signal.throwIfAborted();
       // Persist before the remote mutation: an ambiguous result must never trigger a second registration.
       saveRegistrationState(credentialId, "submitting");
-      stage = "confirm staging registration; it may already have been submitted";
+      stage = "confirm registration; it may already have been submitted";
       progress("Setting up your World ID…");
       await logFlowStep("registration.submit", () => abortable(wallet.register(seed), AbortSignal.any([signal, AbortSignal.timeout(30_000)])));
       for (;;) {
@@ -30,7 +30,7 @@ export async function activateStagingWallet(
         if (!["queued", "batching", "submitted", "finalized"].includes(status.state)) {
           throw new Error("Registration was not finalized.");
         }
-        progress(`Staging registration: ${status.state}.`);
+        progress(`Registration: ${status.state}.`);
         if (status.state === "finalized") break;
         await pause(1000, signal);
       }

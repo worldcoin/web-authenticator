@@ -4,6 +4,12 @@ on:
     push:
         branches: [main]
     pull_request:
+    workflow_call:
+        inputs:
+            ref:
+                description: Immutable commit to validate for production promotion
+                required: true
+                type: string
 
 permissions:
     contents: read
@@ -26,7 +32,10 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ inputs.ref || github.sha }}
+                  persist-credentials: false
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
@@ -53,6 +62,8 @@ jobs:
               run: |
                   bun run cf:package
                   bun run cf:check
+                  bun run cf:check --env staging
+                  bun run cf:check --env production
 
             - name: Install test browsers
               run: bunx playwright install --with-deps ${{ matrix.browser }}

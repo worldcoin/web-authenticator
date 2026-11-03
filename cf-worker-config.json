@@ -8,7 +8,7 @@
       "path_includes": ["*"],
       "build_caching_enabled": true,
       "build_command": "bun run build:cf && bun run lint && bun run typecheck && bun run test",
-      "deploy_command": "bun run deploy:cf",
+      "deploy_command": "bunx wrangler deploy --env staging --tag \"${WORKERS_CI_COMMIT_SHA:?Missing build commit}\"",
       "preview": { "enabled": false },
       "build_vars": {},
       "build_secrets": [],

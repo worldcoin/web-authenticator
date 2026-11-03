@@ -11,6 +11,7 @@ RUN bun install --frozen-lockfile
 COPY tsconfig.json ./
 COPY web web
 COPY api api
+COPY packages packages
 RUN bun run build
 
 FROM oven/bun:1.4.2-slim AS runtime

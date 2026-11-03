@@ -1,7 +1,8 @@
 # World ID Web Authenticator
 
 Unlock your World ID wallet with a passkey and approve requests from apps.
-Currently uses **staging** contracts for enrollment. 
+Uses staging contracts on `authenticator.toolsforhumanity.dev` and production contracts on `web.world.org`.
+
 ## Dependencies
 
 - [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.
@@ -52,3 +53,5 @@ bun run start
 ```
 
 [Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
+
+[Cloudflare environments and release workflow](docs/cloudflare-release.md)

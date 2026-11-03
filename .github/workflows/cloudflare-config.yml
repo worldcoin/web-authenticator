@@ -23,10 +23,10 @@ concurrency:
 
 jobs:
   configure:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_RELEASE_CONFIGURED == 'true'
     runs-on:
       group: arc-public-large-amd64-runner
-    environment: cloudflare-dev
+    environment: staging-cloudflare
     steps:
       - uses: worldcoin/gh-actions-public/cf-worker-config@4877d8286d7e866849fa9daad49e24491113c8ba
         with:

@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
-import { parsePayload } from "../lib/proof-request";
+import { parsePayload, validateSignature } from "../lib/proof-request";
 import { createProof } from "../lib/prove";
 import type { WalletKit } from "../lib/walletkit";
 
@@ -112,4 +112,23 @@ test("payload validation rejects expiry, misleading action and malformed nested 
   for (const overrides of [{ expires_at: 1 }, { constraints: "unknown" }, { constraints: { any: [] } }, { constraints: { all: ["credential"], extra: true } }]) {
     expect(() => parsePayload(JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, ...overrides } }))).toThrow();
   }
+});
+
+
+test("production accepts only production payloads and verifies the production RP endpoint", async () => {
+  const { payload, registry } = await signedRequest();
+  const json = (environment: string) => JSON.stringify({ ...payload, environment });
+  expect(() => parsePayload(json("production"), "production")).not.toThrow();
+  for (const environment of ["staging", "sandbox", "unknown"]) {
+    expect(() => parsePayload(json(environment), "production")).toThrow("production requests only");
+  }
+  expect(() => parsePayload(json("sandbox"), "staging")).not.toThrow();
+  expect(() => parsePayload(json("production"), "staging")).toThrow("staging requests only");
+  const mock = spyOn(globalThis, "fetch").mockImplementation((async input => {
+    expect(String(input)).toBe("/api/rp?id=rp_1");
+    return Response.json(registry);
+  }) as typeof fetch);
+  restore = () => mock.mockRestore();
+  await validateSignature(payload.proof_request, signal(), "production");
+  expect(mock).toHaveBeenCalledTimes(1);
 });

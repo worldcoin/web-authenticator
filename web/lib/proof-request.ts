@@ -1,4 +1,6 @@
 import type { CredentialMetadata } from './walletkit'
+import { acceptsRequestEnvironment, type ProtocolEnvironment } from '../../packages/contracts/src/deployment'
+import { currentProtocolEnvironment } from './environment'
 import { hexToBytes, keccak256, stringToHex, verifyMessage, type Hex } from 'viem'
 
 export type Requirement = {
@@ -27,7 +29,7 @@ export type ProofRequest = {
 export type Payload = {
 	app_id: string
 	action: string
-	environment: 'staging'
+	environment: 'staging' | 'sandbox' | 'production'
 	proof_request: ProofRequest
 	require_user_presence?: boolean
 	identity_attributes?: unknown[]
@@ -51,10 +53,10 @@ export function checkExpiry(request: ProofRequest) {
 	)
 		throw new RequestExpiredError('The request is expired or its timestamp is invalid. Start a new request at the relying party.')
 }
-export function parsePayload(json: string): Payload {
+export function parsePayload(json: string, environment = currentProtocolEnvironment()): Payload {
 	if (json.length > 131072) throw new Error('Request payload is too large.')
 	const p: unknown = JSON.parse(json)
-	if (!record(p) || p.environment !== 'staging') throw new Error('This authenticator accepts staging requests only.')
+	if (!record(p) || !acceptsRequestEnvironment(p.environment, environment)) throw new Error(`This authenticator accepts ${environment} requests only.`)
 	const r = p.proof_request
 	if (!record(r) || r.version !== 1 || r.proof_type !== 'uniqueness' || r.session_id != null)
 		throw new Error('Only World ID 4.0 uniqueness requests are supported by this web authenticator.')
@@ -118,18 +120,19 @@ export function parsePayload(json: string): Payload {
 	checkExpiry(payload.proof_request)
 	return payload
 }
-export async function validateSignature(request: ProofRequest, signal: AbortSignal) {
+export async function validateSignature(request: ProofRequest, signal: AbortSignal, environment: ProtocolEnvironment = currentProtocolEnvironment()) {
 	checkExpiry(request)
-	const response = await fetch(`/api/staging-rp?id=${encodeURIComponent(request.rp_id)}`, {
+	const endpoint = environment === "production" ? "/api/rp" : "/api/staging-rp"
+	const response = await fetch(`${endpoint}?id=${encodeURIComponent(request.rp_id)}`, {
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
 		cache: 'no-store',
 	})
 	if (!response.ok)
 		throw new Error(
-			'Could not validate this RP against the staging registry. It may be unregistered, inactive, or temporarily unavailable.'
+			`Could not validate this RP against the ${environment} registry. It may be unregistered, inactive, or temporarily unavailable.`
 		)
 	const rp = (await response.json()) as { signer: Hex; oprfKeyId: string }
-	if (!rp || !hex(rp.signer, 20) || typeof rp.oprfKeyId !== 'string' || !/^0x[0-9a-f]{1,40}$/i.test(rp.oprfKeyId)) throw new Error('Invalid staging RP registry response.')
+	if (!rp || !hex(rp.signer, 20) || typeof rp.oprfKeyId !== 'string' || !/^0x[0-9a-f]{1,40}$/i.test(rp.oprfKeyId)) throw new Error('Invalid RP registry response.')
 	if (BigInt(rp.oprfKeyId) !== BigInt(request.oprf_key_id))
 		throw new Error('Request OPRF key does not match the registered RP.')
 	const message = new Uint8Array(81)
