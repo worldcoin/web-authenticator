@@ -25,11 +25,24 @@ export function stagingRetryTarget(build: any, scripts: any, mainCommit: string)
   const metadata = build?.build_trigger_metadata;
   const trigger = build?.trigger;
   const worker = Array.isArray(scripts) ? scripts.find(script => script?.id === "web-authenticator-dev") : undefined;
-  if (!/^[a-f0-9]{40}$/.test(mainCommit) || build?.status !== "stopped" || build?.build_outcome !== "fail" ||
-    metadata?.branch !== "main" || metadata?.commit_hash !== mainCommit ||
-    metadata?.provider_account_name !== "worldcoin" || metadata?.repo_name !== "web-authenticator" ||
-    !worker?.tag || trigger?.external_script_id !== worker.tag || !UUID.test(trigger?.trigger_uuid ?? "")) {
-    throw new Error("Retry requires a failed web-authenticator-dev build for the current main commit");
+  const checks = {
+    mainCommit: /^[a-f0-9]{40}$/.test(mainCommit),
+    stopped: build?.status === "stopped",
+    failed: build?.build_outcome === "fail",
+    mainBranch: metadata?.branch === "main",
+    currentCommit: metadata?.commit_hash === mainCommit,
+    owner: metadata?.provider_account_name === "worldcoin",
+    repository: metadata?.repo_name === "web-authenticator",
+    stagingWorker: Boolean(worker?.tag && trigger?.external_script_id === worker.tag),
+    triggerId: UUID.test(trigger?.trigger_uuid ?? ""),
+  };
+  const failures = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
+  if (failures.length) {
+    // Only identity/status fields; build metadata also contains environment variables.
+    const identity = { status: build?.status, outcome: build?.build_outcome, branch: metadata?.branch,
+      commit: metadata?.commit_hash, owner: metadata?.provider_account_name, repository: metadata?.repo_name,
+      trigger: trigger?.trigger_uuid, script: trigger?.external_script_id, stagingScript: worker?.tag };
+    throw new Error(`Retry requires a failed web-authenticator-dev build for the current main commit; mismatched fields: ${failures.join(", ")}; identity: ${JSON.stringify(identity)}`);
   }
   return trigger.trigger_uuid;
 }
