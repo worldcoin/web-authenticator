@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
@@ -13,7 +13,10 @@ beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
 afterAll(() => GlobalRegistrator.unregister());
-afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
+// Request flows live at /verify; the landing and authenticator tests visit their own paths.
+const visit = (path: string) => window.history.replaceState(null, "", path);
+beforeEach(() => visit("/verify"));
+afterEach(() => { cleanup(); visit("/"); });
 
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
@@ -50,16 +53,16 @@ test("request intro names the RP only after validation, then starts the check", 
   const open = f.services.open; f.services.open = async (...args) => { opened++; return open(...args); };
   window.history.replaceState(null, "", "/verify?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  expect(window.location.search).toBe("");
   // Load is pending: the RP is unverified, so it is not shown and the check cannot start.
   await view.findByRole("heading", { name: "Complete a Selfie Check" });
+  expect(window.location.search).toBe("");
   expect(view.queryByText("rp_1")).toBeNull();
   expect((view.getByRole("button", { name: "Verifying request…" }) as HTMLButtonElement).disabled).toBe(true);
   resolve(f.incoming);
   expect(await view.findByText("rp_1 is requesting a Selfie Check.")).toBeTruthy();
   fireEvent.click(view.getByRole("button", { name: "Start selfie check" }));
   expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
-  expect(opened).toBe(0);  window.history.replaceState(null, "", "/");
+  expect(opened).toBe(0);
 });
 for (const [name, failure, title] of [
   ["expired", new RequestExpiredError("expired"), "This request has expired"],
@@ -87,6 +90,7 @@ test("a request that expires on the intro stops offering the check", async () =>
 });
 
 test("a first visit sees the consent screen before the home page, and the choice can be reopened", async () => {
+  visit("/");
   const f = await fixture(1); f.services.load = async () => null;
   const saved: string[] = [];
   let state: "granted" | "denied" | "unset" = "unset";
@@ -226,6 +230,7 @@ test("public cancellation closes the request even when the bridge is unavailable
 
 test("landing entry explains request-first setup without opening camera or creating a wallet", async () => {
   localStorage.clear();
+  visit("/");
   const f = await fixture(11);
   f.services.load = async () => null;
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
@@ -235,7 +240,9 @@ test("landing entry explains request-first setup without opening camera or creat
   expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
   expect(view.queryByRole("button", { name: /passkey/ })).toBeNull();
   expect(f.calls.listed).toBe(0);
+  expect(window.location.pathname).toBe("/authenticator");
   view.unmount();
+  visit("/");
   const reopened = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   expect(await reopened.findByRole("button", { name: "Go to authenticator" })).toBeTruthy();
   expect(reopened.queryByRole("region", { name: "Selfie capture" })).toBeNull();
@@ -246,6 +253,7 @@ test("saved access requires explicit sign-in and shows credentials without start
   try {
     const f = await fixture(11);
     f.services.load = async () => null;
+    visit("/");
     let opened = 0;
     const open = f.services.open;
     f.services.open = async () => { opened++; return open(); };

@@ -1,3 +1,5 @@
+import { isClientRoute } from "./client-routes";
+
 export const COMPRESSED_WASM_PREFIX = "/_cf/wasm";
 
 function encodingQuality(request: Request, encoding: "gzip" | "identity"): number {
@@ -23,7 +25,7 @@ export async function serveWorkerAsset(request: Request, assets: Env["ASSETS"]):
   const url = new URL(request.url);
   if (url.pathname.startsWith("/_cf/")) return new Response("Not found", { status: 404 });
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-  const pathname = url.pathname === "/" || url.pathname === "/verify" ? "/index.html" : url.pathname;
+  const pathname = isClientRoute(url.pathname) ? "/index.html" : url.pathname;
   const response = await assets.fetch(assetRequest(request, pathname));
   if (response.status !== 404 || !pathname.endsWith(".wasm")) {
     if (request.method === "HEAD") {

@@ -57,8 +57,23 @@ test("verify links serve the app directly, without a redirect that repeats the b
     await rm(staticRoot, { recursive: true, force: true });
   }
 });
-test("embedded demo routes and simulated endpoints are gone", async () => {
-  for (const path of ["/demo", "/returned", "/api/v0/bootstrap", "/api/v0/session/create"]) {
+test("every non-file path serves the app so client routes survive a reload, while missing files 404", async () => {
+  const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-pages-"));
+  try {
+    await writeFile(join(staticRoot, "index.html"), "<h1>Authenticator</h1>");
+    const app = start({ staticRoot });
+    for (const path of ["/", "/verify", "/authenticator", "/authenticator/deep/link"]) {
+      const response = await fetch(`${app}${path}`, { redirect: "manual" });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("<h1>Authenticator</h1>");
+    }
+    for (const path of ["/assets/missing.js", "/missing.wasm", "/api/missing"]) expect((await fetch(`${app}${path}`)).status).toBe(404);
+  } finally {
+    await rm(staticRoot, { recursive: true, force: true });
+  }
+});
+test("simulated endpoints are gone", async () => {
+  for (const path of ["/api/v0/bootstrap", "/api/v0/session/create"]) {
     expect((await get(path)).status).toBe(404);
   }
 });

@@ -216,9 +216,13 @@ if (!("bun" in process.versions)) {
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /passkey/i })).toHaveCount(0);
     expect(cameraCalls).toBe(0);
-    expect(new URL(page.url()).pathname).toBe("/");
+    expect(new URL(page.url()).pathname).toBe("/authenticator");
+    // The server serves the app on this path, so a reload keeps the screen.
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Your authenticator" })).toBeVisible();
     await page.getByRole("button", { name: "Back to home" }).click();
     await expect(page.getByRole("heading", { name: "Download World ID" })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
   });
 
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
