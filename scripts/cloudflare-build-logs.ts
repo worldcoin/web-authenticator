@@ -28,7 +28,7 @@ export function stagingRetryTarget(build: any, scripts: any, mainCommit: string)
   const checks = {
     mainCommit: /^[a-f0-9]{40}$/.test(mainCommit),
     stopped: build?.status === "stopped",
-    failed: build?.build_outcome === "fail",
+    failed: build?.build_outcome === "fail" || build?.build_outcome === "terminated",
     mainBranch: metadata?.branch === "main",
     currentCommit: metadata?.commit_hash === mainCommit,
     owner: metadata?.provider_account_name === "worldcoin",

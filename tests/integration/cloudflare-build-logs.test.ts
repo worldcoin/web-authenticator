@@ -59,6 +59,8 @@ const workers = [{ id: "web-authenticator-dev", tag: "staging-tag" }];
 
 test("retry rejects production, old commits, other repositories, and running builds", () => {
   expect(stagingRetryTarget(failedBuild, workers, mainCommit)).toBe(build);
+  expect(stagingRetryTarget({ ...failedBuild, build_outcome: "terminated" }, workers, mainCommit)).toBe(build);
+  expect(() => stagingRetryTarget({ ...failedBuild, build_outcome: "cancelled" }, workers, mainCommit)).toThrow();
   expect(() => stagingRetryTarget(failedBuild, [{ id: "web-authenticator-prod", tag: "staging-tag" }], mainCommit)).toThrow();
   expect(() => stagingRetryTarget(failedBuild, workers, "b".repeat(40))).toThrow();
   expect(() => stagingRetryTarget({ ...failedBuild, status: "running" }, workers, mainCommit)).toThrow();
