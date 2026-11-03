@@ -1,29 +1,46 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const PRIVACY_URL = "https://www.toolsforhumanity.com/legal/privacy-notice";
 
 /** Shared chrome stays mounted while the current screen changes. */
-export function AppLayout({ footerActions, hideControls = false, hideHeader = false, authenticator = false, children }: {
-  footerActions: ReactNode;
+export function AppLayout({ footerActions, hideControls = false, authenticator = false, children }: {
+  footerActions: (close: () => void) => ReactNode;
   hideControls?: boolean;
-  hideHeader?: boolean;
   authenticator?: boolean;
   children: ReactNode;
 }) {
-  return <div className="flex min-h-dvh flex-col bg-white pb-(--site-footer-height)">
-    <header inert={hideHeader} aria-hidden={hideHeader || undefined} className="data-[hidden=true]:invisible flex min-h-(--site-header-height) items-center px-6 pt-[calc(16px+env(safe-area-inset-top))] pb-4 md:px-8" data-hidden={hideHeader}>
-      <p className="z-5 max-w-full self-center text-center text-[13px] leading-[1.2] text-[#4e4e4e] md:text-[15px]">World ID</p>
-    </header>
+  return <div className="flex min-h-dvh flex-col bg-white">
     <main className={`relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-x-clip min-[600px]:justify-center ${authenticator ? "bg-[#e8ecf2]" : "bg-white"}`}>{children}</main>
-    <footer className="fixed inset-x-0 bottom-0 z-30 flex min-h-(--site-footer-height) items-center justify-between gap-4 bg-surface-page px-4 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))] text-[13px] text-foreground-secondary data-[hidden=true]:invisible md:px-8" data-hidden={hideControls} inert={hideControls} aria-hidden={hideControls || undefined}>
-      <nav className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="World links">
-        <a className="hover:text-foreground hover:underline" href="https://world.org/world-id">World ID</a>
-        <a className="hover:text-foreground hover:underline" href="https://world.org/world-app">World App</a>
-        <a className="hover:text-foreground hover:underline" href="https://world.org/ecosystem">Mini Apps</a>
-        <a className="hover:text-foreground hover:underline" href="https://docs.world.org/world-id/overview">Build with World ID</a>
-        <a className="hover:text-foreground hover:underline" href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy</a>
-      </nav>
-      {footerActions}
-    </footer>
+    {!hideControls && <WorldMenu footerActions={footerActions} />}
   </div>;
+}
+
+function WorldMenu({ footerActions }: { footerActions: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => { if (!menu.current?.contains(event.target as Node)) setOpen(false); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const link = "block rounded-lg px-4 py-2 text-[14px] text-[#0d1421] hover:bg-[#f2f6fc] focus-visible:outline-2 focus-visible:outline-[#0a5cfe]";
+  return <div ref={menu} className="fixed right-[max(16px,env(safe-area-inset-right))] bottom-[max(16px,env(safe-area-inset-bottom))] z-30">
+      {open && <nav id="world-menu" aria-label="World links" className="absolute right-0 bottom-[60px] w-56 rounded-xl border border-[#d6dde7] bg-white p-2 shadow-[0_12px_32px_rgba(13,20,33,.18)]">
+        <a className={link} onClick={() => setOpen(false)} href="https://world.org/world-id">World ID</a>
+        <a className={link} onClick={() => setOpen(false)} href="https://world.org/world-app">World App</a>
+        <a className={link} onClick={() => setOpen(false)} href="https://world.org/ecosystem">Mini Apps</a>
+        <a className={link} onClick={() => setOpen(false)} href="https://docs.world.org/world-id/overview">Build with World ID</a>
+        <a className={link} onClick={() => setOpen(false)} href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy</a>
+        {footerActions(() => setOpen(false))}
+      </nav>}
+      <button ref={trigger} type="button" aria-label="Menu" aria-expanded={open} aria-controls={open ? "world-menu" : undefined} className="grid size-12 place-items-center rounded-full border border-[#c3cddb] bg-white text-[#0d1421] shadow-[0_4px_16px_rgba(13,20,33,.12)] hover:bg-[#f2f6fc]" onClick={() => setOpen(value => !value)}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+      </button>
+    </div>;
 }

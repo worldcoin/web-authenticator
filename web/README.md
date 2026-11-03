@@ -15,7 +15,7 @@ temporary camera flow. Mixed requests, user-presence requirements and identity
 attributes remain unsupported. Direct visits open the authenticator. A user can create a World ID with a passkey
 or sign in to an existing authenticator in this browser. Linking is not available.
 A signed-in user without an active Selfie Check can open the camera preview;
-credential issuance is not yet connected.
+credential issuance is not yet connected. World links and cookie settings are available from the floating menu.
 
 The public flow uses local capture as its completion signal; it does not send a
 verified IDKit response. The oval’s 64 dots fill gold clockwise during a 1.2-second
@@ -28,7 +28,7 @@ Reduced motion shows the green border immediately with the same 500 ms hold.
 The button-free sigil confirmation holds for
 1.5 seconds, then automatically opens the one-time **Save with passkey / Not now**
 decision. These timed stages pause while the tab is hidden and stop on exit;
-reduced-motion users skip the movement. Shared footer controls are hidden during
+reduced-motion users skip the movement. The shared menu is hidden during
 the sequence without changing the layout. Declining ends the session; saving
 uses the existing passkey setup and immediately closes the wallet. Both outcomes
 are terminal. Interrupted setup may retain a passkey profile for recovery.

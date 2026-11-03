@@ -53,18 +53,12 @@
 
 @layer base {
   :root {
-    --site-header-height: calc(64px + env(safe-area-inset-top));
-    --site-footer-height: calc(116px + env(safe-area-inset-bottom));
-    --request-frame-min-height: min(720px, calc(100svh - var(--site-header-height) - var(--site-footer-height)));
+    --request-frame-min-height: min(720px, 100svh);
     color: var(--color-foreground);
     background: var(--color-surface-page);
     line-height: normal;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
-  }
-
-  @media (min-width: 640px) {
-    :root { --site-footer-height: calc(76px + env(safe-area-inset-bottom)); }
   }
 
   html,

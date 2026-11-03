@@ -103,6 +103,7 @@ test("a first visit sees the consent screen before the home page, and the choice
   fireEvent.click(view.getByRole("button", { name: "Accept" }));
   expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
   expect(saved).toEqual(["granted"]);
+  fireEvent.click(view.getByRole("button", { name: "Menu" }));
   fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
   fireEvent.click(await view.findByRole("button", { name: "Decline" }));
   expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();

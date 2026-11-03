@@ -107,7 +107,7 @@ if (!("bun" in process.versions)) {
     for (const reducedMotion of ["no-preference", "reduce"] as const) {
       test(`pauses hidden stages, clears the face, and finishes once (${reducedMotion})`, async ({ page }, info) => {
         await page.emulateMedia({ reducedMotion });
-        const footerPosition = await page.getByRole("button", { name: "Cookie settings" }).boundingBox();
+        const footerPosition = await page.getByRole("button", { name: "Menu" }).boundingBox();
         await hideAtStage(page, "capture-complete");
         await page.getByRole("button", { name: "Start selfie check" }).click();
         await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
@@ -150,7 +150,7 @@ if (!("bun" in process.versions)) {
         });
         await page.clock.runFor(2000);
         await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
-        expect(await page.getByRole("button", { name: "Cookie settings" }).boundingBox()).toEqual(footerPosition);
+        expect(await page.getByRole("button", { name: "Menu" }).boundingBox()).toEqual(footerPosition);
         await page.getByRole("button", { name: "Not now" }).click();
         await page.clock.runFor(10_000);
         await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
@@ -176,27 +176,27 @@ if (!("bun" in process.versions)) {
     });
   });
 
-  test("shared chrome stays in place across public screens without developer controls", async ({ page }, info) => {
+  test("menu keeps links and cookie settings available across viewport sizes", async ({ page }, info) => {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
       await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
-      const privacy = page.getByRole("link", { name: "Privacy", exact: true });
-      const position = await privacy.boundingBox();
+      const menu = page.getByRole("button", { name: "Menu" });
+      const position = await menu.boundingBox();
       expect(position).not.toBeNull();
-      expect(position!.y).toBeGreaterThan(viewport.height - 100);
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      expect(await privacy.boundingBox()).toEqual(position);
-      await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
-      await expect(page.locator("#developer-panel")).toHaveCount(0);
-      await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
-      expect(await privacy.boundingBox()).toEqual(position);
+      expect(position!.y).toBeGreaterThan(viewport.height - 80);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
+      await menu.click();
+      await expect(page.getByRole("link", { name: "Privacy" })).toBeVisible();
+      await page.screenshot({ path: `test-results/screenshots/${info.project.name}-menu-${viewport.width}.png`, fullPage: true });
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("link", { name: "Privacy" })).toHaveCount(0);
+      await expect(menu).toBeFocused();
+      await menu.click();
       await page.getByRole("button", { name: "Cookie settings" }).click();
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
-      expect(await privacy.boundingBox()).toEqual(position);
-      await expect(page.getByRole("banner")).toHaveCount(1);
-      await expect(page.getByRole("contentinfo")).toHaveCount(1);
+      expect(await menu.boundingBox()).toEqual(position);
+      await expect(page.getByRole("switch", { name: "Dev mode" })).toHaveCount(0);
     }
   });
 

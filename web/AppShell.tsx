@@ -7,7 +7,7 @@ import type { ConsentChoice, ConsentClient, ConsentState } from "./lib/consent";
 /** Hides shared chrome while the full-screen camera is open. */
 export const CaptureScreenContext = createContext<(active: boolean) => void>(() => {});
 
-/** Hides shared footer controls while a timed sequence plays. */
+/** Hides the menu while a timed sequence plays. */
 export const CompletionAnimationContext = createContext<(active: boolean) => void>(() => {});
 
 /** Chrome and cookie consent around every route. */
@@ -45,11 +45,11 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
   // the user chooses.
   const consentScreen = consentState === "unset" || consentOpen;
 
-  const footerActions = <span className="inline-flex w-[100px] shrink-0 items-center gap-3 whitespace-nowrap">
-    <button className="min-h-8 text-[13px] hover:text-ink hover:underline" aria-hidden={consentState === null || consentState === "unset" || consentOpen || undefined} tabIndex={consentState === null || consentState === "unset" || consentOpen ? -1 : 0} style={{ visibility: consentState === null || consentState === "unset" || consentOpen ? "hidden" : undefined }} onClick={() => { setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
-  </span>;
+  const footerActions = (close: () => void) => consentState !== null && consentState !== "unset" && !consentOpen
+    ? <button className="block w-full rounded-lg px-4 py-2 text-left text-[14px] text-[#0d1421] hover:bg-[#f2f6fc]" onClick={() => { close(); setConsentError(null); setConsentOpen(true); }}>Cookie settings</button>
+    : null;
 
-  return <AppLayout footerActions={footerActions} hideControls={completionAnimating || captureActive} hideHeader={captureActive} authenticator={isAuthenticator && !consentScreen}>
+  return <AppLayout footerActions={footerActions} hideControls={completionAnimating || captureActive} authenticator={isAuthenticator && !consentScreen}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
       <CompletionAnimationContext value={setCompletionAnimating}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></CompletionAnimationContext>
