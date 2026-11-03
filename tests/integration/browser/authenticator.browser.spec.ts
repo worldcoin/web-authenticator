@@ -221,6 +221,22 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
   });
 
+  test("creating a World ID shows progress while the passkey request is pending", async ({ page }) => {
+    await page.addInitScript(() => {
+      navigator.credentials.create = () => new Promise(() => {});
+    });
+    await page.goto("/");
+    const signIn = page.getByRole("button", { name: "Sign in with passkey" });
+    await expect(signIn).toBeDisabled();
+    await expect(signIn).toHaveCSS("background-color", "rgb(231, 235, 240)");
+    await page.getByRole("button", { name: "Create a new World ID" }).click();
+    await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");
+    await page.screenshot({ path: "test-results/screenshots/passkey-progress.png" });
+    await expect(signIn).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create a new World ID" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Link an authenticator/ })).toHaveCount(0);
+  });
+
   test("signed request link names the verified RP and sends an encrypted rejection on cancel", async ({ page }, info) => {
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);

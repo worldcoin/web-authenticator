@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
@@ -278,5 +278,55 @@ test("an active Selfie Check does not offer setup", async () => {
     fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("1 credential in your authenticator.")).toBeTruthy();
     expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
+  } finally { localStorage.clear(); }
+});
+
+for (const mode of ["create", "open"] as const) {
+  test(`${mode} shows progress until the wallet and credentials finish loading`, async () => {
+    localStorage.clear();
+    if (mode === "open") localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+    visit("/");
+    const f = await fixture(11);
+    let finishOpen!: (wallet: WalletKit) => void;
+    let finishList!: (records: CredentialMetadata[]) => void;
+    let reportProgress!: (message: string) => void;
+    const wallet = { ...f.wallet, terminate: () => {}, listCredentials: () => new Promise<CredentialMetadata[]>(resolve => { finishList = resolve; }) } as WalletKit;
+    const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async (_signal, report) => {
+      reportProgress = report;
+      return new Promise<WalletKit>(resolve => { finishOpen = resolve; });
+    } }} consent={decidedConsent} />);
+    try {
+      const action = mode === "open" ? "Sign in with passkey" : "Create a new World ID";
+      const unavailable = mode === "open" ? "Create a new World ID" : "Sign in with passkey";
+      expect((await view.findByRole("button", { name: unavailable }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(view.getByRole("button", { name: action }));
+      expect(view.getByRole("status").textContent).toContain(mode === "open" ? "Use your passkey" : "Create your passkey");
+      expect(view.queryByRole("button", { name: action })).toBeNull();
+      expect(view.queryByRole("button", { name: unavailable })).toBeNull();
+      expect(view.queryByRole("button", { name: /Link an authenticator/ })).toBeNull();
+      act(() => reportProgress("internal registration progress"));
+      expect(view.getByRole("status").textContent).toBe("Opening your authenticator…");
+      await act(async () => { finishOpen(wallet); });
+      expect(await view.findByText("Loading your credentials…")).toBeTruthy();
+      await act(async () => { finishList([]); });
+      expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+      expect(view.queryByRole("status")).toBeNull();
+    } finally { localStorage.clear(); }
+  });
+}
+
+test("failed creation restores actions and offers sign-in when a passkey was saved", async () => {
+  localStorage.clear(); visit("/");
+  const f = await fixture(11);
+  const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async () => {
+    localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+    throw new Error("registration unavailable");
+  } }} consent={decidedConsent} />);
+  try {
+    fireEvent.click(await view.findByRole("button", { name: "Create a new World ID" }));
+    expect(await view.findByRole("alert")).toBeTruthy();
+    expect(view.queryByRole("status")).toBeNull();
+    expect((view.getByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((view.getByRole("button", { name: "Create a new World ID" }) as HTMLButtonElement).disabled).toBe(true);
   } finally { localStorage.clear(); }
 });

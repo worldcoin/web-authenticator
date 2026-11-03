@@ -12,6 +12,7 @@ export function AuthenticatorAccess({ onOpen }: {
   const [records, setRecords] = useState<CredentialMetadata[] | null>(null);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
   const [error, setError] = useState<string>();
   const wallet = useRef<WalletKit | null>(null);
   const operation = useRef<AbortController | null>(null);
@@ -25,12 +26,14 @@ export function AuthenticatorAccess({ onOpen }: {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
     setBusy(true); setError(undefined);
+    setProgress(mode === "create" ? "Create your passkey to continue." : "Use your passkey to sign in.");
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
-      const current = await abortable(onOpen(deadline, () => {}, mode).then(value => {
+      const current = await abortable(onOpen(deadline, () => { if (!deadline.aborted && operation.current === controller) setProgress("Opening your authenticator…"); }, mode).then(value => {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
         wallet.current = value; return value;
       }), deadline);
+      setProgress("Loading your credentials…");
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));
       deadline.throwIfAborted(); setRecords(credentials);
     } catch {
@@ -76,12 +79,15 @@ export function AuthenticatorAccess({ onOpen }: {
       </div> : <div className="flex flex-1 flex-col pt-9">
         <h1 className="text-[40px] leading-[1.04] tracking-[-.033em]">Your World ID,<br />in this browser.</h1>
         <p className="mt-4 max-w-[22em] text-[16px] leading-[1.45] text-[#5c6879]">Sign in with your saved passkey, or create a new World ID.</p>
-        <div className="mt-8 grid gap-2">
-          <button className={`${button} border-[#0a5cfe] bg-[#0a5cfe] text-white enabled:hover:bg-[#0846c2]`} disabled={busy || !saved} onClick={() => void open("open")}>Sign in with passkey</button>
-          <button className={`${button} border-[#c9d2df] bg-white enabled:hover:bg-[#f5f8fd]`} disabled={busy || saved} onClick={() => void open("create")}>{busy ? "Opening authenticator…" : "Create a new World ID"}</button>
-          <button className={`${button} cursor-not-allowed border-[#dde3ec] text-[#657184] [background:repeating-linear-gradient(-45deg,rgba(13,20,33,.048)_0_1px,transparent_1px_6px)]`} disabled>Link an authenticator (coming soon)</button>
+        {busy ? <div className="mt-8 flex items-center gap-3 text-[15px] text-[#5c6879]" role="status" aria-live="polite">
+          <span aria-hidden="true" className="size-6 shrink-0 rounded-full border-2 border-[#d6dde7] border-t-[#0a5cfe] motion-safe:animate-spin" />
+          <span>{progress}</span>
+        </div> : <div className="mt-8 grid gap-2">
+          <button className={`${button} border-[#0a5cfe] bg-[#0a5cfe] text-white enabled:hover:bg-[#0846c2] disabled:cursor-not-allowed disabled:border-[#d6dde7] disabled:bg-[#e7ebf0] disabled:text-[#657184] disabled:opacity-100`} disabled={!saved} onClick={() => void open("open")}>Sign in with passkey</button>
+          <button className={`${button} border-[#c9d2df] bg-white enabled:hover:bg-[#f5f8fd] disabled:cursor-not-allowed disabled:border-[#d6dde7] disabled:bg-[#e7ebf0] disabled:text-[#657184] disabled:opacity-100`} disabled={saved} onClick={() => void open("create")}>Create a new World ID</button>
+          <button className={`${button} cursor-not-allowed border-[#dde3ec] bg-[#e7ebf0] text-[#657184] disabled:opacity-100`} disabled>Link an authenticator (coming soon)</button>
           <p className="mt-1 text-[13px] text-[#657184]">Linking an authenticator isn’t available yet.</p>
-        </div>
+        </div>}
         <p className="mt-auto border-t border-[#d6dde7] pt-4 text-[12px] leading-[1.5] text-[#657184]">Use your passkey to unlock your authenticator in this browser.</p>
       </div>}
       {error && <p className="mt-4 rounded-lg bg-[#fff1f1] p-3 text-[14px] text-[#a32424]" role="alert">{error}</p>}
