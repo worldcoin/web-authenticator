@@ -44,6 +44,7 @@ test("real web SDK sends native-compatible JSON directly to /batch, with no auto
   expect(first.body.batch[0]?.event).toBe("selfie_capture_started");
   const properties = first.body.batch[0]!.properties;
   expect(properties.source).toBe("web_authenticator");
+  expect(properties.environment).toBe("staging");
   expect(properties.session_id).toBe(properties.distinct_id);
   expect(requests[1]?.body.batch[0]?.properties).toMatchObject({ session_id: properties.session_id, duration: 1500, n_attempts: 1 });
   expect(JSON.stringify(requests.map(request => request.body))).not.toContain("PRIVATE");
@@ -77,6 +78,22 @@ test("SDK before_send rejects automatic events and untrusted identity/error prop
   expect(beforeSend({ ...event, properties: { session_id: "account-identifier" } })).toBeNull();
   granted = false;
   expect(beforeSend(event)).toBeNull();
+});
+
+test("deployment destination determines environment, overriding caller properties", () => {
+  for (const [url, environment] of [
+    [host, "staging"],
+    ["https://app-backend.sandbox.toolsforhumanity.com/public/v1/posthog/fuzzy-capture", "sandbox"],
+    ["https://app-backend.toolsforhumanity.com/public/v1/posthog/fuzzy-capture", "production"],
+  ] as const) {
+    const beforeSend = createFuzzyConfiguration("test-project-token", url, () => true).before_send;
+    if (typeof beforeSend !== "function") throw new Error("Expected one before_send filter");
+    const result = beforeSend({
+      event: AnalyticsEvent.selfieCaptureCompleted, uuid: crypto.randomUUID(), timestamp: new Date(),
+      properties: { session_id: crypto.randomUUID(), environment: "caller-controlled" },
+    });
+    expect(result?.properties.environment).toBe(environment);
+  }
 });
 
 test("request telemetry pairs outcomes and attempts without replaying pre-consent or stale completions", () => {

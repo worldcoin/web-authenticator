@@ -16,11 +16,11 @@ export const AnalyticsEvent = {
 export type AnalyticsEventName = typeof AnalyticsEvent[keyof typeof AnalyticsEvent];
 export type AnalyticsProperties = { duration?: number; reason?: string; n_attempts?: number };
 export type AnalyticsConfiguration = { posthogApiKey?: string; posthogFuzzyProxyURL?: string };
-const FUZZY_PROXY_URLS = [
-  "https://app-backend.worldcoin.dev/public/v1/posthog/fuzzy-capture",
-  "https://app-backend.sandbox.toolsforhumanity.com/public/v1/posthog/fuzzy-capture",
-  "https://app-backend.toolsforhumanity.com/public/v1/posthog/fuzzy-capture",
-];
+const FUZZY_PROXY_ENVIRONMENTS = new Map([
+  ["https://app-backend.worldcoin.dev/public/v1/posthog/fuzzy-capture", "staging"],
+  ["https://app-backend.sandbox.toolsforhumanity.com/public/v1/posthog/fuzzy-capture", "sandbox"],
+  ["https://app-backend.toolsforhumanity.com/public/v1/posthog/fuzzy-capture", "production"],
+]);
 const eventNames: readonly string[] = Object.values(AnalyticsEvent);
 const failureReasons = ["timeout", "cancelled", "permission_denied", "camera_missing", "camera_busy", "unsupported", "invalid_data", "expired", "operation_error"];
 const sessionIDPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -52,6 +52,7 @@ export function createFuzzyConfiguration(posthogApiKey: string, posthogFuzzyProx
         event: event.event, uuid: event.uuid, timestamp: event.timestamp,
         properties: {
           token: posthogApiKey, distinct_id: session_id, session_id, source: "web_authenticator", purpose: "faceEnrollment",
+          environment: FUZZY_PROXY_ENVIRONMENTS.get(posthogFuzzyProxyURL),
           $process_person_profile: false, $geoip_disable: true,
           ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0 && duration <= 3_600_000 ? { duration } : {}),
           ...(typeof reason === "string" && failureReasons.includes(reason) ? { reason } : {}),
@@ -102,7 +103,7 @@ export class PostHogAnalyticsService {
     const posthogApiKey = this.configuration.posthogApiKey?.trim();
     const posthogFuzzyProxyURL = this.configuration.posthogFuzzyProxyURL?.trim().replace(/\/$/, "");
     if (!posthogApiKey && !posthogFuzzyProxyURL) return;
-    if (!posthogApiKey || !posthogFuzzyProxyURL || !FUZZY_PROXY_URLS.includes(posthogFuzzyProxyURL)) {
+    if (!posthogApiKey || !posthogFuzzyProxyURL || !FUZZY_PROXY_ENVIRONMENTS.has(posthogFuzzyProxyURL)) {
       throw new Error("analytics_configuration_invalid");
     }
     this.initialization ??= import("posthog-js/no-external").then(({ PostHog }) => {
