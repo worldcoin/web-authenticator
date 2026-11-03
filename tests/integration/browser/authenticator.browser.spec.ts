@@ -186,7 +186,8 @@ if (!("bun" in process.versions)) {
       expect(position).not.toBeNull();
       expect(position!.y).toBeGreaterThan(viewport.height - 80);
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-saved-access-${viewport.width}.png`, fullPage: true });
-      await menu.click();
+      await menu.focus();
+      await menu.press("Enter");
       await expect(page.getByRole("link", { name: "Privacy" })).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-menu-${viewport.width}.png`, fullPage: true });
       await page.keyboard.press("Tab");
