@@ -176,7 +176,7 @@ if (!("bun" in process.versions)) {
     });
   });
 
-  test("menu keeps links and cookie settings available across viewport sizes", async ({ page }, info) => {
+  test("menu keeps links and cookie settings available across viewport sizes", async ({ page, browserName }, info) => {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto("/");
