@@ -51,4 +51,6 @@ query parameter alone does not enable a return link.
 | `/verify` | Request links (`?i=…&k=…`). Loads and validates the request, then runs the selfie flow. Without a valid request it shows the invalid-request screen. |
 | `/authenticator` | Authenticator access. |
 
+After successful sign-in or creation, the app replaces the current URL with `/authenticator` and keeps the wallet open. Reloading requires sign-in again.
+
 The request flow's stages (capture, confirmation, save) stay in memory rather than in the URL: a reload already drops the request. After saving, the flow navigates to `/authenticator` with `replace`, because the spent `/verify` URL is not worth returning to. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because `/verify` reads the request from the raw URL and the default JSON codec would re-encode the bridge key.

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
 import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
@@ -290,7 +290,8 @@ for (const mode of ["create", "open"] as const) {
     let finishOpen!: (wallet: WalletKit) => void;
     let finishList!: (records: CredentialMetadata[]) => void;
     let reportProgress!: (message: string) => void;
-    const wallet = { ...f.wallet, terminate: () => {}, listCredentials: () => new Promise<CredentialMetadata[]>(resolve => { finishList = resolve; }) } as WalletKit;
+    let terminated = 0;
+    const wallet = { ...f.wallet, terminate: () => { terminated++; }, listCredentials: () => new Promise<CredentialMetadata[]>(resolve => { finishList = resolve; }) } as WalletKit;
     const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async (_signal, report) => {
       reportProgress = report;
       return new Promise<WalletKit>(resolve => { finishOpen = resolve; });
@@ -310,6 +311,9 @@ for (const mode of ["create", "open"] as const) {
       expect(await view.findByText("Loading your credentials…")).toBeTruthy();
       await act(async () => { finishList([]); });
       expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+      await waitFor(() => expect(window.location.pathname).toBe("/authenticator"));
+      expect(terminated).toBe(0);
+      expect(view.getByRole("button", { name: "Lock authenticator" })).toBeTruthy();
       expect(view.queryByRole("status")).toBeNull();
     } finally { localStorage.clear(); }
   });
@@ -325,6 +329,7 @@ test("failed creation restores actions and offers sign-in when a passkey was sav
   try {
     fireEvent.click(await view.findByRole("button", { name: "Create a new World ID" }));
     expect(await view.findByRole("alert")).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
     expect(view.queryByRole("status")).toBeNull();
     expect((view.getByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByRole("button", { name: "Create a new World ID" }) as HTMLButtonElement).disabled).toBe(true);

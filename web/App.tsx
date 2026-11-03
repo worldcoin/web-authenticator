@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, RouterProvider, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "./AppShell";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
@@ -15,10 +15,16 @@ const stringifySearch = (search: Record<string, unknown>) => (typeof search.quer
 // A new page needs only a route here: the servers serve index.html for every non-file path.
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
   const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
+  const authenticator = createRoute({ getParentRoute: () => root, id: "authenticator-layout", component: function AuthenticatorRoute() {
+    const navigate = useNavigate();
+    return <AuthenticatorAccess onOpen={services.open} onSignedIn={() => void navigate({ to: "/authenticator", replace: true })} />;
+  } });
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/", component: () => <AuthenticatorAccess onOpen={services.open} /> }),
+    authenticator.addChildren([
+      createRoute({ getParentRoute: () => authenticator, path: "/" }),
+      createRoute({ getParentRoute: () => authenticator, path: "/authenticator" }),
+    ]),
     createRoute({ getParentRoute: () => root, path: "/verify", component: () => <VerifyPage services={services} /> }),
-    createRoute({ getParentRoute: () => root, path: "/authenticator", component: () => <AuthenticatorAccess onOpen={services.open} /> }),
   ]);
   return createRouter({ routeTree, parseSearch, stringifySearch });
 }

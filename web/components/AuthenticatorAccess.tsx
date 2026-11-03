@@ -5,8 +5,9 @@ import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
 
 const SelfieCheck = lazy(() => import("./SelfieCheck"));
 
-export function AuthenticatorAccess({ onOpen }: {
+export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   onOpen: (signal: AbortSignal, progress: (message: string) => void, mode?: "open" | "create" | "either") => Promise<WalletKit>;
+  onSignedIn: () => void;
 }) {
   const [saved, setSaved] = useState(hasSavedWallet);
   const [records, setRecords] = useState<CredentialMetadata[] | null>(null);
@@ -35,7 +36,7 @@ export function AuthenticatorAccess({ onOpen }: {
       }), deadline);
       setProgress("Loading your credentials…");
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));
-      deadline.throwIfAborted(); setRecords(credentials);
+      deadline.throwIfAborted(); setRecords(credentials); onSignedIn();
     } catch {
       wallet.current?.terminate(); wallet.current = null;
       if (!controller.signal.aborted) setError("Your authenticator couldn’t be opened. If a passkey was saved, sign in to continue.");
