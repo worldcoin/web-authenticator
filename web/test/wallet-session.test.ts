@@ -4,7 +4,7 @@ import { PRF_INPUT_V1_LABEL, PRF_INPUT_V1_SHA256 } from "../../packages/contract
 
 describe("passkey wallet key boundary", () => {
   test("rejects malformed metadata instead of silently creating a replacement wallet", () => {
-    for (const value of ["null", "{}", '{"version":2,"credentialId":"ab"}', '{"version":1,"credentialId":"a"}', '{"version":1,"credentialId":"zz"}']) {
+    for (const value of ["{", "null", "{}", '{"version":2,"credentialId":"ab"}', '{"version":1,"credentialId":"a"}', '{"version":1,"credentialId":"zz"}']) {
       expect(() => parseWalletProfile(value)).toThrow();
     }
     expect(parseWalletProfile('{"version":1,"credentialId":"abcd","seed":"discard"}'))

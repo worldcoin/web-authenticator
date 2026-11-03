@@ -15,6 +15,7 @@ const stringifySearch = (search: Record<string, unknown>) => (typeof search.quer
 // A new page needs only a route here: the servers serve index.html for every non-file path.
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
   const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
+  // Both paths share this layout so navigation keeps the unlocked wallet mounted.
   const authenticator = createRoute({ getParentRoute: () => root, id: "authenticator-layout", component: function AuthenticatorRoute() {
     const navigate = useNavigate();
     return <AuthenticatorAccess onOpen={services.open} onSignedIn={() => void navigate({ to: "/authenticator", replace: true })} />;

@@ -6,6 +6,7 @@ import { signedRequest } from "../../tests/integration/fixtures/request";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
+import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
 
@@ -236,15 +237,16 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
     return f.wallet;
   } }} consent={decidedConsent} />);
-  expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((view.getByRole("button", { name: /Link an authenticator/ }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
-  expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
-  expect(mode).toBe("create");
-  expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
-  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
-  localStorage.clear();
+  try {
+    expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByRole("button", { name: /Link an authenticator/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
+    expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+    expect(mode).toBe("create");
+    expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  } finally { localStorage.clear(); }
 });
 
 test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
@@ -335,3 +337,20 @@ test("failed creation restores actions and offers sign-in when a passkey was sav
     expect((view.getByRole("button", { name: "Create a new World ID" }) as HTMLButtonElement).disabled).toBe(true);
   } finally { localStorage.clear(); }
 });
+
+for (const [cause, expected] of [
+  [new WalletOpenError("Wallet setup is already running in another tab."), "Wallet setup is already running in another tab."],
+  [new WalletOpenError("Saved wallet metadata is invalid. Do not clear site data if you need this wallet."), "Saved wallet metadata is invalid. Do not clear site data if you need this wallet."],
+  [new Error("private worker error"), "The encrypted wallet could not initialize. Close other authenticator tabs and retry."],
+] as const) {
+  test(`wallet errors surface safe recovery guidance: ${expected}`, async () => {
+    localStorage.clear(); visit("/");
+    const f = await fixture(11);
+    const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async () => { throw cause; } }} consent={decidedConsent} />);
+    try {
+      fireEvent.click(await view.findByRole("button", { name: "Create a new World ID" }));
+      expect((await view.findByRole("alert")).textContent).toBe(expected);
+      expect(view.queryByText("private worker error")).toBeNull();
+    } finally { localStorage.clear(); }
+  });
+}

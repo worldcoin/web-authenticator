@@ -189,6 +189,8 @@ if (!("bun" in process.versions)) {
       await menu.click();
       await expect(page.getByRole("link", { name: "Privacy" })).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-menu-${viewport.width}.png`, fullPage: true });
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("link", { name: "World ID", exact: true })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(page.getByRole("link", { name: "Privacy" })).toHaveCount(0);
       await expect(menu).toBeFocused();
@@ -378,7 +380,7 @@ if (!("bun" in process.versions)) {
     expect(before).toBe(1);
     await page.goto("http://localhost:4194/");
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("Your authenticator couldn’t be opened", { timeout: 90_000 });
+    await expect(page.getByRole("alert")).toContainText("Retry with your existing passkey", { timeout: 90_000 });
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });

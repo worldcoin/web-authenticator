@@ -22,7 +22,7 @@ export const primaryAction = `${action} border-foreground bg-foreground text-whi
 export const secondaryAction = `${action} border-[#d8d8d8] bg-white text-foreground`;
 export const returnLink = "block text-center focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-accent";
 
-/** Sign-in, consent and home screens. */
+/** Sign-in and consent screens. */
 export const signinPage = "flex w-full flex-1 flex-col text-ink";
 const signinFocus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue";
 const signinAction = `flex w-full min-h-[52px] items-center justify-center rounded-full px-6 text-[16px] font-medium transition-[background-color] duration-120 ease-[ease] ${signinFocus}`;
@@ -30,4 +30,5 @@ export const signinPrimary = `${signinAction} gap-2.5 bg-ink text-white enabled:
 export const signinSecondary = `${signinAction} border border-line bg-white text-ink enabled:hover:bg-[#f1f0ee]`;
 export const signinHeading = "font-[450] text-ink focus:outline-none";
 export const signinError = "mt-4 rounded-2xl border border-[#f3c7c7] bg-[#fff6f6] px-4 py-3 text-[14px] leading-[1.5] text-[#a32424]";
-export const signinLink = signinFocus;
+
+export const menuItem = "block rounded-lg px-4 py-2 text-[14px] text-[#0d1421] hover:bg-[#f2f6fc] focus-visible:outline-2 focus-visible:outline-[#0a5cfe]";
