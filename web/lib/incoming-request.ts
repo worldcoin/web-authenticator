@@ -1,6 +1,7 @@
 import { openBridge } from './bridge'
 import type { WalletKit } from './walletkit'
 import { abortable } from './async'
+import { selfieCheckRequestTelemetry } from './selfie-check-request-telemetry'
 import { parseConnector, returnUrl } from './connector'
 import {
 	credentialAvailability,
@@ -60,21 +61,28 @@ export async function loadIncomingRequest(
 			await validateSignature(payload.proof_request, signal)
 		},
 		deliver: async (proof, signal) => {
-			const response = JSON.parse(proof) as {
-				id?: unknown
-				error?: unknown
-				responses?: unknown
-				nonce?: unknown
+			const telemetry = selfieCheckRequestTelemetry.deliveryStarted()
+			try {
+				const response = JSON.parse(proof) as {
+					id?: unknown
+					error?: unknown
+					responses?: unknown
+					nonce?: unknown
+				}
+				if (
+					response.error ||
+					!Array.isArray(response.responses) ||
+					!response.responses.length ||
+					response.id !== payload.proof_request.id
+				)
+					throw new Error('WalletKit returned an error or mismatched proof response.')
+				checkExpiry(payload.proof_request)
+				await bridge.send({ proof_response: response }, signal)
+				telemetry.succeeded()
+			} catch (error) {
+				telemetry.failed(error)
+				throw error
 			}
-			if (
-				response.error ||
-				!Array.isArray(response.responses) ||
-				!response.responses.length ||
-				response.id !== payload.proof_request.id
-			)
-				throw new Error('WalletKit returned an error or mismatched proof response.')
-			checkExpiry(payload.proof_request)
-			await bridge.send({ proof_response: response }, signal)
 		},
 		cancel: signal => bridge.send({ error_code: 'verification_rejected' }, signal),
 	}

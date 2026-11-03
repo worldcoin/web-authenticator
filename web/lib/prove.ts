@@ -2,8 +2,10 @@ import { abortable } from "./async";
 import type { WalletKit } from "./walletkit";
 import { checkRequestCredentials, type IncomingRequest } from "./incoming-request";
 import { checkExpiry } from "./proof-request";
+import { selfieCheckRequestTelemetry } from "./selfie-check-request-telemetry";
 
 export async function createProof(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal, progress: (message: string) => void): Promise<string> {
+  const telemetry = selfieCheckRequestTelemetry.proofGenerationStarted();
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
   const terminate = () => wallet.terminate();
   deadline.addEventListener("abort", terminate, { once: true });
@@ -21,8 +23,10 @@ export async function createProof(incoming: IncomingRequest, wallet: WalletKit, 
     if (response.id !== incoming.proof.id || response.error || !Array.isArray(response.responses) || !response.responses.length) {
       throw new Error("WalletKit returned an invalid proof response.");
     }
+    telemetry.succeeded();
     return proof;
   } catch (cause) {
+    telemetry.failed(cause);
     wallet.terminate();
     throw new Error("Proof generation failed or timed out. Unlock to retry, or start a fresh request at the requesting app.", { cause });
   } finally {

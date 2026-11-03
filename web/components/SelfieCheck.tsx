@@ -78,7 +78,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     const signal = AbortSignal.any([active.signal, timeout.signal]);
     void captureSelfie(video.current, signal, next => {
       if (!signal.aborted) setState(next);
-    }, { retainPreviewUntilAbort: !!completion.current }).then(result => {
+    }, { retainPreviewUntilAbort: !!completion.current, trackAnalytics: !!completion.current }).then(result => {
       if (signal.aborted) return;
       imageUrl.current = URL.createObjectURL(result.image);
       publicCompleted.current = !!completion.current;

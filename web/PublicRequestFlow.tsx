@@ -6,6 +6,7 @@ import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/inco
 import { checkExpiry } from "./lib/proof-request";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
+import { selfieCheckRequestTelemetry } from "./lib/selfie-check-request-telemetry";
 import { captureFrame, requestFrame } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
@@ -95,6 +96,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     if (!incoming || loading || failed || expired || unsupported || flow.stage !== "intro") return;
     // A suspended tab can click before the expiry timer runs.
     try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
+    selfieCheckRequestTelemetry.consentAccepted();
     setFlow({ stage: "capture" });
   };
   const complete = () => {

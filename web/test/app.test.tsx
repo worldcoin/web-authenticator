@@ -9,6 +9,7 @@ import { RequestExpiredError } from "../lib/proof-request";
 import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import * as capture from "../lib/selfie-capture";
+import { analyticsService, AnalyticsEvent } from "../lib/analytics";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -135,6 +136,38 @@ test("unreadable consent storage asks again rather than assuming a choice", asyn
   const consent: ConsentClient = { read: async () => { throw new Error("offline"); }, save: async choice => choice };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
+});
+
+test("failed consent withdrawal stops analytics and stale reads cannot re-enable it", async () => {
+  const f = await fixture(11);
+  const consent: ConsentClient = { read: async () => "granted", save: async () => { throw new Error("storage blocked"); } };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+  await view.findByRole("button", { name: "Start selfie check" });
+  fireEvent.click(view.getByRole("button", { name: "Menu" }));
+  fireEvent.click(view.getByRole("button", { name: "Cookie settings" }));
+  fireEvent.click(await view.findByRole("button", { name: "Decline" }));
+  await view.findByText("Your choice couldn’t be saved. Try again.");
+  expect(analyticsService.hasConsent).toBe(false);
+  await act(async () => { window.dispatchEvent(new StorageEvent("storage", { key: "wid_consent" })); });
+  expect(analyticsService.hasConsent).toBe(false);
+});
+
+test("a consented valid request is observed without treating local completion as a proof or failure", async () => {
+  const f = await fixture(11);
+  const consent: ConsentClient = { read: async () => "granted", save: async choice => choice };
+  const events: string[] = [];
+  const track = spyOn(analyticsService, "track").mockImplementation(async eventName => { events.push(eventName); return undefined; });
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    image: new Blob(["private image"], { type: "image/jpeg" }),
+    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    await view.findByRole("heading", { name: "Selfie completed" });
+    expect(events).toEqual(["$screen", AnalyticsEvent.selfieCheckDataControlsContinued]);
+    expect(f.calls.deliver).toEqual([]);
+  } finally { track.mockRestore(); captureMock.mockRestore(); }
 });
 
 test("public Selfie capture finishes ephemerally without opening a wallet or sending a proof", async () => {
