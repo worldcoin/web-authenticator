@@ -190,7 +190,8 @@ if (!("bun" in process.versions)) {
       await menu.press("Enter");
       await expect(page.getByRole("link", { name: "Privacy" })).toBeVisible();
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-menu-${viewport.width}.png`, fullPage: true });
-      await page.keyboard.press("Tab");
+      // macOS WebKit uses Option-Tab to include links in keyboard navigation.
+      await page.keyboard.press(browserName === "webkit" && process.platform === "darwin" ? "Alt+Tab" : "Tab");
       await expect(page.getByRole("link", { name: "World ID", exact: true })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(page.getByRole("link", { name: "Privacy" })).toHaveCount(0);
