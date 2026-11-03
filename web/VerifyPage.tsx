@@ -1,7 +1,7 @@
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { use, useEffect, useRef, useState } from "react";
 import { AnalyticsConsentContext, CompletionAnimationContext } from "./AppShell";
-import { analytics } from "./lib/analytics";
+import { selfieCheckRequestTelemetry } from "./lib/selfie-check-request-telemetry";
 import { publicRequestUnsupportedReason } from "./lib/incoming-request";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
@@ -26,7 +26,7 @@ export function VerifyPage({ services }: { services: Services }) {
   const hadIncoming = useRef(false);
 
   useEffect(() => {
-    analytics.startFlow();
+    selfieCheckRequestTelemetry.startRequest();
     const controller = new AbortController();
     source.current ??= window.location.href;
     const url = new URL(source.current);
@@ -54,10 +54,10 @@ export function VerifyPage({ services }: { services: Services }) {
     if (consent !== "granted" || loading) return;
     // Disposal after local capture must not turn a valid request into a failure.
     if (!incoming && hadIncoming.current) return;
-    if (loadExpired || expired) analytics.once("request", "failed", "expired");
-    else if (loadFailed || !incoming) analytics.once("request", "failed", "invalid_data");
-    else if (publicRequestUnsupportedReason(incoming)) analytics.once("request", "failed", "unsupported");
-    else analytics.once("request", "started");
+    if (loadExpired || expired) selfieCheckRequestTelemetry.requestFailed("expired");
+    else if (loadFailed || !incoming) selfieCheckRequestTelemetry.requestFailed("invalid_data");
+    else if (publicRequestUnsupportedReason(incoming)) selfieCheckRequestTelemetry.requestFailed("unsupported");
+    else selfieCheckRequestTelemetry.consentShown();
   }, [consent, loading, loadExpired, expired, loadFailed, incoming]);
 
   useEffect(() => {

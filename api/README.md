@@ -34,12 +34,6 @@ return JSON 404; everything else falls through to the web build.
 
 ## Configuration
 
-`POST /api/analytics` accepts bounded, consent-declared JSON telemetry batches in
-both Bun and the Cloudflare Worker. Forwarding is disabled until server-only
-`POSTHOG_FUZZY_KEY` and `POSTHOG_FUZZY_HOST` are configured. See
-[analytics](../docs/analytics.md) for the event contract, metric definitions and
-pending warehouse/display integration.
-
 [`lib/config.ts`](lib/config.ts) reads the listener settings and defines response
 security headers. `AUTHENTICATOR_HOST` defaults to `127.0.0.1`; `PORT` defaults to
 `4173` (`AUTHENTICATOR_PORT` is also accepted). Invalid ports fail startup.

@@ -1,170 +1,134 @@
-import {
-  ANALYTICS_BATCH_SIZE, isAnalyticsEvent,
-  type AnalyticsEvent, type AnalyticsReason, type AnalyticsStatus, type AnalyticsStep,
-} from "../../packages/contracts/src/analytics";
+import type { CaptureResult, PostHog, PostHogConfig } from "posthog-js";
 import type { ConsentState } from "./consent";
-import { CONSENT_VERSION } from "./consent";
 
-export function analyticsReason(error: unknown): AnalyticsReason {
-  const name = error instanceof Error ? error.name : "";
-  switch (name) {
-    case "TimeoutError": return "timeout";
-    case "AbortError": return "cancelled";
-    case "NotAllowedError": case "SecurityError": return "permission_denied";
-    case "NotFoundError": case "OverconstrainedError": return "camera_missing";
-    case "NotReadableError": return "camera_busy";
-    case "NotSupportedError": return "unsupported";
-    case "InvalidStateError": return "invalid_state";
-    case "DataError": case "SyntaxError": return "invalid_data";
-    case "NetworkError": return "network_error";
-    default: return "operation_error";
-  }
+export const AnalyticsEvent = {
+  selfieCheckDataControlsContinued: "selfie_check_data_controls_continued",
+  selfieCaptureStarted: "selfie_capture_started",
+  selfieCaptureCompleted: "selfie_capture_completed",
+  selfieCaptureFailed: "selfie_capture_failed",
+  proofGenerationStarted: "world_id_proof_generation_started",
+  proofGenerationCompleted: "world_id_proof_generation_completed",
+  proofGenerationFailed: "world_id_proof_generation_failed",
+  proofSharingStarted: "world_id_proof_sharing_started",
+  proofSharingSuccess: "world_id_proof_sharing_success",
+  proofSharingFailed: "world_id_proof_sharing_failed",
+} as const;
+export type AnalyticsEventName = typeof AnalyticsEvent[keyof typeof AnalyticsEvent];
+export type AnalyticsProperties = { duration?: number; reason?: string; n_attempts?: number };
+export type AnalyticsConfiguration = { posthogApiKey?: string; posthogFuzzyProxyURL?: string };
+const FUZZY_PROXY_URLS = [
+  "https://app-backend.worldcoin.dev/public/v1/posthog/fuzzy-capture",
+  "https://app-backend.sandbox.toolsforhumanity.com/public/v1/posthog/fuzzy-capture",
+  "https://app-backend.toolsforhumanity.com/public/v1/posthog/fuzzy-capture",
+];
+const eventNames: readonly string[] = Object.values(AnalyticsEvent);
+const failureReasons = ["timeout", "cancelled", "permission_denied", "camera_missing", "camera_busy", "unsupported", "invalid_data", "expired", "operation_error"];
+const sessionIDPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Match native fuzzy configuration; the SDK owns transport, retries and lifecycle. */
+export function createFuzzyConfiguration(posthogApiKey: string, posthogFuzzyProxyURL: string, hasConsent: () => boolean): Partial<PostHogConfig> {
+  return {
+    api_host: posthogFuzzyProxyURL,
+    autocapture: false, capture_pageview: false, capture_pageleave: false, capture_exceptions: false,
+    capture_performance: false, disable_session_recording: true, disable_surveys: true,
+    disable_conversations: true, disable_product_tours: true, disable_external_dependency_loading: true,
+    advanced_disable_flags: true, advanced_disable_feature_flags: true,
+    persistence: "memory", disable_persistence: true, person_profiles: "never",
+    save_referrer: false, save_campaign_params: false, ip: false,
+    opt_out_capturing_by_default: true,
+    // The web SDK wraps even immediate captures in a batch envelope.
+    request_batching: false, disable_compression: true, disable_beacon: true, api_transport: "fetch",
+    rewriteRequestPath: url => {
+      url.pathname = `${new URL(posthogFuzzyProxyURL).pathname}/batch`;
+      return url;
+    },
+    before_send: event => {
+      if (!hasConsent() || (event.event !== "$screen" && !eventNames.includes(event.event))) return null;
+      const { session_id, duration, reason, n_attempts, $screen_name } = event.properties;
+      if (typeof session_id !== "string" || !sessionIDPattern.test(session_id)) return null;
+      if (event.event === "$screen" && $screen_name !== "selfie_check_data_controls") return null;
+      // Rebuild after SDK enrichment: no URL/query, referrer, account or device properties.
+      return {
+        event: event.event, uuid: event.uuid, timestamp: event.timestamp,
+        properties: {
+          token: posthogApiKey, distinct_id: session_id, session_id, source: "web_authenticator", purpose: "faceEnrollment",
+          $process_person_profile: false, $geoip_disable: true,
+          ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0 && duration <= 3_600_000 ? { duration } : {}),
+          ...(typeof reason === "string" && failureReasons.includes(reason) ? { reason } : {}),
+          ...(typeof n_attempts === "number" && Number.isInteger(n_attempts) && n_attempts >= 1 && n_attempts <= 10_000 ? { n_attempts } : {}),
+          ...(event.event === "$screen" ? { $screen_name } : {}),
+        },
+      };
+    },
+    on_request_error: response => {
+      // eslint-disable-next-line no-console -- Only an operational status, never response/event contents.
+      console.warn("analytics_request_failed", { status: response.statusCode });
+    },
+  };
 }
 
-type Outcome = Exclude<AnalyticsStatus, "started">;
-type Finish = (status: Outcome, reason?: AnalyticsReason) => void;
-type Pending = { event: AnalyticsEvent; failures: number };
-
-/** One consented page visit; no cookies, persistent identity, replay or automatic capture. */
-export class FlowAnalytics {
+export class PostHogAnalyticsService {
+  private postHog?: PostHog;
+  private initialization?: Promise<PostHog>;
   private consent = false;
-  private generation = 0;
-  private flowGeneration = 0;
-  private flowId?: string;
-  private sequence = 0;
-  private attempts = new Map<AnalyticsStep, number>();
-  private seen = new Set<string>();
-  private pending: Pending[] = [];
-  private timer?: ReturnType<typeof setTimeout>;
-  private sending = false;
-  private background = false;
-  private exitFlushQueued = false;
-  private requests = new Set<AbortController>();
+  private sessionID?: string;
+  consentRevision = 0;
 
-  constructor(private readonly send: (url: string, init: RequestInit) => Promise<Response> = (url, init) => fetch(url, init)) {}
+  constructor(private readonly configuration: AnalyticsConfiguration = {
+    posthogApiKey: import.meta.env?.VITE_POSTHOG_API_KEY,
+    posthogFuzzyProxyURL: import.meta.env?.VITE_POSTHOG_FUZZY_PROXY_URL,
+  }) {}
+
+  get hasConsent() { return this.consent; }
 
   setConsent(state: ConsentState | null) {
     if (this.consent === (state === "granted")) return;
     this.consent = state === "granted";
-    this.generation++;
-    this.flowId = undefined;
-    this.sequence = 0;
-    this.pending = [];
-    this.attempts.clear(); this.seen.clear();
-    clearTimeout(this.timer); this.timer = undefined;
-    this.requests.forEach(request => request.abort()); this.requests.clear();
-    this.sending = false;
+    this.consentRevision++;
+    this.sessionID = undefined;
+    if (!this.consent) this.postHog?.opt_out_capturing();
   }
 
-  /** Each /verify visit gets fresh attribution; already queued batches retain their original IDs. */
-  startFlow() {
-    this.flowGeneration++;
-    this.flowId = undefined;
-    this.sequence = 0;
-    this.attempts.clear(); this.seen.clear();
+  startSession() { this.sessionID = undefined; }
+
+  async shutdown() {
+    this.setConsent("denied");
+    const postHog = this.postHog;
+    this.postHog = undefined; this.initialization = undefined;
+    await postHog?.shutdown();
   }
 
-  record(step: AnalyticsStep, status: AnalyticsStatus, fields: { attempt?: number; duration_ms?: number; reason?: AnalyticsReason } = {}): boolean {
-    if (!this.consent || this.pending.length >= 128) return false;
-    try {
-      this.flowId ??= crypto.randomUUID();
-      const event: AnalyticsEvent = {
-        uuid: crypto.randomUUID(), flow_id: this.flowId, sequence: ++this.sequence,
-        timestamp: new Date().toISOString(),
-        step, status, attempt: fields.attempt ?? 0, ...fields,
-      };
-      if (!isAnalyticsEvent(event)) return false;
-      this.pending.push({ event, failures: 0 });
-      if (this.background && !this.exitFlushQueued) {
-        this.exitFlushQueued = true;
-        // Include cancellation outcomes emitted asynchronously by pagehide handlers.
-        queueMicrotask(() => { this.exitFlushQueued = false; void this.flush(true); });
-      } else this.schedule(250);
-      return true;
-    } catch { return false; } // Analytics must never break camera, passkey or proof work.
-  }
-
-  once(step: AnalyticsStep, status: AnalyticsStatus, reason?: AnalyticsReason) {
-    const key = `${step}:${status}`;
-    if (!this.seen.has(key) && this.record(step, status, { reason })) this.seen.add(key);
-  }
-
-  begin(step: AnalyticsStep): Finish {
-    const generation = this.generation;
-    const flowGeneration = this.flowGeneration;
-    const attempt = (this.attempts.get(step) ?? 0) + 1;
-    const started = performance.now();
-    const accepted = this.record(step, "started", { attempt });
-    if (accepted) this.attempts.set(step, attempt);
-    let finished = false;
-    return (status, reason) => {
-      if (finished) return;
-      finished = true;
-      // Never replay pre-consent work or an old attempt after consent is revoked/regranted.
-      if (!accepted || generation !== this.generation || flowGeneration !== this.flowGeneration) return;
-      this.record(step, status, { attempt, reason, duration_ms: Math.min(3_600_000, Math.max(0, Math.round(performance.now() - started))) });
-    };
-  }
-
-  async run<T>(step: AnalyticsStep, operation: () => Promise<T>): Promise<T> {
-    const finish = this.begin(step);
-    try { const result = await operation(); finish("completed"); return result; }
-    catch (error) {
-      const reason = analyticsReason(error);
-      finish(reason === "cancelled" ? "cancelled" : "failed", reason);
-      throw error;
+  private async initialize(): Promise<PostHog | undefined> {
+    const posthogApiKey = this.configuration.posthogApiKey?.trim();
+    const posthogFuzzyProxyURL = this.configuration.posthogFuzzyProxyURL?.trim().replace(/\/$/, "");
+    if (!posthogApiKey && !posthogFuzzyProxyURL) return;
+    if (!posthogApiKey || !posthogFuzzyProxyURL || !FUZZY_PROXY_URLS.includes(posthogFuzzyProxyURL)) {
+      throw new Error("analytics_configuration_invalid");
     }
+    this.initialization ??= import("posthog-js/no-external").then(({ PostHog }) => {
+      const postHog = new PostHog();
+      postHog.init(posthogApiKey, createFuzzyConfiguration(posthogApiKey, posthogFuzzyProxyURL, () => this.consent));
+      this.postHog = postHog;
+      return postHog;
+    });
+    return this.initialization;
   }
 
-  private schedule(delay: number) {
-    if (this.timer !== undefined || !this.consent || !this.pending.length) return;
-    this.timer = setTimeout(() => { this.timer = undefined; void this.flush(this.background); }, delay);
-  }
-
-  setBackground(background: boolean) {
-    this.background = background;
-    if (background) void this.flush(true);
-  }
-
-  /** keepalive may resend an in-flight batch on page exit; UUIDs and $insert_id stay stable. */
-  async flush(keepalive = false): Promise<void> {
-    if (!this.consent || !this.pending.length || (this.sending && !keepalive) || this.requests.size >= 2) return;
-    clearTimeout(this.timer); this.timer = undefined;
-    // On exit prioritize the most recent outcomes, including proof delivery.
-    const batch = keepalive ? this.pending.slice(-ANALYTICS_BATCH_SIZE) : this.pending.slice(0, ANALYTICS_BATCH_SIZE);
-    const generation = this.generation;
-    const controller = new AbortController();
-    this.requests.add(controller);
-    if (!keepalive) this.sending = true;
-    let retryDelay = 250;
+  async track(eventName: AnalyticsEventName | "$screen", properties: AnalyticsProperties & { $screen_name?: string } = {}): Promise<CaptureResult | undefined> {
+    if (!this.consent) return;
+    const revision = this.consentRevision;
+    const sessionID = this.sessionID ??= crypto.randomUUID();
     try {
-      const response = await this.send("/api/analytics", {
-        method: "POST", credentials: "same-origin", cache: "no-store", referrerPolicy: "no-referrer",
-        headers: { "Content-Type": "application/json", "X-Analytics-Consent": `${CONSENT_VERSION}.granted` },
-        body: JSON.stringify(batch.map(item => item.event)), keepalive,
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6_000)]),
-      });
-      if (generation !== this.generation) return;
-      if (response.status === 403) { this.setConsent("denied"); return; }
-      if (!response.ok && response.status !== 400 && response.status !== 413) throw new Error("analytics_unavailable");
-      // eslint-disable-next-line no-console -- Diagnose discarded telemetry without logging event contents.
-      if (!response.ok) console.warn("analytics_batch_rejected", { status: response.status });
-      this.pending = this.pending.filter(item => !batch.includes(item));
+      const postHog = await this.initialize();
+      if (!postHog || !this.consent || revision !== this.consentRevision) return;
+      if (!postHog.has_opted_in_capturing()) postHog.opt_in_capturing({ captureEventName: false });
+      return postHog.capture(eventName, { ...properties, session_id: sessionID });
     } catch {
-      if (generation !== this.generation || controller.signal.aborted) return;
-      for (const item of batch) item.failures++;
-      // eslint-disable-next-line no-console -- Report exhausted delivery without exposing event contents.
-      if (batch.some(item => item.failures >= 4)) console.warn("analytics_retry_exhausted");
-      this.pending = this.pending.filter(item => item.failures < 4);
-      retryDelay = Math.min(8_000, 1_000 * 2 ** (batch[0]?.failures ?? 0)) * (0.75 + Math.random() * 0.5);
-    } finally {
-      this.requests.delete(controller);
-      if (generation === this.generation) {
-        if (!keepalive) this.sending = false;
-        this.schedule(retryDelay);
-      }
+      // eslint-disable-next-line no-console -- Analytics failure cannot replace the capture/proof result.
+      console.warn("analytics_capture_failed");
+      return;
     }
   }
 }
 
-export const analytics = new FlowAnalytics();
+export const analyticsService = new PostHogAnalyticsService();

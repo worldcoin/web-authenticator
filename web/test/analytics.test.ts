@@ -1,150 +1,124 @@
-import { afterEach, expect, test } from "bun:test";
-import { FlowAnalytics, analyticsReason } from "../lib/analytics";
-import { isAnalyticsEvent, type AnalyticsEvent } from "../../packages/contracts/src/analytics";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { waitFor } from "@testing-library/react";
+import { AnalyticsEvent, createFuzzyConfiguration, PostHogAnalyticsService } from "../lib/analytics";
+import { SelfieCheckRequestTelemetry, failureReason } from "../lib/selfie-check-request-telemetry";
 
-const clients: FlowAnalytics[] = [];
-afterEach(() => { clients.forEach(client => client.setConsent("denied")); clients.length = 0; });
-function fixture(status = 204) {
-  const batches: AnalyticsEvent[][] = [];
-  const requests: RequestInit[] = [];
-  const client = new FlowAnalytics((async (_url, init) => {
-    requests.push(init!); batches.push(JSON.parse(String(init?.body)));
-    return new Response(null, { status });
+const host = "https://app-backend.worldcoin.dev/public/v1/posthog/fuzzy-capture";
+const services: PostHogAnalyticsService[] = [];
+let restore: (() => void) | undefined;
+beforeAll(() => {
+  GlobalRegistrator.register({ url: "https://auth.example/verify?k=PRIVATE-BRIDGE-KEY" });
+  // The real SDK intentionally ignores HappyDOM's bot user agent.
+  Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36" });
+  Object.defineProperty(navigator, "webdriver", { configurable: true, value: false });
+});
+afterEach(async () => {
+  await Promise.all(services.splice(0).map(service => service.shutdown()));
+  restore?.(); restore = undefined;
+});
+afterAll(() => GlobalRegistrator.unregister());
+
+test("real web SDK sends native-compatible JSON directly to /batch, with no automatic or private properties", async () => {
+  type Envelope = { api_key: string; batch: { event: string; properties: Record<string, unknown> }[] };
+  const requests: { url: string; init: RequestInit; body: Envelope }[] = [];
+  const mock = spyOn(globalThis, "fetch").mockImplementation((async (url, init) => {
+    requests.push({ url: String(url), init: init!, body: JSON.parse(String(init?.body)) });
+    return Response.json({ status: 1 });
   }) as typeof fetch);
-  clients.push(client);
-  return { client, batches, requests };
-}
-
-test("collects nothing before consent, on denial, or retroactively after grant", async () => {
-  const { client, batches } = fixture();
-  const finish = client.begin("selfie_capture");
-  client.once("request", "started");
-  client.setConsent("denied");
-  client.record("selfie_capture", "completed");
-  await client.flush();
-  expect(batches).toEqual([]);
-  client.setConsent("granted");
-  finish("completed");
-  client.once("request", "started");
-  await client.flush();
-  expect(batches.flat().map(e => [e.step, e.status, e.attempt])).toEqual([["request", "started", 0]]);
+  restore = () => mock.mockRestore();
+  const service = new PostHogAnalyticsService({ posthogApiKey: "test-project-token", posthogFuzzyProxyURL: host });
+  services.push(service);
+  expect(await service.track(AnalyticsEvent.selfieCaptureStarted)).toBeUndefined();
+  expect(requests).toEqual([]);
+  service.setConsent("granted");
+  await service.track(AnalyticsEvent.selfieCaptureStarted, { n_attempts: 1 });
+  await service.track(AnalyticsEvent.selfieCaptureCompleted, { duration: 1500, n_attempts: 1 });
+  await waitFor(() => expect(requests).toHaveLength(2));
+  const first = requests[0]!;
+  expect(new URL(first.url).pathname).toBe("/public/v1/posthog/fuzzy-capture/batch");
+  expect(new URL(first.url).origin).toBe(new URL(host).origin);
+  expect(new Headers(first.init.headers).get("content-type")).toBe("application/json");
+  expect(first.body.api_key).toBe("test-project-token");
+  expect(first.body.batch).toHaveLength(1);
+  expect(first.body.batch[0]?.event).toBe("selfie_capture_started");
+  const properties = first.body.batch[0]!.properties;
+  expect(properties.source).toBe("web_authenticator");
+  expect(properties.session_id).toBe(properties.distinct_id);
+  expect(requests[1]?.body.batch[0]?.properties).toMatchObject({ session_id: properties.session_id, duration: 1500, n_attempts: 1 });
+  expect(JSON.stringify(requests.map(request => request.body))).not.toContain("PRIVATE");
+  expect(properties.token).toBe("test-project-token");
+  for (const key of ["$current_url", "$referrer", "$device_id", "$raw_user_agent", "$set", "$set_once"]) {
+    expect(properties).not.toHaveProperty(key);
+    expect(first.body.batch[0]).not.toHaveProperty(key);
+  }
+  service.setConsent("denied");
+  await service.track(AnalyticsEvent.proofSharingSuccess);
+  expect(requests).toHaveLength(2);
+  service.setConsent("granted");
+  await service.track(AnalyticsEvent.selfieCaptureStarted);
+  await waitFor(() => expect(requests).toHaveLength(3));
+  expect(requests[2]!.body.batch[0]?.properties.session_id).not.toBe(properties.session_id);
 });
 
-test("one terminal outcome per attempt, retries get new attempt numbers, rerenders do not duplicate milestones", async () => {
-  const { client, batches } = fixture(); client.setConsent("granted");
-  client.once("request", "completed"); client.once("request", "completed");
-  const first = client.begin("selfie_capture");
-  first("failed", "timeout"); first("completed");
-  const second = client.begin("selfie_capture"); second("completed"); second("cancelled");
-  await client.flush();
-  const events = batches.flat();
-  expect(events.map(e => [e.step, e.status, e.attempt])).toEqual([
-    ["request", "completed", 0], ["selfie_capture", "started", 1], ["selfie_capture", "failed", 1],
-    ["selfie_capture", "started", 2], ["selfie_capture", "completed", 2],
+test("SDK before_send rejects automatic events and untrusted identity/error properties", () => {
+  let granted = true;
+  const config = createFuzzyConfiguration("test-project-token", host, () => granted);
+  const beforeSend = config.before_send;
+  if (typeof beforeSend !== "function") throw new Error("Expected one before_send filter");
+  const event = {
+    event: AnalyticsEvent.selfieCaptureFailed, uuid: crypto.randomUUID(), timestamp: new Date(),
+    properties: { session_id: crypto.randomUUID(), reason: "PRIVATE-ERROR", image: "PRIVATE-PHOTO", $current_url: "https://auth.example/?k=PRIVATE-KEY" },
+  };
+  const filtered = beforeSend(event);
+  expect(filtered).not.toBeNull();
+  expect(JSON.stringify(filtered)).not.toContain("PRIVATE");
+  expect(beforeSend({ ...event, event: "$pageview" })).toBeNull();
+  expect(beforeSend({ ...event, properties: { session_id: "account-identifier" } })).toBeNull();
+  granted = false;
+  expect(beforeSend(event)).toBeNull();
+});
+
+test("request telemetry pairs outcomes and attempts without replaying pre-consent or stale completions", () => {
+  const service = new PostHogAnalyticsService({});
+  const events: { eventName: string; duration?: number; reason?: string; n_attempts?: number }[] = [];
+  const track = spyOn(service, "track").mockImplementation(async (eventName, properties) => {
+    events.push({ eventName, ...properties }); return undefined;
+  });
+  restore = () => track.mockRestore();
+  const telemetry = new SelfieCheckRequestTelemetry(service);
+  const beforeConsent = telemetry.captureStarted();
+  service.setConsent("granted"); beforeConsent.succeeded();
+  expect(events).toEqual([]);
+  telemetry.startRequest(); telemetry.consentShown(); telemetry.consentShown(); telemetry.consentAccepted();
+  const first = telemetry.captureStarted();
+  first.failed(new DOMException("PRIVATE-ERROR", "TimeoutError")); first.succeeded();
+  const second = telemetry.captureStarted(); second.succeeded();
+  expect(events.map(event => event.eventName)).toEqual([
+    "$screen", "selfie_check_data_controls_continued", "selfie_capture_started", "selfie_capture_failed", "selfie_capture_started", "selfie_capture_completed",
   ]);
-  expect(new Set(events.map(e => e.flow_id)).size).toBe(1);
-  expect(events.map(e => e.sequence)).toEqual([1, 2, 3, 4, 5]);
+  expect(events.at(-1)?.n_attempts).toBe(2);
+  expect(events.at(-1)?.duration).toBeGreaterThanOrEqual(0);
+  const pending = telemetry.deliveryStarted();
+  service.setConsent("denied"); service.setConsent("granted");
+  pending.succeeded();
+  expect(events.at(-1)?.eventName).toBe("world_id_proof_sharing_started");
+  const oldRequest = telemetry.captureStarted(); telemetry.startRequest(); oldRequest.succeeded();
+  expect(events.at(-1)?.eventName).toBe("selfie_capture_started");
+  expect(JSON.stringify(events)).not.toContain("PRIVATE");
+  expect(failureReason(new DOMException("private", "NotAllowedError"))).toBe("permission_denied");
 });
 
-test("transient failures retain IDs and timestamps; retry budget and queue are bounded", async () => {
-  const { client, batches } = fixture(503); client.setConsent("granted");
-  client.record("proof_delivery", "completed");
-  for (let i = 0; i < 5; i++) await client.flush();
-  expect(batches).toHaveLength(4);
-  expect(batches.every(batch => JSON.stringify(batch) === JSON.stringify(batches[0]))).toBe(true);
-  const good = fixture(); good.client.setConsent("granted");
-  for (let i = 0; i < 200; i++) good.client.record("selfie_capture", "started");
-  for (let i = 0; i < 10; i++) await good.client.flush();
-  expect(good.batches.flat()).toHaveLength(128);
-  expect(good.batches.every(batch => batch.length <= 16)).toBe(true);
-});
-
-test("revocation erases queued events, rotates identity, and suppresses old asynchronous completions", async () => {
-  const { client, batches } = fixture(); client.setConsent("granted");
-  const finish = client.begin("proof_generation"); await client.flush();
-  client.record("selfie_capture", "started"); client.setConsent("denied");
-  await client.flush();
-  expect(batches).toHaveLength(1);
-  client.setConsent("granted"); finish("completed");
-  client.record("selfie_capture", "started"); await client.flush();
-  expect(batches[1]).toHaveLength(1);
-  expect(batches[1]![0]!.flow_id).not.toBe(batches[0]![0]!.flow_id);
-});
-
-test("revocation aborts pending sends and a stale response cannot erase new events", async () => {
-  const requests: RequestInit[] = []; const replies: ((response: Response) => void)[] = [];
-  const client = new FlowAnalytics(((_url, init) => { requests.push(init!); return new Promise(resolve => replies.push(resolve)); }) as typeof fetch);
-  clients.push(client); client.setConsent("granted");
-  client.record("selfie_capture", "started"); const first = client.flush();
-  client.setConsent("denied"); expect(requests[0]?.signal?.aborted).toBe(true);
-  client.setConsent("granted"); client.record("selfie_capture", "completed");
-  replies[0]!(new Response(null, { status: 204 })); await first;
-  const second = client.flush();
-  expect(JSON.parse(String(requests[1]?.body))[0].status).toBe("completed");
-  replies[1]!(new Response(null, { status: 204 })); await second;
-});
-
-test("page-exit delivery uses keepalive and preserves the ID of an in-flight event", async () => {
-  const requests: RequestInit[] = []; const replies: ((response: Response) => void)[] = [];
-  const client = new FlowAnalytics(((_url, init) => { requests.push(init!); return new Promise(resolve => replies.push(resolve)); }) as typeof fetch);
-  clients.push(client); client.setConsent("granted"); client.record("proof_delivery", "completed");
-  const ordinary = client.flush(); const leaving = client.flush(true);
-  expect(requests[1]?.keepalive).toBe(true);
-  expect(requests[1]?.body).toBe(requests[0]?.body);
-  expect(requests[1]?.referrerPolicy).toBe("no-referrer");
-  replies.forEach(resolve => resolve(new Response(null, { status: 204 })));
-  await Promise.all([ordinary, leaving]);
-});
-
-test("server-side consent rejection disables collection", async () => {
-  const { client, batches } = fixture(403); client.setConsent("granted"); client.record("selfie_capture", "started");
-  await client.flush(); client.record("selfie_capture", "completed"); await client.flush();
-  expect(batches).toHaveLength(1);
-});
-
-test("exit flushing prioritizes terminal results and includes asynchronously cancelled attempts", async () => {
-  const { client, batches, requests } = fixture(); client.setConsent("granted");
-  for (let i = 0; i < 20; i++) client.record("request", "completed");
-  client.record("proof_delivery", "completed"); await client.flush(true);
-  expect(batches[0]).toHaveLength(16);
-  expect(batches[0]?.at(-1)?.step).toBe("proof_delivery");
-  const finish = client.begin("selfie_capture");
-  client.setBackground(true);
-  await Promise.resolve(); finish("cancelled", "cancelled");
-  await Promise.resolve(); await Promise.resolve();
-  expect(batches.flat().some(e => e.step === "selfie_capture" && e.status === "cancelled")).toBe(true);
-  expect(requests.every(request => request.keepalive)).toBe(true);
-});
-
-test("telemetry never changes operation results or exposes arbitrary errors", async () => {
-  const { client, batches } = fixture(503); client.setConsent("granted");
-  const secret = new Error("https://rp.example/?k=SECRET biometric-score=0.3");
-  expect(await client.run("proof_generation", async () => 7n)).toBe(7n);
-  await expect(client.run("proof_delivery", async () => { throw secret; })).rejects.toBe(secret);
-  await client.flush();
-  expect(JSON.stringify(batches)).not.toContain("SECRET");
-  expect(batches[0]?.at(-1)?.reason).toBe("operation_error");
-  expect(analyticsReason(new DOMException("private", "NotAllowedError"))).toBe("permission_denied");
-});
-
-test("closed wire schema rejects secrets, nonfinite timings, invalid IDs and arbitrary error reasons", async () => {
-  const { client, batches } = fixture(); client.setConsent("granted"); client.record("selfie_capture", "completed"); await client.flush();
-  const event = batches[0]![0]!;
-  expect(isAnalyticsEvent(event)).toBe(true);
-  for (const value of [
-    { ...event, proof: "secret" }, { ...event, flow_id: "account-id" }, { ...event, reason: "private error" },
-    { ...event, duration_ms: Infinity }, { ...event, step: "credential_issued" }, { ...event, timestamp: "invalid" },
-  ]) expect(isAnalyticsEvent(value)).toBe(false);
-});
-
-test("SPA request visits rotate flow IDs without losing queued events or accepting old completions", async () => {
-  const { client, batches } = fixture();
-  client.setConsent("granted");
-  const old = client.begin("proof_delivery");
-  client.startFlow();
-  old("completed");
-  client.once("request", "started");
-  await client.flush();
-  expect(batches[0]?.map(e => [e.step, e.status])).toEqual([["proof_delivery", "started"], ["request", "started"]]);
-  expect(batches[0]?.[0]?.flow_id).not.toBe(batches[0]?.[1]?.flow_id);
+test("absent configuration is disabled; partial/unapproved configuration cannot contact arbitrary hosts", async () => {
+  const missing = new PostHogAnalyticsService({});
+  missing.setConsent("granted");
+  expect(await missing.track(AnalyticsEvent.selfieCaptureStarted)).toBeUndefined();
+  const mock = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected remote call"));
+  restore = () => mock.mockRestore();
+  for (const configuration of [{ posthogApiKey: "test" }, { posthogApiKey: "test", posthogFuzzyProxyURL: "https://untrusted.example" }]) {
+    const service = new PostHogAnalyticsService(configuration);
+    service.setConsent("granted");
+    expect(await service.track(AnalyticsEvent.selfieCaptureStarted)).toBeUndefined();
+  }
+  expect(mock).not.toHaveBeenCalled();
 });

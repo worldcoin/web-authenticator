@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { analytics } from "../lib/analytics";
+import { analyticsService, AnalyticsEvent } from "../lib/analytics";
 import { captureSelfie } from "../lib/selfie-capture";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../lib/hold-steady-progress";
 import * as detector from "../lib/face-detector";
@@ -9,12 +9,13 @@ import * as rgbnet from "../lib/rgbnet";
 beforeAll(() => GlobalRegistrator.register({ url: "https://auth.example" }));
 afterAll(() => GlobalRegistrator.unregister());
 const restore: (() => void)[] = [];
-afterEach(() => { restore.splice(0).reverse().forEach(fn => fn()); });
+afterEach(() => { restore.splice(0).reverse().forEach(fn => fn()); analyticsService.setConsent("denied"); });
 
 function fixture() {
-  const events: { step: string; status: string; reason?: string }[] = [];
-  const record = spyOn(analytics, "record").mockImplementation((step, status, fields) => {
-    events.push({ step, status, reason: fields?.reason }); return true;
+  analyticsService.setConsent("granted");
+  const events: { eventName: string; reason?: string }[] = [];
+  const record = spyOn(analyticsService, "track").mockImplementation(async (eventName, properties) => {
+    events.push({ eventName, reason: properties?.reason }); return undefined;
   }); restore.push(() => record.mockRestore());
   let stopped = 0;
   const track = { stop: () => { stopped++; }, addEventListener: () => {} };
@@ -51,8 +52,8 @@ test("capture completes once after a real image exists, without enrollment or pr
   for (let elapsed = 500; elapsed < CAPTURE_HOLD_DURATION_MS_V1; elapsed += 500) f.frame(30 + elapsed);
   f.frame(30 + CAPTURE_HOLD_DURATION_MS_V1);
   await result;
-  expect(f.events.map(e => `${e.step}:${e.status}`)).toEqual([
-    "selfie_capture:started", "selfie_capture:completed",
+  expect(f.events.map(e => e.eventName)).toEqual([
+    AnalyticsEvent.selfieCaptureStarted, AnalyticsEvent.selfieCaptureCompleted,
   ]);
   expect(f.stopped()).toBe(1);
   expect(JSON.stringify(f.events)).not.toContain("private-photo");
@@ -65,10 +66,10 @@ test("timeout during the challenge records the failed stage and never completes 
   await new Promise(resolve => setTimeout(resolve, 0)); f.frame(10);
   controller.abort(new DOMException("private timeout detail", "TimeoutError"));
   await expect(result).rejects.toThrow();
-  expect(f.events.filter(e => e.status === "failed")).toEqual([
-    { step: "selfie_capture", status: "failed", reason: "timeout" },
+  expect(f.events.filter(e => e.eventName === AnalyticsEvent.selfieCaptureFailed)).toEqual([
+    { eventName: AnalyticsEvent.selfieCaptureFailed, reason: "timeout" },
   ]);
-  expect(f.events.some(e => e.step === "selfie_capture" && e.status === "completed")).toBe(false);
+  expect(f.events.some(e => e.eventName === AnalyticsEvent.selfieCaptureCompleted)).toBe(false);
 });
 
 test("camera denial and background cancellation are distinct and late permission grants are released", async () => {
@@ -76,7 +77,7 @@ test("camera denial and background cancellation are distinct and late permission
   const media = spyOn(navigator.mediaDevices, "getUserMedia").mockRejectedValue(new DOMException("private", "NotAllowedError"));
   restore.push(() => media.mockRestore());
   await expect(captureSelfie(f.video, new AbortController().signal, () => {}, { trackAnalytics: true })).rejects.toThrow();
-  expect(f.events.at(-1)).toEqual({ step: "selfie_capture", status: "failed", reason: "permission_denied" });
+  expect(f.events.at(-1)).toEqual({ eventName: AnalyticsEvent.selfieCaptureFailed, reason: "permission_denied" });
   f.events.length = 0;
   let grant!: (stream: MediaStream) => void;
   media.mockImplementation(() => new Promise(resolve => { grant = resolve; }));
@@ -86,8 +87,8 @@ test("camera denial and background cancellation are distinct and late permission
   grant({ getTracks: () => [{ stop: () => { stopped++; } }] } as unknown as MediaStream);
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(stopped).toBe(1);
-  expect(f.events.map(e => `${e.step}:${e.status}`)).toEqual([
-    "selfie_capture:started", "selfie_capture:cancelled",
+  expect(f.events.map(e => e.eventName)).toEqual([
+    AnalyticsEvent.selfieCaptureStarted, AnalyticsEvent.selfieCaptureFailed,
   ]);
 });
 

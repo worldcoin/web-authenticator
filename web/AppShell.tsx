@@ -4,7 +4,7 @@ import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
 import type { ConsentChoice, ConsentClient, ConsentState } from "./lib/consent";
 import { CONSENT_KEY } from "./lib/consent";
-import { analytics } from "./lib/analytics";
+import { analyticsService } from "./lib/analytics";
 
 /** Hides shared chrome while the full-screen camera is open. */
 export const CaptureScreenContext = createContext<(active: boolean) => void>(() => {});
@@ -26,7 +26,7 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
   const consentRevision = useRef(0);
   const unsavedDenial = useRef(false);
 
-  useLayoutEffect(() => { analytics.setConsent(consentState); }, [consentState]);
+  useLayoutEffect(() => { analyticsService.setConsent(consentState); }, [consentState]);
 
   useEffect(() => {
     let active = true;
@@ -36,43 +36,35 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
       void consent.read().then(state => {
         if (active && revision === consentRevision.current) {
           const effective = unsavedDenial.current ? "denied" : state;
-          analytics.setConsent(effective); setConsentState(effective);
+          analyticsService.setConsent(effective); setConsentState(effective);
         }
       }, () => {
-        if (active && revision === consentRevision.current) { analytics.setConsent("unset"); setConsentState("unset"); }
+        if (active && revision === consentRevision.current) { analyticsService.setConsent("unset"); setConsentState("unset"); }
       });
     };
     const storage = (event: StorageEvent) => { if (event.key === CONSENT_KEY || event.key === null) read(); };
     const visibility = () => {
-      analytics.setBackground(document.hidden);
       if (!document.hidden) read();
     };
-    const leave = () => analytics.setBackground(true);
-    const online = () => { void analytics.flush(); };
-    analytics.setBackground(document.hidden);
     read();
     window.addEventListener("storage", storage);
     document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("pagehide", leave);
-    window.addEventListener("online", online);
     return () => {
-      active = false; analytics.setConsent("denied");
+      active = false; void analyticsService.shutdown();
       window.removeEventListener("storage", storage);
       document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("pagehide", leave);
-      window.removeEventListener("online", online);
     };
   }, [consent]);
 
   const chooseConsent = async (choice: ConsentChoice) => {
     ++consentRevision.current;
     // Revocation stops collection even when persistence fails.
-    if (choice === "denied") { unsavedDenial.current = true; analytics.setConsent("denied"); }
+    if (choice === "denied") { unsavedDenial.current = true; analyticsService.setConsent("denied"); }
     setConsentBusy(true); setConsentError(null);
     try {
       const saved = await consent.save(choice);
       unsavedDenial.current = false;
-      analytics.setConsent(saved);
+      analyticsService.setConsent(saved);
       setConsentState(saved);
       setConsentOpen(false);
     } catch {

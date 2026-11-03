@@ -1,129 +1,122 @@
 # Web authenticator analytics
 
-Web telemetry uses JSON events named `web_authenticator_step`. The browser sends
-batches to `/api/analytics`; Bun and Cloudflare use the same validating handler to
-forward them to the existing mobile PostHog fuzzy `/batch/` endpoint. There is no
-browser SDK, automatic page capture, session replay, persistent analytics ID, or
-new dependency.
-
-For example, after a JPEG has been created in memory:
-
-```json
-{
-  "uuid": "43d563dc-dc54-4afe-a2f6-0660a12e753d",
-  "flow_id": "b3c4b7cf-57cc-4a9c-b5c3-f7e98bf68b03",
-  "sequence": 3,
-  "timestamp": "2026-11-03T12:00:00.000Z",
-  "step": "selfie_capture",
-  "status": "completed",
-  "attempt": 1,
-  "duration_ms": 2400
-}
-```
-
-The server adds `surface=web_authenticator`, the destination's `environment`,
-`analytics_version=1`, and anonymous PostHog settings. IDs are random, unrelated
-to a wallet, credential, user account, or RP request. `step` and `status` are
-properties of this event, not separate event names.
+The browser uses the PostHog web SDK and sends JSON directly to the existing
+mobile fuzzy analytics backend. There is no authenticator `/api/analytics` route,
+custom queue, new ingestion service, or warehouse/dashboard change in this PR.
 
 ## Three measures
 
-| Measure | Counting rule | Display |
+| Measure | Tracking | Display |
 | --- | --- | --- |
-| Selfie capture completion | Distinct `(flow_id, attempt)` with `selfie_capture/completed` divided by attempts with `selfie_capture/started`. | Percentage and completed/started counts; Day/Week/Month trend; failure reasons. |
-| Signup attempts | **Pending integration.** Count distinct real `PUT /api/v1/identity` enrollment operations, excluding GET polls, reauth and duplicate submissions. Track confirmed credential issuance independently of submission acceptance. | Enrollment attempts and success/failure/pending outcomes. Show N/A until connected. |
-| Proofs delivered | Distinct flows with `proof_delivery/completed`; delivery rate uses flows with `proof_generation/completed` as its denominator. | Delivered count and percentage; generation/delivery failures. Show N/A when the public proof path is not connected. |
+| Selfie capture completion | `selfie_capture_completed` / `selfie_capture_started`, joined by `session_id` and `n_attempts`. Completion means a JPEG exists in memory. | Percentage, completed/started counts and failure reasons, grouped by Day/Week/Month. |
+| Signup attempts | Pending integration with real `PUT /api/v1/identity` enrollment operations. Exclude GET polls, reauthentication and duplicate submissions; distinguish accepted requests from confirmed credential issuance. | Attempts with success/failure/pending outcomes. Show N/A until connected. |
+| Proofs delivered | `world_id_proof_sharing_success` after bridge upload succeeds; rate denominator is sessions with `world_id_proof_generation_completed`. | Delivered count and percentage, with generation/delivery failures. Show N/A until the public flow calls these functions. |
 
-Deduplicate event UUIDs before aggregation. Restrict rate numerators to their
-corresponding observed denominator; group attempts by their start period, keeping
-pending attempts visible. A zero denominator gives a null rate, never 0%.
-These are consented attempts/flows, not unique people or all visitors.
+These are consented attempts/sessions, not unique people or all visitors. Group
+attempts by their start period and restrict numerators to observed denominators.
+A zero denominator gives a null rate, never 0%. Current main's public flow stops
+at local capture: it does not verify a face, enroll an identity, issue a credential,
+or share a proof. The existing proof functions are instrumented for future callers.
+Bridge acceptance does not establish that the relying party consumed the response.
 
-## Milestones implemented here
+## Native naming and ownership
 
-- `request/started`: a supported, validated `/verify` request is observed after
-  consent. Invalid, unsupported and expired requests have fixed failure reasons.
-- `selfie_capture`: starts before camera acquisition, completes only when the
-  JPEG exists. Permission denial, timeout and cancellation cannot complete it.
-  Standalone camera previews are excluded from the request funnel.
-- `proof_generation`: completes after WalletKit returns a validated response.
-- `proof_delivery`: completes only after the encrypted response upload succeeds.
-  Bridge acceptance does not establish that the RP consumed the response.
+`analyticsService.track` wraps SDK configuration and consent. Request timing and
+milestones live in `SelfieCheckRequestTelemetry`, following the iOS ownership
+pattern. Local variables use `sessionID` and `nAttempts`; wire properties use
+`session_id`, `n_attempts`, `duration` (milliseconds), `reason`, and `purpose`.
 
-Each operation emits `started` and at most one terminal `completed`, `failed`, or
-`cancelled` event per attempt. Durations use a monotonic browser clock. Ordering
-uses `sequence` because the fuzzy pipeline may alter timestamps.
+- `consentShown` records `$screen` with `$screen_name=selfie_check_data_controls`;
+  `consentAccepted` records `selfie_check_data_controls_continued`.
+- Capture emits `selfie_capture_started`, then `selfie_capture_completed` or
+  `selfie_capture_failed`. Standalone camera previews are excluded.
+- Proof generation emits `world_id_proof_generation_started`, then
+  `world_id_proof_generation_completed` or `world_id_proof_generation_failed`.
+- Delivery emits `world_id_proof_sharing_started`, then
+  `world_id_proof_sharing_success` or `world_id_proof_sharing_failed`.
+- Invalid, unsupported or expired requests can record a sharing failure without
+  a delivery attempt. They must not be counted as attempted uploads.
 
-Current main's public flow ends at local capture. Its success animation does not
-emit verification, enrollment, issuance, or proof-sharing success. Proof hooks are
-attached to the existing generation/delivery functions for when the public flow
-calls them. This PR adds no synthetic issuance or PoseGuard integration.
+Capture deliberately has distinct event names: a local JPEG must not emit the
+native verified `selfie_check_succeeded` event. All events have
+`source=web_authenticator` and intent `purpose=faceEnrollment`. No
+`partner_analytics_*` events are emitted because this flow has no validated partner
+attribution. Naming matches native concepts without claiming native outcomes.
 
-## Consent and bounded delivery
+## Existing backend compatibility
 
-Consent remains in localStorage as established by [#25](https://github.com/worldcoin/web-authenticator/pull/25).
-Nothing is collected until `granted`; earlier operations are not replayed. Decline
-immediately clears pending events and aborts sends, even if saving the preference
-fails. Storage changes and returning to a visible tab recheck the preference.
-Each new `/verify` visit rotates the flow ID; revocation/regrant also rotates it.
+Use the existing fuzzy ingestion in
+[app-backend-rest](https://github.com/worldcoin/app-backend-rest/blob/main/src/api-router/constructs/envoy/templates/routes-public.template.yaml).
+It exposes POST/OPTIONS `/capture` and `/batch`, with browser CORS support. Its
+catch-all returns 200 without ingestion, so the web SDK's default `/e/` path would
+silently lose events. `createFuzzyConfiguration` rewrites the SDK request path to
+`/batch`, matching the SDK's JSON batch envelope even for immediate captures.
+Compression and beacon transport are disabled; requests use JSON fetch.
 
-Each batch declares `X-Analytics-Consent: v1.granted`. The server requires that
-declaration plus same-origin Fetch Metadata, Origin and JSON. This is a browser
-assertion, not a server-verified record of localStorage or an authentication token.
-The closed schema rejects all unrecognized fields. No photos, embeddings, face
-scores, account/passkey/RP identifiers, proof payloads, URLs, raw errors, browser
-user agent or client IP headers are forwarded. GeoIP and person processing are
-disabled; the analytics service still sees the server's network connection.
+The existing
+[consumer](https://github.com/worldcoin/app-backend-rest/blob/main/src/proxy-posthog/constructs/functions/schedule-event/handler/process-sqs-record.ts)
+requires `api_key` in the JSON body; the SDK's normal `properties.token` alone is
+insufficient for a raw single event. The SDK supplies the batch envelope's
+`api_key` from `properties.token`, which the filter preserves. The `before_send`
+filter rebuilds the other event properties after SDK enrichment. The SDK owns
+timeouts, transport and retries.
+The backend may rewrite UUIDs/timestamps: do not promise exactly-once delivery or
+use upstream event UUIDs as a durable deduplication key. Aggregate capture attempts
+by `(session_id, n_attempts)` and proof delivery by session.
 
-The in-memory queue holds 128 events, sends up to 16 per batch, and drops events
-after four failed sends with backoff and jitter. IDs and timestamps survive
-retries. Page exit uses keepalive, prioritizing recent results. The server admits
-four concurrent batches per handler, caps bodies at 16 KiB with a two-second read
-deadline, and bounds forwarding to four seconds without server retries. Upstream
-failures return 503 and safe operational warnings; raw failures are never logged.
-Analytics failures do not block capture or proof work. Offline closure, crashes,
-queue limits and consent refusal can leave gaps; delivery is best effort.
+## Consent and data limits
 
-## Enable and display
+The established application consent preference remains authoritative. The SDK is
+loaded lazily only after consent and valid configuration. Earlier operations are
+not replayed. Revocation stops new captures and suppresses late operation callbacks,
+even when saving the preference fails. Already accepted SDK requests can finish or
+retry; revocation does not recall events already handed to transport. Storage
+changes and returning to a visible tab recheck the preference.
 
-Set server-only `POSTHOG_FUZZY_KEY` to the approved mobile project token and
-`POSTHOG_FUZZY_HOST` to the matching environment:
+Each request and revocation/regrant rotates the random in-memory `sessionID`.
+Analytics identity persistence, person profiles, autocapture, page views, page
+leave, replay, exception capture, performance capture and feature flags are disabled.
+The SDK maintains its own consent flag; it is not an account identifier.
 
-| Environment | Host |
+`before_send` only permits enumerated events, random UUID sessions, bounded attempt
+counts/durations and fixed failure categories. It removes SDK URL/query/referrer,
+account and device properties. No photos, embeddings, face scores, proof payloads,
+RP identifiers or raw errors are sent. GeoIP/person processing is disabled. The
+existing first-party backend still receives the browser's network connection and
+may process peer IP internally. SDK/ad-blocker/offline failures can leave gaps;
+analytics failure never replaces the capture or proof result.
+
+## Configuration and release
+
+Supply build-time browser variables `VITE_POSTHOG_API_KEY` (the approved publishable
+project token, not a personal API key) and `VITE_POSTHOG_FUZZY_PROXY_URL`:
+
+| Environment | URL |
 | --- | --- |
 | Staging | `https://app-backend.worldcoin.dev/public/v1/posthog/fuzzy-capture` |
 | Sandbox | `https://app-backend.sandbox.toolsforhumanity.com/public/v1/posthog/fuzzy-capture` |
 | Production | `https://app-backend.toolsforhumanity.com/public/v1/posthog/fuzzy-capture` |
 
-Bun reads process environment; Workers reads configured vars/secrets through
-[`process.env`](https://developers.cloudflare.com/workers/runtime-apis/nodejs/process/#processenv)
-under the existing compatibility configuration. Configure the token as a secret,
-never a browser variable. Both absent deliberately disables forwarding (204);
-partial/invalid configuration makes analytics return 503 without affecting other
-routes. No configuration or deployment is performed by this PR.
+Both variables absent deliberately disables analytics. Partial/unapproved
+configuration surfaces a safe operational warning without contacting an arbitrary
+host. CSP allows only these existing fuzzy path prefixes. This PR configures no
+token, deploys nothing and creates no dashboard.
 
-Before enabling, verify a real consented sequence through staging ingestion,
-including denial, retry deduplication and bridge failure. This has not been run.
-Register `web_authenticator_step` and its properties in the warehouse intake;
-build the three internal Metabase measures filtered by surface and environment.
+Before enabling, check the backend event allowlist and verify a real consented
+sequence through staging ingestion, including denial, retry behavior and bridge
+failure. The automated transport check uses the real SDK with mocked fetch; live
+ingestion has not been tested. Add explicit warehouse intake for the web event
+families, then build the three internal measures. The existing portal partner
+exports cannot consume these events unchanged: per-app charts require validated
+partner attribution and a web surface dimension.
 
-The existing [portal exports](https://github.com/worldcoin/dbt-cloud/blob/main/models/consumers/dev_portal/selfie_check_metrics_daily.sql)
-use partner sessions and anonymized partner user IDs and normalize OS to
-iOS/Android/Unknown. These web events cannot populate those tables unchanged.
-Per-app portal charts require validated partner attribution and an explicit web
-surface dimension; this PR does not collect those identifiers or claim user counts.
-
-## Native references checked November 3, 2026
+## Repository evidence reviewed November 3, 2026
 
 - [iOS request telemetry](https://github.com/worldcoin/world-app-ios/blob/main/Sources/IDApp/Sources/SelfieCheck/Requests/Telemetry/SelfieCheckRequestTelemetry.swift)
-  and [Android partner integration](https://github.com/worldcoin/wld-android/blob/main/docs/partner_integration.md)
-  separate capture, issuance and actual response delivery.
+  and [PostHog configuration](https://github.com/worldcoin/world-app-ios/blob/main/Sources/WorldAppCore/Sources/WLDPostHog/PostHogConfigurator.swift).
 - [Vincent's Proof of Presence fact (#6457)](https://github.com/worldcoin/dbt-cloud/pull/6457)
-  merged October 30. It selects native event families; web events need explicit ingestion.
-- [iOS enrollment events (#8896)](https://github.com/worldcoin/world-app-ios/pull/8896)
-  remains open as of this review; do not present it as shipped instrumentation.
+  merged October 30 and selects native event families explicitly.
 - [Signup identity handler](https://github.com/worldcoin/signup-service/blob/main/face/app-api/handlers/put_identity.go)
   distinguishes enrollment/reauth and returns 202 before asynchronous completion.
-- [Zoom's HTTP transport](https://github.com/worldcoin/world-id-zoom/blob/main/packages/observability/src/partner-analytics-transport.ts)
-  provides the existing direct-batch precedent. Web events stay separate from
-  `partner_analytics_*` and native FaceAuth events.
+- [Portal exports](https://github.com/worldcoin/dbt-cloud/blob/main/models/consumers/dev_portal/selfie_check_metrics_daily.sql)
+  use partner sessions and partner user attribution; they are not a generic web funnel.
