@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CREATION_RP_IDS, isSharedRpId, rpIdForNewPasskey, SHARED_RP_IDS } from "../lib/passkey-rp";
+import { isSharedRpId, rpIdForNewPasskey } from "../lib/passkey-rp";
 import { parseWalletProfile } from "../lib/wallet-session";
 
 function runtime(getClientCapabilities?: () => Promise<unknown>) {
@@ -39,15 +39,6 @@ describe("shared IdP RP ID for new passkeys", () => {
     expect(isSharedRpId("web.world.org")).toBe(false);
     expect(isSharedRpId("world.org")).toBe(false);
     expect(isSharedRpId(undefined)).toBe(false);
-  });
-
-  test("every RP ID used for creation stays unlockable", () => {
-    for (const rpId of CREATION_RP_IDS) expect(SHARED_RP_IDS.has(rpId)).toBe(true);
-  });
-
-  test("unlock accepts RP IDs independently of the creation mapping, so the kill switch keeps saved wallets", () => {
-    // Removing an origin from the creation map must not remove its RP ID from this set.
-    expect([...SHARED_RP_IDS].sort()).toEqual(["auth.world.org", "auth.worldcoin.dev", "sandbox.auth.world.org"]);
   });
 });
 

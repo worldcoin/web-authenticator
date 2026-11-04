@@ -3,30 +3,26 @@
  *
  * The IdP's `/.well-known/webauthn` authorizes exactly one web authenticator origin per
  * environment to use the IdP hostname as its RP ID (Related Origin Requests). Passkeys
- * created under that RP ID are the ones the IdP can later enroll and recognize.
+ * created under that RP ID are the ones the IdP can later enroll and recognize. The
+ * browser enforces the IdP's document; this list only decides which RP ID the page asks for.
  *
- * Removing an entry here stops new passkeys from using the shared RP ID for that origin.
- * Existing wallets keep working, because each saved profile records the RP ID its passkey
- * was created under and unlock checks it against `SHARED_RP_IDS`, not this map.
+ * Never remove a pair: saved wallets created under it would be rejected as invalid
+ * metadata, and `scripts/check-related-origins.ts` would stop checking that the IdP still
+ * authorizes the origin those wallets need.
  */
-const SHARED_RP_ID_BY_ORIGIN: Readonly<Record<string, string>> = Object.freeze({
-  "https://authenticator.toolsforhumanity.dev": "auth.worldcoin.dev",
-  "https://web.sandbox.world.org": "sandbox.auth.world.org",
-  "https://web.world.org": "auth.world.org",
-});
-
-/**
- * Every RP ID a saved wallet may have been created under. Never remove an entry: wallets
- * created under it would be rejected as invalid metadata and could no longer be unlocked.
- */
-export const SHARED_RP_IDS: ReadonlySet<string> = new Set([
-  "auth.worldcoin.dev",
-  "sandbox.auth.world.org",
-  "auth.world.org",
+export const SHARED_RP_PAIRS: readonly { readonly origin: string; readonly rpId: string }[] = Object.freeze([
+  { origin: "https://authenticator.toolsforhumanity.dev", rpId: "auth.worldcoin.dev" },
+  { origin: "https://web.sandbox.world.org", rpId: "sandbox.auth.world.org" },
+  { origin: "https://web.world.org", rpId: "auth.world.org" },
 ]);
 
-/** Creation RP IDs; exported only so tests can check they stay unlockable. */
-export const CREATION_RP_IDS: readonly string[] = Object.values(SHARED_RP_ID_BY_ORIGIN);
+/**
+ * Kill switch: origins listed here stop creating passkeys under the shared RP ID and fall
+ * back to the page hostname. Wallets already created under it keep unlocking.
+ */
+const CREATION_DISABLED_ORIGINS: ReadonlySet<string> = new Set<string>([]);
+
+const SHARED_RP_IDS: ReadonlySet<string> = new Set(SHARED_RP_PAIRS.map(pair => pair.rpId));
 
 /** Whether a saved profile's RP ID is one this app may request. */
 export function isSharedRpId(value: unknown): value is string {
@@ -41,7 +37,7 @@ export function isSharedRpId(value: unknown): value is string {
  * Otherwise `create()` would fail with a SecurityError, so the page keeps the default.
  */
 export async function rpIdForNewPasskey(origin: string, publicKeyCredential: unknown): Promise<string | undefined> {
-  const shared = Object.hasOwn(SHARED_RP_ID_BY_ORIGIN, origin) ? SHARED_RP_ID_BY_ORIGIN[origin] : undefined;
+  const shared = CREATION_DISABLED_ORIGINS.has(origin) ? undefined : SHARED_RP_PAIRS.find(pair => pair.origin === origin)?.rpId;
   if (shared === undefined || publicKeyCredential === null || typeof publicKeyCredential !== "function") return undefined;
   const getClientCapabilities: unknown = (publicKeyCredential as { getClientCapabilities?: unknown }).getClientCapabilities;
   if (typeof getClientCapabilities !== "function") return undefined;

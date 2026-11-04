@@ -25,7 +25,8 @@
     "deploy:cf": "wrangler deploy",
     "cf:types": "wrangler types --strict-vars=false",
     "cf:check": "wrangler deploy --dry-run",
-    "cf:package": "bun scripts/build-cloudflare.ts --package-only"
+    "cf:package": "bun scripts/build-cloudflare.ts --package-only",
+    "check:related-origins": "bun scripts/check-related-origins.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
