@@ -22,7 +22,7 @@ if (!("bun" in process.versions)) {
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
@@ -217,12 +217,34 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled();
     expect(cameraCalls).toBe(0);
     expect(new URL(page.url()).pathname).toBe("/");
     // The server serves the app on this path, so a reload keeps the screen.
     await page.reload();
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
+  });
+
+  test("sign-in discovers an existing passkey without a local profile", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: {
+        request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}),
+      } });
+      if (typeof PublicKeyCredential === "undefined") Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: class {} });
+      Object.defineProperty(navigator, "credentials", { configurable: true, value: {
+        create: () => { throw new Error("Sign-in must not create a passkey"); },
+        get: async (options: CredentialRequestOptions) => {
+          document.documentElement.dataset.discovery = String(options.publicKey?.allowCredentials === undefined);
+          throw new DOMException("User cancelled", "NotAllowedError");
+        },
+      } });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign in with passkey" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-discovery", "true");
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBeNull();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled();
   });
 
   test("creating a World ID shows progress while the passkey request is pending", async ({ page }) => {
@@ -240,8 +262,7 @@ if (!("bun" in process.versions)) {
     });
     await page.goto("/");
     const signIn = page.getByRole("button", { name: "Sign in with passkey" });
-    await expect(signIn).toBeDisabled();
-    await expect(signIn).toHaveCSS("background-color", "rgb(231, 235, 240)");
+    await expect(signIn).toBeEnabled();
     await page.getByRole("button", { name: "Create a new World ID" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
     await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");
@@ -385,6 +406,14 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("alert")).toContainText("Retry with your existing passkey", { timeout: 90_000 });
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
+    await page.evaluate(() => {
+      for (const key of Object.keys(localStorage)) if (key !== "wid_consent") localStorage.removeItem(key);
+    });
+    await page.goto("http://localhost:4194/");
+    await page.getByRole("button", { name: "Sign in with passkey" }).click();
+    await expect(page.getByRole("alert")).toContainText("Could not recover the existing authenticator", { timeout: 45_000 });
+    expect(registrations).toBe(before);
+    expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBeNull();
   });
   }
 }

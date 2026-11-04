@@ -238,7 +238,7 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     return f.wallet;
   } }} consent={decidedConsent} />);
   try {
-    expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByRole("button", { name: /Link an authenticator/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
@@ -247,6 +247,19 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
     expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   } finally { localStorage.clear(); }
+});
+
+test("sign-in remains reachable after browser data is cleared", async () => {
+  localStorage.clear(); visit("/");
+  const f = await fixture(11);
+  let mode: string | undefined;
+  const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async (_signal, _progress, selected) => {
+    mode = selected;
+    return f.wallet;
+  } }} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+  expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+  expect(mode).toBe("open");
 });
 
 test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
@@ -301,7 +314,7 @@ for (const mode of ["create", "open"] as const) {
     try {
       const action = mode === "open" ? "Sign in with passkey" : "Create a new World ID";
       const unavailable = mode === "open" ? "Create a new World ID" : "Sign in with passkey";
-      expect((await view.findByRole("button", { name: unavailable }) as HTMLButtonElement).disabled).toBe(true);
+      expect((await view.findByRole("button", { name: unavailable }) as HTMLButtonElement).disabled).toBe(mode === "open");
       fireEvent.click(view.getByRole("button", { name: action }));
       expect(view.getByRole("status").textContent).toContain(mode === "open" ? "Use your passkey" : "Create your passkey");
       expect(view.queryByRole("button", { name: action })).toBeNull();

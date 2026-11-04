@@ -2,12 +2,13 @@ import { logFlowStep } from './flow-logging';
 import { parseLegacyProfile } from './legacy-profile';
 import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy-passkey-secrets';
 import { registrationState, saveRegistrationState } from './wallet-persistence';
-import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
+import { initializeWalletKit, type CredentialStore, type FaceIdentity, type WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
 import { activateStagingWallet } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
+import { deriveFaceIdentitySeed } from './face-identity-seed';
 
 const PROFILE_KEY = "world-id-wallet-v1";
 const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
@@ -26,6 +27,7 @@ export interface WalletProfile {
 export interface WalletSession {
   readonly client: WalletKit;
   readonly store: CredentialStore;
+  readonly faceIdentity: FaceIdentity;
 }
 
 type PrfOutputs = AuthenticationExtensionsClientOutputs & {
@@ -79,15 +81,29 @@ export async function openPasskeyWallet(signal: AbortSignal): Promise<WalletSess
  */
 export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void, mode: WalletOpenMode = "either"): Promise<AccountWallet> {
   let account: AccountWallet | undefined;
-  await openWithPasskey(signal, async (session, seed, credentialId, deadline) => {
-    account = new AccountWallet(session.client, session.store, "staging", "us");
-    await activateStagingWallet(account, seed, credentialId, deadline, progress);
+  await openWithPasskey(signal, async (session, seed, credentialId, deadline, recovering) => {
+    account = new AccountWallet(session.client, session.store, "staging", "us", session.faceIdentity);
+    if (recovering) {
+      // Without local metadata, only a registered v1 account can confirm the PRF context.
+      // Never fall back to registration: legacy passkeys used different PRF inputs.
+      progress("Opening your existing authenticator…");
+      try {
+        await abortable(account.initializeAuthenticator(seed), AbortSignal.any([deadline, AbortSignal.timeout(30_000)]));
+      } catch (cause) {
+        deadline.throwIfAborted();
+        throw new WalletOpenError("Could not recover the existing authenticator. Retry with the same passkey and a working connection. Older demo passkeys require their original browser data; no new account was created.", { cause });
+      }
+      deadline.throwIfAborted();
+      saveRegistrationState(credentialId, "finalized");
+    } else {
+      await activateStagingWallet(account, seed, credentialId, deadline, progress);
+    }
   }, mode);
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
   return account;
 }
 
-type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal) => Promise<void>;
+type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal, recovering: boolean) => Promise<void>;
 
 async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: WalletOpenMode = "either"): Promise<WalletSession> {
   if (!window.isSecureContext || typeof PublicKeyCredential === "undefined") {
@@ -102,13 +118,12 @@ async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: W
   return navigator.locks.request("world-id-wallet-setup-v1", { ifAvailable: true }, async (lock) => {
     if (lock === null) throw new WalletOpenError("Wallet setup is already running in another tab.");
     const saved = window.localStorage.getItem(PROFILE_KEY) !== null || window.localStorage.getItem(LEGACY_PROFILE_KEY) !== null;
-    if (mode === "open" && !saved) throw new WalletOpenError("No saved authenticator was found in this browser.");
     if (mode === "create" && saved) throw new WalletOpenError("An authenticator already exists in this browser. Sign in to continue.");
-    return openWalletUnderLock(signal, activate);
+    return openWalletUnderLock(signal, activate, mode === "open" && !saved);
   });
 }
 
-async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
+async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, recovering = false): Promise<WalletSession> {
   signal.throwIfAborted();
   const saved = window.localStorage.getItem(PROFILE_KEY);
   let profile = saved === null ? undefined : parseWalletProfile(saved);
@@ -121,7 +136,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
       saveRegistrationState(legacy.credentialId, legacy.registration);
     }
   }
-  if (profile === undefined) {
+  if (profile === undefined && !recovering) {
     const credential = await logFlowStep("passkey.create", () => navigator.credentials.create({
       signal,
       publicKey: {
@@ -141,12 +156,12 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     // Persist only the public credential ID, before opening any encrypted storage.
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   }
-  const credentialId = Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
+  const expectedId = profile === undefined ? undefined : Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
   const credential = await logFlowStep("passkey.unlock_prf", () => navigator.credentials.get({
     signal,
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ type: "public-key", id: credentialId }],
+      ...(expectedId === undefined ? {} : { allowCredentials: [{ type: "public-key", id: expectedId }] }),
       userVerification: "required", timeout: 60_000,
       extensions: { prf: { eval: useLegacy ? { first: new TextEncoder().encode(AUTHENTICATOR_SALT), second: new TextEncoder().encode(STORAGE_SALT) } : { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
     },
@@ -154,20 +169,25 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   if (!(credential instanceof PublicKeyCredential) || credential.type !== "public-key") {
     throw new WalletOpenError("Passkey unlock was not completed.");
   }
+  const outputs = (credential.getClientExtensionResults() as PrfOutputs).prf?.results;
+  const second = useLegacy ? prfBytes(outputs?.second) : undefined;
+  const prf = prfBytes(outputs?.first);
   const actualId = new Uint8Array(credential.rawId);
-  if (actualId.length !== credentialId.length || actualId.some((byte, index) => byte !== credentialId[index])) {
+  if (actualId.length === 0 || actualId.length > 1024 || (expectedId !== undefined &&
+      (actualId.length !== expectedId.length || actualId.some((byte, index) => byte !== expectedId[index])))) {
+    prf?.fill(0);
+    second?.fill(0);
     throw new WalletOpenError("The passkey does not match this wallet.");
   }
-  const outputs = (credential.getClientExtensionResults() as PrfOutputs).prf?.results;
-  const output = outputs?.first;
-  const second = useLegacy ? prfBytes(outputs?.second) : undefined;
-  const prf = prfBytes(output);
+  const credentialId = actualId;
+  profile ??= { version: 1, credentialId: Array.from(credentialId, byte => byte.toString(16).padStart(2, '0')).join('') };
   if (!prf || (useLegacy && !second)) {
     prf?.fill(0);
     second?.fill(0);
     throw new WalletOpenError("This passkey did not provide the PRF output needed to unlock your wallet.");
   }
   let keys: Awaited<ReturnType<typeof deriveWalletKeys>> | undefined;
+  let faceSeed: Uint8Array<ArrayBuffer> | undefined;
   let client: WalletKit | undefined;
   const opening = new AbortController();
   const abort = () => { opening.abort(); client?.terminate(); };
@@ -178,8 +198,11 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
+    faceSeed = await deriveFaceIdentitySeed(prf); // Legacy key derivation erases its PRF inputs.
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
     client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal: opening.signal }));
+    const faceIdentity = await client.FaceIdentity.fromSeed(faceSeed);
+    faceSeed.fill(0);
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : credentialId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");
@@ -194,8 +217,11 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     }
     signal.throwIfAborted();
     opening.signal.throwIfAborted();
-    if (activate) await abortable(activate({ client, store }, keys.seed, profile.credentialId, opening.signal), opening.signal);
-    return { client, store };
+    const session = { client, store, faceIdentity };
+    if (activate) await abortable(activate(session, keys.seed, profile.credentialId, opening.signal, recovering), opening.signal);
+    opening.signal.throwIfAborted();
+    if (recovering) window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    return session;
   } catch (error) {
     client?.terminate();
     if (activate && opening.signal.reason instanceof Error && opening.signal.reason.name === "TimeoutError") {
@@ -209,5 +235,6 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     second?.fill(0);
     keys?.seed.fill(0);
     keys?.databaseKey.fill(0);
+    faceSeed?.fill(0);
   }
 }

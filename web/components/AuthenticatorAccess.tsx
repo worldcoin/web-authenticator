@@ -106,7 +106,7 @@ function AccessOptions({ saved, progress, onOpen }: {
       <span aria-hidden="true" className="size-6 shrink-0 rounded-full border-2 border-[#d6dde7] border-t-[#0a5cfe] motion-safe:animate-spin" />
       <span>{progress}</span>
     </div> : <div className="mt-8 grid gap-2">
-      <button className={`${button} border-[#0a5cfe] bg-[#0a5cfe] text-white enabled:hover:bg-[#0846c2] ${disabledAction}`} disabled={!saved} onClick={() => void onOpen("open")}>Sign in with passkey</button>
+      <button className={`${button} border-[#0a5cfe] bg-[#0a5cfe] text-white enabled:hover:bg-[#0846c2] ${disabledAction}`} onClick={() => void onOpen("open")}>Sign in with passkey</button>
       <button className={`${button} border-[#c9d2df] bg-white enabled:hover:bg-[#f5f8fd] ${disabledAction}`} disabled={saved} onClick={() => void onOpen("create")}>Create a new World ID</button>
       <button className={`${button} cursor-not-allowed border-[#dde3ec] bg-[#e7ebf0] text-[#657184] disabled:opacity-100`} disabled>Link an authenticator (coming soon)</button>
       <p className="mt-1 text-[13px] text-[#657184]">Linking an authenticator isn’t available yet.</p>

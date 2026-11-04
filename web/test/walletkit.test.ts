@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { WalletKit } from '../lib/walletkit'
-import type { WalletKit as PublishedWalletKit, CredentialStore } from '@worldcoin/walletkit-web'
+import type { WalletKit as PublishedWalletKit, CredentialStore, FaceIdentity } from '@worldcoin/walletkit-web'
 
 function fixture(actualSubject = '0x01') {
 	const freed: string[] = []
@@ -50,7 +50,7 @@ function fixture(actualSubject = '0x01') {
 		fetchCredential: async () => credential,
 	} as unknown as CredentialStore
 	return {
-		wallet: new WalletKit(client, store, 'staging', 'us'),
+		wallet: new WalletKit(client, store, 'staging', 'us', { commitment: async () => '0xface' } as FaceIdentity),
 		freed,
 		writes: () => writes,
 		failInit: () => {
@@ -102,4 +102,8 @@ test('proof disclosure preserves only the selfie score and frees response/reques
 	const proof = JSON.parse(await f.wallet.generateProof('{}'))
 	assert.deepEqual(proof.responses, [{ issuer_schema_id: '11', claims: ['score'] }, { issuer_schema_id: '128' }])
 	for (const name of ['response', 'request', 'credential']) assert.ok(f.freed.includes(name))
+})
+
+test('account exposes the face identity public commitment', async () => {
+  assert.equal(await fixture().wallet.identityCommitment(), '0xface')
 })
