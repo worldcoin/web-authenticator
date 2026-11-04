@@ -7,7 +7,7 @@
  *
  * Removing an entry here stops new passkeys from using the shared RP ID for that origin.
  * Existing wallets keep working, because each saved profile records the RP ID its passkey
- * was created under.
+ * was created under and unlock checks it against `SHARED_RP_IDS`, not this map.
  */
 const SHARED_RP_ID_BY_ORIGIN: Readonly<Record<string, string>> = Object.freeze({
   "https://authenticator.toolsforhumanity.dev": "auth.worldcoin.dev",
@@ -15,7 +15,18 @@ const SHARED_RP_ID_BY_ORIGIN: Readonly<Record<string, string>> = Object.freeze({
   "https://web.world.org": "auth.world.org",
 });
 
-const SHARED_RP_IDS: ReadonlySet<string> = new Set(Object.values(SHARED_RP_ID_BY_ORIGIN));
+/**
+ * Every RP ID a saved wallet may have been created under. Never remove an entry: wallets
+ * created under it would be rejected as invalid metadata and could no longer be unlocked.
+ */
+export const SHARED_RP_IDS: ReadonlySet<string> = new Set([
+  "auth.worldcoin.dev",
+  "sandbox.auth.world.org",
+  "auth.world.org",
+]);
+
+/** Creation RP IDs; exported only so tests can check they stay unlockable. */
+export const CREATION_RP_IDS: readonly string[] = Object.values(SHARED_RP_ID_BY_ORIGIN);
 
 /** Whether a saved profile's RP ID is one this app may request. */
 export function isSharedRpId(value: unknown): value is string {
