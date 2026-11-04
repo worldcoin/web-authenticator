@@ -6,9 +6,7 @@
  * created under that RP ID are the ones the IdP can later enroll and recognize. The
  * browser enforces the IdP's document; this list only decides which RP ID the page asks for.
  *
- * Never remove a pair: saved wallets created under it would be rejected as invalid
- * metadata, and `scripts/check-related-origins.ts` would stop checking that the IdP still
- * authorizes the origin those wallets need.
+ * Never remove a pair: saved wallets created under it would be rejected as invalid metadata.
  */
 export const SHARED_RP_PAIRS: readonly { readonly origin: string; readonly rpId: string }[] = Object.freeze([
   { origin: "https://authenticator.toolsforhumanity.dev", rpId: "auth.worldcoin.dev" },
