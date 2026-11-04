@@ -1,4 +1,4 @@
 import { lookupRp } from "../../../lib/rp-handler";
-import { parseAppEnvironment } from "../../../../config/environment";
+import { AUTHENTICATOR_APP_CONFIG } from "../../../lib/config";
 
-export const GET = (request: Request) => lookupRp(request, parseAppEnvironment(process.env.APP_ENV ?? "staging"));
+export const GET = (request: Request) => lookupRp(request, AUTHENTICATOR_APP_CONFIG.environment);

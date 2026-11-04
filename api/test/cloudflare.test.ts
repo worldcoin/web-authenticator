@@ -8,7 +8,7 @@ import { createAccessVerifier } from "../lib/cloudflare-access";
 import { COMPRESSED_WASM_PREFIX, serveWorkerAsset } from "../lib/cloudflare-assets";
 import { createWorkerHandler } from "../worker";
 import { packageCloudflareAssets } from "../../scripts/build-cloudflare";
-import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../lib/config";
+import { securityHeaders } from "../lib/security-headers";
 
 const origin = "https://authenticator.example";
 const request = (path = "/", init?: RequestInit) => new Request(origin + path, init);
@@ -68,7 +68,7 @@ test("Worker preserves verify URLs, API methods and security headers", async () 
   expect(page.headers.get("location")).toBeNull();
   expect(await page.text()).toContain("Authenticator");
   expect(paths).toEqual([origin + "/index.html"]);
-  for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) expect(page.headers.get(name)).toBe(value);
+  for (const [name, value] of Object.entries(securityHeaders("staging"))) expect(page.headers.get(name)).toBe(value);
   expect((await handle(request("/api/health/ready"), env)).status).toBe(200);
   expect((await handle(request("/api/staging-rp?id=bad"), env)).status).toBe(400);
   expect((await handle(request("/api/health/live", { method: "POST" }), env)).status).toBe(404);
@@ -201,7 +201,10 @@ test("production requires its configured HTTPS origin and exposes its version", 
   expect((await handle(new Request(origin + "/api/rp?id=invalid"), env)).status).toBe(400);
   expect((await handle(new Request(origin + "/api/staging-rp?id=invalid"), env)).status).toBe(404);
   expect(authentications).toBe(0);
-  expect((await handle(request(), { ...env, APP_ENV: "unknown" })).status).toBe(503);
+  expect(response.headers.get("content-security-policy")).toBe(securityHeaders("production")["Content-Security-Policy"]);
+  const unconfigured = await handle(request(), { ...env, APP_ENV: "unknown" });
+  expect(unconfigured.status).toBe(503);
+  expect(unconfigured.headers.get("content-security-policy")).toContain("connect-src 'self';");
   expect((await handle(request(), { ...env, APP_ENV: "staging" })).status).toBe(403);
   expect(authentications).toBe(1);
 });
