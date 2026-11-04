@@ -2,7 +2,7 @@ import {
 	type Authenticator,
 	type CredentialStore,
 	type FieldElement,
-	type FaceIdentity,
+	type Identity,
 	type InitializingAuthenticator,
 	type InitializeOptions as WorkerOptions,
 	type WalletKit as PublishedWalletKit,
@@ -29,7 +29,7 @@ export class WalletKit {
 		private readonly store: CredentialStore,
 		private readonly environment: InitializeOptions['environment'],
 		private readonly region: InitializeOptions['region'],
-		private readonly faceIdentity: FaceIdentity,
+		private readonly faceIdentity: Identity,
 	) {}
 
 	identityCommitment() {

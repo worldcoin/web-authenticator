@@ -2,7 +2,7 @@ import { logFlowStep } from './flow-logging';
 import { parseLegacyProfile } from './legacy-profile';
 import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy-passkey-secrets';
 import { registrationState, saveRegistrationState } from './wallet-persistence';
-import { initializeWalletKit, type CredentialStore, type FaceIdentity, type WalletKit } from "@worldcoin/walletkit-web";
+import { initializeWalletKit, type CredentialStore, type Identity, IdentityContext, type WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
 import { activateStagingWallet } from "./wallet-registration";
 import { abortable } from "./async";
@@ -27,7 +27,7 @@ export interface WalletProfile {
 export interface WalletSession {
   readonly client: WalletKit;
   readonly store: CredentialStore;
-  readonly faceIdentity: FaceIdentity;
+  readonly faceIdentity: Identity;
 }
 
 type PrfOutputs = AuthenticationExtensionsClientOutputs & {
@@ -201,7 +201,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, rec
     faceSeed = await deriveFaceIdentitySeed(prf); // Legacy key derivation erases its PRF inputs.
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
     client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal: opening.signal }));
-    const faceIdentity = await client.FaceIdentity.fromSeed(faceSeed);
+    const faceIdentity = await client.Identity.fromSeed(faceSeed, IdentityContext.Face);
     faceSeed.fill(0);
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : credentialId));

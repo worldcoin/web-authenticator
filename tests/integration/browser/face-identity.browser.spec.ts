@@ -33,15 +33,15 @@ if (!("bun" in process.versions)) {
     const otherSeed = await deriveFaceIdentitySeed(new Uint8Array(32).fill(8));
     try {
       const result = await page.evaluate(async ({ first, other, moduleUrl }) => {
-        const { initializeWalletKit } = await import(moduleUrl) as { initializeWalletKit(): Promise<WalletSession['client']> };
-        const client = await initializeWalletKit();
+        const { initializeWalletKit, IdentityContext } = await import(moduleUrl);
+        const client: WalletSession['client'] = await initializeWalletKit();
         const bytes = new Uint8Array(first);
         const differentBytes = new Uint8Array(other);
         first.fill(0); other.fill(0);
         try {
-          const identity = await client.FaceIdentity.fromSeed(bytes);
-          const reopened = await client.FaceIdentity.fromSeed(bytes);
-          const different = await client.FaceIdentity.fromSeed(differentBytes);
+          const identity = await client.Identity.fromSeed(bytes, IdentityContext.Face);
+          const reopened = await client.Identity.fromSeed(bytes, IdentityContext.Face);
+          const different = await client.Identity.fromSeed(differentBytes, IdentityContext.Face);
           bytes.fill(0);
           differentBytes.fill(0);
           try {

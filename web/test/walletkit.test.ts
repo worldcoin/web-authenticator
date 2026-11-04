@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { WalletKit } from '../lib/walletkit'
-import type { WalletKit as PublishedWalletKit, CredentialStore, FaceIdentity } from '@worldcoin/walletkit-web'
+import type { WalletKit as PublishedWalletKit, CredentialStore, Identity } from '@worldcoin/walletkit-web'
 
 function fixture(actualSubject = '0x01') {
 	const freed: string[] = []
@@ -50,7 +50,7 @@ function fixture(actualSubject = '0x01') {
 		fetchCredential: async () => credential,
 	} as unknown as CredentialStore
 	return {
-		wallet: new WalletKit(client, store, 'staging', 'us', { commitment: async () => '0xface' } as FaceIdentity),
+		wallet: new WalletKit(client, store, 'staging', 'us', { commitment: async () => '0xface' } as Identity),
 		freed,
 		writes: () => writes,
 		failInit: () => {

@@ -38,7 +38,8 @@ function fixture(options: { passkey?: Passkey; accountError?: boolean; faceError
   const free = () => {};
   const store = { listCredentials: async () => [] };
   const client = {
-    FaceIdentity: { fromSeed: async (seed: Uint8Array) => {
+    Identity: { fromSeed: async (seed: Uint8Array, context: published.IdentityContext) => {
+      expect(context).toBe(published.IdentityContext.Face);
       calls.face.push(seed); capture('face', seed); commitment = secretCopies.face;
       if (options.faceError) throw new Error('Face initialization failed');
       return { commitment: async () => `0x${commitment}`, free };
