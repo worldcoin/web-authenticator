@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { activateStagingWallet } from "../lib/wallet-registration";
+import { activateWallet } from "../lib/wallet-registration";
 import { registrationState, saveRegistrationState } from "../lib/wallet-persistence";
 import type { WalletKit } from "../lib/walletkit";
 import { WalletRegistrationError } from "../lib/wallet-errors";
 
-beforeAll(() => GlobalRegistrator.register());
+beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
 beforeEach(() => window.localStorage.clear());
 function fixture() {
@@ -19,7 +19,7 @@ function fixture() {
   } as unknown as WalletKit;
   return { wallet, calls, fail: () => { fail = true; } };
 }
-const activate = (wallet: WalletKit) => activateStagingWallet(wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {});
+const activate = (wallet: WalletKit) => activateWallet(wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {});
 test("registers once and initializes the encrypted wallet", async () => {
   const f = fixture(); await activate(f.wallet);
   expect(f.calls).toEqual(["register", "init"]);
@@ -84,4 +84,30 @@ test("an unsuccessful account check after timeout preserves the uncertain regist
   await expect(activate(f.wallet)).rejects.toThrow("Retry with your existing passkey");
   expect(registrationState("ab")).toBe("submitting");
   expect(f.calls).toEqual(["terminate"]);
+});
+
+
+test("environment selection preserves existing staging registration and isolates production", () => {
+  const href = window.location.href;
+  const configuredEnvironment = process.env.VITE_APP_ENV;
+  try {
+    process.env.VITE_APP_ENV = "staging";
+    window.localStorage.setItem("world-id-staging-registration-v1:ab", "submitting");
+    window.location.href = "https://authenticator.toolsforhumanity.dev";
+    expect(registrationState("ab")).toBe("submitting");
+    window.location.href = "https://web.world.org";
+    expect(() => registrationState("ab")).toThrow("not configured for this origin");
+    process.env.VITE_APP_ENV = "production";
+    expect(registrationState("ab")).toBeNull();
+    saveRegistrationState("ab", "finalized");
+    expect(window.localStorage.getItem("world-id-production-registration-v1:ab")).toBe("finalized");
+    expect(window.localStorage.getItem("world-id-staging-registration-v1:ab")).toBe("submitting");
+    process.env.VITE_APP_ENV = "staging";
+    window.location.href = "https://authenticator.toolsforhumanity.dev";
+    expect(registrationState("ab")).toBe("submitting");
+  } finally {
+    window.location.href = href;
+    if (configuredEnvironment === undefined) delete process.env.VITE_APP_ENV;
+    else process.env.VITE_APP_ENV = configuredEnvironment;
+  }
 });

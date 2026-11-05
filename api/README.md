@@ -1,7 +1,7 @@
 # Authenticator API
 
-Bun serves the web build and `/api/staging-rp` from the same origin. The RP lookup
-reads the staging registry; passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
+Bun serves the web build and `/api/rp` from the same origin. RP lookup uses
+`APP_ENV` (`staging` by default in Bun) to select the network; `/api/staging-rp` remains a staging alias. Passkeys, [WalletKit](https://github.com/worldcoin/walletkit) and proof generation run in the
 browser. Promon sessions and Redis are not implemented yet.
 
 Run `bun run dev` from the repo root to watch both apps. For the compiled app,
@@ -28,8 +28,8 @@ return JSON 404; everything else falls through to the web build.
 
 - `GET /api/health/live` returns 200 whenever the process can serve requests. It
   never checks dependencies.
-- `GET /api/health/ready` returns 503 when the web build is missing. The staging
-  RP registry is not part of readiness: when it fails, only `/api/staging-rp`
+- `GET /api/health/ready` returns 503 when the web build is missing. The
+  RP registry is not part of readiness: when it fails, only RP lookup
   degrades (502).
 
 ## Configuration
@@ -38,7 +38,7 @@ return JSON 404; everything else falls through to the web build.
 security headers. `AUTHENTICATOR_HOST` defaults to `127.0.0.1`; `PORT` defaults to
 `4173` (`AUTHENTICATOR_PORT` is also accepted). Invalid ports fail startup.
 
-The CSP allows the official World ID bridges and WalletKit's staging endpoints.
+The CSP allows the official World ID bridges and WalletKit's staging and production endpoints.
 Review it when changing SDK versions or network destinations. Server configuration
 and credentials must never be imported by `web`.
 

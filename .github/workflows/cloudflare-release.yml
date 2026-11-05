@@ -1,0 +1,76 @@
+name: Promote to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full main commit SHA reviewed on staging
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_RELEASE_CONFIGURED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require an immutable commit already on main
+        id: commit
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: |
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Provide a full lowercase commit SHA'; exit 1; }
+          git cat-file -e "$RELEASE_COMMIT^{commit}"
+          git merge-base --is-ancestor "$RELEASE_COMMIT" "$GITHUB_SHA"
+          echo "sha=$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Production candidate: $RELEASE_COMMIT. Approver must confirm staging validation for this commit." >> "$GITHUB_STEP_SUMMARY"
+
+  validate:
+    needs: release
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.release.outputs.commit }}
+
+  production:
+    needs: [release, validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Terraform requires Protocol approval, prevents self-review and admin bypass,
+    # and restricts this environment to workflows dispatched from main.
+    environment:
+      name: prod-cloudflare
+      url: https://web.world.org
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ae97c44fcd31b9289a7455120d2698b2
+      RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.commit }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build:cf
+        env:
+          VITE_APP_ENV: production
+      - name: Deploy the approved and tested commit
+        run: bunx wrangler deploy --env production --tag "$RELEASE_COMMIT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+      - name: Check production origin, assets, and release commit
+        run: bun scripts/smoke-cloudflare.ts production "$RELEASE_COMMIT"

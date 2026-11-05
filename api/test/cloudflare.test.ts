@@ -8,13 +8,15 @@ import { createAccessVerifier } from "../lib/cloudflare-access";
 import { COMPRESSED_WASM_PREFIX, serveWorkerAsset } from "../lib/cloudflare-assets";
 import { createWorkerHandler } from "../worker";
 import { packageCloudflareAssets } from "../../scripts/build-cloudflare";
-import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../lib/config";
+import { securityHeaders } from "../lib/security-headers";
 
 const origin = "https://authenticator.example";
 const request = (path = "/", init?: RequestInit) => new Request(origin + path, init);
 const environment = (fetchAsset: (request: Request) => Promise<Response>): Env => ({
   CF_ACCESS_TEAM_DOMAIN: "tfh-test.cloudflareaccess.com",
   CF_ACCESS_AUD: "test-audience",
+  APP_ENV: "staging",
+  CF_VERSION_METADATA: { id: "test-version", tag: "a".repeat(40), timestamp: "2026-10-30T00:00:00.000Z" },
   ASSETS: { fetch: fetchAsset } as Fetcher,
 });
 
@@ -66,7 +68,7 @@ test("Worker preserves verify URLs, API methods and security headers", async () 
   expect(page.headers.get("location")).toBeNull();
   expect(await page.text()).toContain("Authenticator");
   expect(paths).toEqual([origin + "/index.html"]);
-  for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) expect(page.headers.get(name)).toBe(value);
+  for (const [name, value] of Object.entries(securityHeaders("staging"))) expect(page.headers.get(name)).toBe(value);
   expect((await handle(request("/api/health/ready"), env)).status).toBe(200);
   expect((await handle(request("/api/staging-rp?id=bad"), env)).status).toBe(400);
   expect((await handle(request("/api/health/live", { method: "POST" }), env)).status).toBe(404);
@@ -176,4 +178,33 @@ test("WASM encoding negotiation accepts whitespace before quality weights", asyn
       expect(new Uint8Array(gzip ? gunzipSync(body) : body)).toEqual(bytes);
     }
   }
+});
+
+
+test("production requires its configured HTTPS origin and exposes its version", async () => {
+  let authentications = 0;
+  let reads = 0;
+  const handle = createWorkerHandler(async () => { authentications++; return new Response("private", { status: 403 }); });
+  const origin = "https://web.world.org";
+  const env = { ...environment(async () => { reads++; return new Response("<html>app</html>"); }), APP_ENV: "production" };
+  const response = await handle(new Request(origin + "/api/health/ready"), env);
+  expect(response.status).toBe(200);
+  expect(await response.json() as Record<string, unknown>).toEqual({
+    status: "ready", environment: "production", protocol: "production", origin, commit: "a".repeat(40),
+  });
+  const before = reads;
+  for (const bad of ["http://web.world.org", "https://attacker.example", "https://authenticator.toolsforhumanity.dev",
+    "https://web-authenticator-prod.worldcoin.workers.dev", "https://web.sandbox.world.org"]) {
+    expect((await handle(new Request(bad + "/verify", { headers: { Origin: origin, "X-Forwarded-Host": new URL(origin).host } }), env)).status).toBe(421);
+  }
+  expect(reads).toBe(before);
+  expect((await handle(new Request(origin + "/api/rp?id=invalid"), env)).status).toBe(400);
+  expect((await handle(new Request(origin + "/api/staging-rp?id=invalid"), env)).status).toBe(404);
+  expect(authentications).toBe(0);
+  expect(response.headers.get("content-security-policy")).toBe(securityHeaders("production")["Content-Security-Policy"]);
+  const unconfigured = await handle(request(), { ...env, APP_ENV: "unknown" });
+  expect(unconfigured.status).toBe(503);
+  expect(unconfigured.headers.get("content-security-policy")).toContain("connect-src 'self';");
+  expect((await handle(request(), { ...env, APP_ENV: "staging" })).status).toBe(403);
+  expect(authentications).toBe(1);
 });

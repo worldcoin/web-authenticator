@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AUTHENTICATOR_APP_SECURITY_HEADERS_V0 } from "../lib/config";
+import { securityHeaders } from "../lib/security-headers";
 import { secureRoutes } from "../lib/http";
 import { createServerOptions } from "../server";
 const servers: ReturnType<typeof Bun.serve>[] = [];
@@ -15,7 +15,7 @@ afterAll(() => Promise.all(servers.map(server => server.stop(true))));
 const origin = start();
 const get = (path: string, init?: RequestInit) => fetch(origin + path, { redirect: "manual", ...init });
 const expectSecurityHeaders = (response: Response) => {
-  for (const [name, value] of Object.entries(AUTHENTICATOR_APP_SECURITY_HEADERS_V0)) expect(response.headers.get(name)).toBe(value);
+  for (const [name, value] of Object.entries(securityHeaders("staging"))) expect(response.headers.get(name)).toBe(value);
 };
 test("serves web assets and HEAD responses with security headers", async () => {
   const staticRoot = await mkdtemp(join(tmpdir(), "authenticator-assets-"));
@@ -122,7 +122,7 @@ test("liveness ignores dependencies and readiness fails without the web bundle",
   }
 });
 test("security headers apply to responses with immutable headers", async () => {
-  const routes = secureRoutes({ "/x": () => Response.redirect("https://example.com", 302) });
+  const routes = secureRoutes({ "/x": () => Response.redirect("https://example.com", 302) }, "staging");
   const handler = routes["/x"];
   if (typeof handler !== "function") throw new Error("expected a handler");
   const response = await handler(new Request(origin + "/x"));
