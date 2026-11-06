@@ -7,7 +7,7 @@ const environments = Object.keys(ENVIRONMENTS) as ProtocolEnvironment[];
 /** Every URL an environment's build or Worker may contact. */
 function urls(environment: ProtocolEnvironment): string[] {
   const config = ENVIRONMENTS[environment];
-  return [config.appOrigin, ...config.connectSrc, ...(config.selfieEnrollment ? [config.selfieEnrollment.endpoint] : [])];
+  return [config.appOrigin, config.signupIdentity, ...config.connectSrc, ...(config.selfieEnrollment ? [config.selfieEnrollment.endpoint] : [])];
 }
 
 const STAGING_HOSTS = [
@@ -42,6 +42,8 @@ test("each environment's CSP allows exactly its own services", () => {
     const connectSrc = csp.split("; ").find(directive => directive.startsWith("connect-src "))!.split(" ").slice(1);
     expect(connectSrc).toEqual(["'self'", ...connectSources(environment)]);
     for (const url of ENVIRONMENTS[other].connectSrc) expect(connectSrc).not.toContain(url);
+    expect(connectSrc).toContain(new URL(ENVIRONMENTS[environment].signupIdentity).origin);
+    expect(connectSrc).not.toContain(new URL(ENVIRONMENTS[other].signupIdentity).origin);
   }
 });
 
