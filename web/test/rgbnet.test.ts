@@ -6,7 +6,7 @@ import decodeReference from './fixtures/rgbnet-decode.json'
 import {
 	prepareRgbnet,
 	decodeRgbnet,
-	previewPoint,
+	previewCrop,
 	faceGuidance,
 	ANCHOR_COUNT,
 	type ModelOutput,
@@ -68,23 +68,43 @@ test('empty detections and confidence boundary do not report a positioned face',
 	assert.equal(faceGuidance([], 640, 480), 'No face detected')
 })
 
-test('preview projection accounts for mirror and object-cover crop in landscape and portrait', () => {
-	assert.deepEqual(previewPoint(0.5, 0.5, 1920, 1080), [0.5, 0.5])
-	const [x, y] = previewPoint(0.25, 0.25, 1920, 1080)
-	assert.ok(Math.abs(x - 0.9444444444) < 1e-8)
-	assert.equal(y, 0.25)
-	const portrait = previewPoint(0.25, 0.25, 1080, 1920)
-	assert.equal(portrait[0], 0.75)
-	assert.ok(Math.abs(portrait[1] - 0.0555555556) < 1e-8)
+test('preview crop is the centered object-cover region for landscape, portrait and square views', () => {
+	// 1280x720 webcam into the 260x364 oval: full height, 514 px centered width.
+	assert.deepEqual(previewCrop(1280, 720, 260, 364), [383, 0, 514, 720])
+	// A portrait phone camera is already narrower than the oval: full width, trimmed height.
+	assert.deepEqual(previewCrop(720, 1280, 260, 364), [0, 136, 720, 1008])
+	assert.deepEqual(previewCrop(640, 480), [80, 0, 480, 480])
 })
 
-test('guidance uses the portrait oval crop rather than a square preview', () => {
-	const face = { box: [0.29, 0.2, 0.71, 0.8] as [number, number, number, number], landmarks: [], score: 0.99 }
-	assert.equal(faceGuidance([face], 640, 480), 'Face positioned')
-	assert.equal(faceGuidance([face], 640, 480, 260, 364), 'Face positioned')
-	face.box = [0.25, 0.2, 0.75, 0.8]
-	assert.equal(faceGuidance([face], 640, 480), 'Face positioned')
-	assert.equal(faceGuidance([face], 640, 480, 260, 364), 'Move farther away')
-	assert.equal(faceGuidance([face, face], 640, 480, 260, 364), 'Keep only one face in view')
-	assert.equal(faceGuidance([face], 640, 480, 0, 0), 'Waiting for camera preview')
+// Builds a camera-frame detection from a box expressed in the cropped (sent) image.
+function inCrop(box: [number, number, number, number], width: number, height: number, viewWidth: number, viewHeight: number) {
+	const [sx, sy, sw, sh] = previewCrop(width, height, viewWidth, viewHeight)
+	const frame = [(sx + box[0] * sw) / width, (sy + box[1] * sh) / height, (sx + box[2] * sw) / width, (sy + box[3] * sh) / height]
+	return { box: frame as [number, number, number, number], landmarks: [], score: 0.99 }
+}
+
+test('guidance applies the face engine framing thresholds to the cropped image', () => {
+	const at = (box: [number, number, number, number]) => faceGuidance([inCrop(box, 1280, 720, 260, 364)], 1280, 720, 260, 364)
+	assert.equal(at([0.2, 0.15, 0.8, 0.85]), 'Face positioned')
+	// Smaller axis 0.4 <= 0.52: FaceTooSmallError.
+	assert.equal(at([0.3, 0.2, 0.7, 0.8]), 'Move closer')
+	// Larger axis 0.9 >= 0.8: FaceTooBigError, reported before the edge it also crosses.
+	assert.equal(at([0.1, 0.05, 0.9, 0.95]), 'Move farther away')
+	// Size passes, but the box is inside the 0.015 edge margin.
+	assert.equal(at([0.005, 0.15, 0.6, 0.85]), 'Center your face')
+	// Sizes pass relative to a 129x180 crop, but 0.6 x 129 px is below the 112 px resolution floor.
+	assert.equal(faceGuidance([inCrop([0.2, 0.15, 0.8, 0.85], 320, 180, 260, 364)], 320, 180, 260, 364), 'Move closer')
+})
+
+test('a face filling the oval would be too small in the uncropped 16:9 frame', () => {
+	const face = inCrop([0.2, 0.15, 0.8, 0.85], 1280, 720, 260, 364)
+	assert.equal(faceGuidance([face], 1280, 720, 260, 364), 'Face positioned')
+	// Judged against the whole frame (a 16:9 view crops nothing), the same face spans 0.24 of the width.
+	assert.equal(faceGuidance([face], 1280, 720, 1280, 720), 'Move closer')
+})
+
+test('guidance reports missing, multiple and unmeasurable faces', () => {
+	const face = inCrop([0.2, 0.15, 0.8, 0.85], 1280, 720, 260, 364)
+	assert.equal(faceGuidance([face, face], 1280, 720, 260, 364), 'Keep only one face in view')
+	assert.equal(faceGuidance([face], 1280, 720, 0, 0), 'Waiting for camera preview')
 })
