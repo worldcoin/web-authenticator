@@ -1,6 +1,6 @@
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
-import { faceGuidance } from "./rgbnet";
+import { faceGuidance, previewCrop } from "./rgbnet";
 
 /** Local capture only: one frame, taken once the face has held still in the oval. Nothing is uploaded. */
 export const CAPTURE_TIMEOUT_MS = 30_000;
@@ -60,16 +60,20 @@ export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<
   });
 }
 
-/** Copies the current camera frame. The detector has just confirmed the framing. */
+/**
+ * Copies the part of the current camera frame that the preview shows, which is also the image the framing
+ * guidance evaluated. A full landscape frame would leave the face too small for the face engine.
+ */
 export function grabFrame(video: HTMLVideoElement): HTMLCanvasElement {
   const { videoWidth: width, videoHeight: height } = video;
   if (width < 1 || height < 1 || width > 4096 || height > 4096) throw new Error("Camera frame dimensions are unsupported.");
+  const [sx, sy, sw, sh] = previewCrop(width, height, video.clientWidth || width, video.clientHeight || height);
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = sw;
+  canvas.height = sh;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Could not create the capture canvas.");
-  context.drawImage(video, 0, 0);
+  context.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
   return canvas;
 }
 
@@ -95,7 +99,8 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
     signal.throwIfAborted();
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Open this page in a browser with camera access over HTTPS or localhost.");
     const media = await withAbort<MediaStream>(navigator.mediaDevices.getUserMedia({
-      audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      // World App iOS captures at 1280x720; the RGBNet detector downsamples, so this only enlarges the capture.
+      audio: false, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
     }).then(media => {
       // A stream granted after cancellation must still be stopped.
       if (signal.aborted) {
