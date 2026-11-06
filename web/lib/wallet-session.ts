@@ -8,6 +8,7 @@ import { WalletKit as AccountWallet } from "./walletkit";
 import { activateWallet } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
+import { isSharedRpId, rpIdForNewPasskey } from "./passkey-rp";
 import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
 
 const PROFILE_KEY = "world-id-wallet-v1";
@@ -16,12 +17,16 @@ const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
 export const PRF_INPUT_LABEL = "world-id/web-authenticator/prf/v1";
 const PRF_INPUT = new TextEncoder().encode(PRF_INPUT_LABEL);
 const KEY_SALT = new TextEncoder().encode("world-id/web-authenticator/keys/v1");
+const PASSKEY_NAME = { name: "World ID", displayName: "World ID" } as const;
+const SHARED_RP_PASSKEY_NAME = { name: "World ID web authenticator", displayName: "World ID web authenticator" } as const;
 
 export type WalletOpenMode = "open" | "create" | "either";
 
 export interface WalletProfile {
   readonly version: 1;
   readonly credentialId: string;
+  /** RP ID the passkey was created under; absent means this page's hostname. */
+  readonly rpId?: string;
 }
 
 export interface WalletSession {
@@ -51,9 +56,12 @@ export function parseWalletProfile(raw: string): WalletProfile {
     typeof value !== "object" || value === null ||
     !("version" in value) || value.version !== 1 ||
     !("credentialId" in value) || typeof value.credentialId !== "string" ||
-    !/^(?:[0-9a-f]{2}){1,1024}$/.test(value.credentialId)
+    !/^(?:[0-9a-f]{2}){1,1024}$/.test(value.credentialId) ||
+    ("rpId" in value && !isSharedRpId(value.rpId))
   ) throw new WalletOpenError("Saved wallet metadata is invalid. Do not clear site data if you need this wallet.");
-  return { version: 1, credentialId: value.credentialId };
+  return "rpId" in value && isSharedRpId(value.rpId)
+    ? { version: 1, credentialId: value.credentialId, rpId: value.rpId }
+    : { version: 1, credentialId: value.credentialId };
 }
 
 export async function deriveWalletKeys(prf: Uint8Array<ArrayBuffer>): Promise<{
@@ -109,6 +117,19 @@ async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: W
   });
 }
 
+/**
+ * Under a shared RP ID, a SecurityError means the browser could not confirm the IdP's
+ * Related Origin Requests document, not that the page is insecure.
+ */
+function sharedRpFailure(rpId: string | undefined): (cause: unknown) => never {
+  return cause => {
+    if (rpId && cause instanceof Error && cause.name === "SecurityError") {
+      throw new WalletOpenError(`The browser could not confirm this page may use World ID passkeys from ${rpId}. Check your connection and try again.`, { cause });
+    }
+    throw cause;
+  };
+}
+
 async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
   signal.throwIfAborted();
   const saved = window.localStorage.getItem(PROFILE_KEY);
@@ -123,35 +144,41 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     }
   }
   if (profile === undefined) {
-    const credential = await logFlowStep("passkey.create", () => navigator.credentials.create({
+    const rpId = await rpIdForNewPasskey(window.location.origin, PublicKeyCredential);
+    const credential = await logFlowStep(rpId ? "passkey.create_shared_rp" : "passkey.create", () => navigator.credentials.create({
       signal,
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rp: { name: "World ID" },
-        user: { id: crypto.getRandomValues(new Uint8Array(32)), name: "World ID", displayName: "World ID" },
+        rp: rpId ? { id: rpId, name: "World ID" } : { name: "World ID" },
+        // Under the shared RP ID this passkey also appears in the IdP's sign-in picker,
+        // next to its "World ID · <suffix>" login passkeys; a distinct name tells them apart.
+        user: { id: crypto.getRandomValues(new Uint8Array(32)), ...(rpId ? SHARED_RP_PASSKEY_NAME : PASSKEY_NAME) },
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
         attestation: "none", timeout: 60_000,
         extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
       },
-    }));
+    })).catch(sharedRpFailure(rpId));
     if (!(credential instanceof PublicKeyCredential)) throw new WalletOpenError("Passkey creation was not completed.");
     const extensions = credential.getClientExtensionResults() as AuthenticationExtensionsClientOutputs & { prf?: { enabled?: boolean } };
     if (extensions.prf?.enabled !== true) throw new WalletOpenError("This passkey provider does not support PRF. Choose a PRF-capable provider.");
-    profile = { version: 1, credentialId: Array.from(new Uint8Array(credential.rawId), b => b.toString(16).padStart(2, "0")).join("") };
+    const createdId = Array.from(new Uint8Array(credential.rawId), b => b.toString(16).padStart(2, "0")).join("");
+    profile = rpId ? { version: 1, credentialId: createdId, rpId } : { version: 1, credentialId: createdId };
     // Persist only the public credential ID, before opening any encrypted storage.
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   }
   const credentialId = Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
-  const credential = await logFlowStep("passkey.unlock_prf", () => navigator.credentials.get({
+  const unlockRpId = profile.rpId;
+  const credential = await logFlowStep(unlockRpId ? "passkey.unlock_prf_shared_rp" : "passkey.unlock_prf", () => navigator.credentials.get({
     signal,
     publicKey: {
+      ...(unlockRpId ? { rpId: unlockRpId } : {}),
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       allowCredentials: [{ type: "public-key", id: credentialId }],
       userVerification: "required", timeout: 60_000,
       extensions: { prf: { eval: useLegacy ? { first: new TextEncoder().encode(AUTHENTICATOR_SALT), second: new TextEncoder().encode(STORAGE_SALT) } : { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
     },
-  }));
+  })).catch(sharedRpFailure(unlockRpId));
   if (!(credential instanceof PublicKeyCredential) || credential.type !== "public-key") {
     throw new WalletOpenError("Passkey unlock was not completed.");
   }
