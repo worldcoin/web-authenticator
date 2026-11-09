@@ -22,7 +22,7 @@ function fixture(status = "finalized") {
     }) },
   } as unknown as WorkerWallet;
   const initialize: typeof initializeWalletKit = async () => { calls.initialized++; return worker; };
-  return { calls, initialize };
+  return { calls, initialize, worker };
 }
 
 test("setup registers once, prepares a subject/custody key, and keeps one owner until disposal", async () => {
@@ -55,4 +55,42 @@ test("a failed registration closes the worker without automatically registering 
   await expect(prepareEnrollmentSession(new AbortController().signal, undefined, f.initialize)).rejects.toThrow("registration");
   expect(f.calls.registered).toBe(1);
   expect(f.calls.stopped).toBe(1);
+});
+
+test("cancellation stops waiting for initialization and terminates a late worker", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const initialization = Promise.withResolvers<WorkerWallet>();
+  const initialize: typeof initializeWalletKit = () => {
+    started.resolve();
+    return initialization.promise;
+  };
+  const setup = prepareEnrollmentSession(controller.signal, undefined, initialize);
+  await started.promise;
+  controller.abort(new DOMException("Cancelled", "AbortError"));
+  await expect(setup).rejects.toThrow("Cancelled");
+  expect(f.calls.stopped).toBe(0);
+  initialization.resolve(f.worker);
+  await initialization.promise;
+  expect(f.calls.stopped).toBe(1);
+  expect(f.calls.registered).toBe(0);
+});
+
+test("cancellation between initialization and await continuation terminates the owned worker", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const initialization = Promise.withResolvers<WorkerWallet>();
+  const initialize: typeof initializeWalletKit = () => {
+    started.resolve();
+    return initialization.promise;
+  };
+  const setup = prepareEnrollmentSession(controller.signal, undefined, initialize);
+  await started.promise;
+  void initialization.promise.then(() => controller.abort(new DOMException("Cancelled", "AbortError")));
+  initialization.resolve(f.worker);
+  await expect(setup).rejects.toThrow("Cancelled");
+  expect(f.calls.stopped).toBe(1);
+  expect(f.calls.registered).toBe(0);
 });

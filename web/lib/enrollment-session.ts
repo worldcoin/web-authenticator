@@ -37,7 +37,7 @@ export async function prepareEnrollmentSession(
   };
   deadline.addEventListener("abort", dispose, { once: true });
   try {
-    secrets = await abortable(createEnrollmentSecrets().then(value => {
+    const owned = await abortable(createEnrollmentSecrets().then(value => {
       secrets = value;
       if (disposed) clearEnrollmentSecrets(value);
       return value;
@@ -51,24 +51,23 @@ export async function prepareEnrollmentSession(
     }), deadline);
     const paths = await abortable(worker.StoragePaths.fromRoot(storageId), deadline);
     try {
-      const keys = await abortable(worker.StorageKeys.fromBytes(secrets.databaseKey), deadline);
+      const keys = await abortable(worker.StorageKeys.fromBytes(owned.databaseKey), deadline);
       try {
         const store = await abortable(worker.CredentialStore.new(paths, keys), deadline);
         const wallet = new WalletKit(worker, store, currentProtocolEnvironment(), "us");
         progress("Preparing your World ID…");
         // Registration is submitted once. An ambiguous outcome must not be retried with another seed.
-        await abortable(wallet.register(secrets.seed), deadline);
+        await abortable(wallet.register(owned.seed), deadline);
         for (;;) {
           const status = await abortable(wallet.pollRegistration(), deadline);
           if (status.state === "finalized") break;
           if (!["queued", "batching", "submitted"].includes(status.state)) throw new Error("Enrollment account registration did not complete.");
           await pause(1000, deadline);
         }
-        await abortable(wallet.initializeAuthenticator(secrets.seed), deadline);
+        await abortable(wallet.initializeAuthenticator(owned.seed), deadline);
         const subject = await abortable(wallet.prepareCredential(11n), deadline);
         deadline.throwIfAborted();
         clearTimeout(timer);
-        const owned = secrets;
         return {
           wallet, storageId, ...subject, custodyPublicKey: owned.custodyPublicKey.slice(),
           async sealSecrets(key, binding) {
