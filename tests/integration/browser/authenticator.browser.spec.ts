@@ -51,13 +51,22 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
-    // Record completion atomically instead of racing it with separate browser round trips.
+    // Record partial hold and completion when React commits them; polling can miss these short stages.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
+      let partialHold: { title: string | null | undefined; fill: string } | undefined;
       const observer = new MutationObserver(() => {
+        const goldDots = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
+        if (!partialHold && document.querySelector('[data-state="holding"]') && goldDots.length > 0 && goldDots.length < 64) {
+          partialHold = {
+            title: document.querySelector('[data-testid=selfie-guidance]')?.textContent,
+            fill: getComputedStyle(goldDots[0]).fill,
+          };
+        }
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          goldDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
+          partialHold,
+          goldDots: goldDots.length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
@@ -68,13 +77,10 @@ if (!("bun" in process.versions)) {
       observer.observe(document.body, { attributes: true, childList: true, subtree: true });
     }));
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-    const goldDots = page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-    await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
-    expect(await goldDots.count()).toBeLessThan(64);
-    await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
-    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({
+      partialHold: { title: "Looking good. Hold still", fill: "rgb(212, 175, 55)" },
+      goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s",
+    });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
