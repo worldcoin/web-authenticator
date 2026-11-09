@@ -43,16 +43,20 @@ if (!("bun" in process.versions)) {
         HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
           if (type === "image/jpeg") {
             const video = document.querySelector("video")!;
-            Object.assign(window, { capturedFrame: {
+            const frame = {
               width: this.width, height: this.height,
               previewRatio: video.clientWidth / video.clientHeight,
-            } });
+            };
+            return original.call(this, blob => {
+              if (blob?.type === "image/jpeg") Object.assign(window, { capturedFrame: frame });
+              callback(blob);
+            }, type, quality);
           }
           return original.call(this, callback, type, quality);
         };
       });
       await openSelfieRequest(page, "wide");
-      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => "capturedFrame" in window)).toBe(true);
       const frame = await page.evaluate(() => (window as typeof window & {
         capturedFrame: { width: number; height: number; previewRatio: number };
       }).capturedFrame);
