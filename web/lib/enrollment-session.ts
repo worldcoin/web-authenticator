@@ -45,10 +45,10 @@ export async function prepareEnrollmentSession(
     deadline.throwIfAborted();
     const storageId = `/walletkit/enrollment-${crypto.randomUUID()}`;
     const worker = await abortable(initialize({ signal: deadline }).then(worker => {
+      client = worker;
       if (deadline.aborted) worker.terminate();
       return worker;
     }), deadline);
-    client = worker;
     const paths = await abortable(worker.StoragePaths.fromRoot(storageId), deadline);
     try {
       const keys = await abortable(worker.StorageKeys.fromBytes(secrets.databaseKey), deadline);
