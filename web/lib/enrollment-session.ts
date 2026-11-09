@@ -37,7 +37,11 @@ export async function prepareEnrollmentSession(
   };
   deadline.addEventListener("abort", dispose, { once: true });
   try {
-    secrets = await createEnrollmentSecrets();
+    secrets = await abortable(createEnrollmentSecrets().then(value => {
+      secrets = value;
+      if (disposed) clearEnrollmentSecrets(value);
+      return value;
+    }), deadline);
     deadline.throwIfAborted();
     const storageId = `/walletkit/enrollment-${crypto.randomUUID()}`;
     const worker = await abortable(initialize({ signal: deadline }).then(worker => {
