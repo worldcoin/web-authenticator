@@ -13,6 +13,8 @@ export interface EnvironmentConfig {
   readonly appOrigin: string;
   /** World ID RP registry on World Chain (chain 480). */
   readonly rpRegistry: `0x${string}`;
+  /** Signup-service v2 capture submission and credential polling endpoint. */
+  readonly signupIdentity: string;
   /** Origins the page may connect to besides 'self'; becomes CSP `connect-src`. */
   readonly connectSrc: readonly string[];
   /** Attested selfie-enrollment TEE policy, or null while extraction is off for this environment. */
@@ -40,6 +42,7 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
     appOrigin: "https://authenticator.toolsforhumanity.dev",
     // Source: world-id-deploy/developer-portal/stacks/web/parameters.ts.
     rpRegistry: "0x37d2462fE7B4a07987263AAd062C6593C4f567b9",
+    signupIdentity: "https://app.stage.face.worldcoin.org/api/v2/identity",
     connectSrc: Object.freeze([
       "https://gateway.id-infra.worldcoin.dev",
       "https://indexer.us.id-infra.worldcoin.dev",
@@ -50,6 +53,7 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
   production: Object.freeze({
     appOrigin: "https://web.world.org",
     rpRegistry: "0xD9A213A92Bca460D56cDbBF4d775b48fB5925BbC",
+    signupIdentity: "https://app.face.worldcoin.org/api/v2/identity",
     connectSrc: Object.freeze([
       "https://gateway.id-infra.world.org",
       "https://indexer.us.id-infra.world.org",
@@ -70,7 +74,7 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, ...tee];
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, new URL(config.signupIdentity).origin, ...tee];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {
