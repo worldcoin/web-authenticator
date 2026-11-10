@@ -25,6 +25,10 @@
   --color-ink-muted: #75726f;
   --color-line: #e1dfda;
   --color-brand-blue: #0a5cfe;
+  --color-brand-blue-hover: #0846c2;
+  --color-action-disabled-border: #d6dde7;
+  --color-action-disabled: #e7ebf0;
+  --color-action-disabled-foreground: #657184;
 
   --animate-request-shimmer: request-shimmer 1.2s linear infinite;
   --animate-completion-in: completion-in 250ms ease-out both;
