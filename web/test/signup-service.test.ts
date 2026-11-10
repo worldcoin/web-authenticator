@@ -106,23 +106,57 @@ test('rejects malformed capture, authorization and endpoints before making a req
 })
 
 test('validates receipt identity, grant encoding, and expiry', async () => {
-	for (const change of [
+	const changes = [
 		{ sub: '0x123abd' }, { capture_id: CHALLENGE_ID },
 		{ polling_token: 'not-a-token' }, { polling_token: 'A'.repeat(42) + 'B' },
-		{ polling_token_expires_at: 'tomorrow' }, { polling_token_expires_at: new Date(0).toISOString() },
-	]) await withFetch(() => Response.json({ ...receiptWire(), ...change }, { status: 202 }), async () => {
-		await expect(submitEnrollment(capture(), authorization, options())).rejects.toBeInstanceOf(SignupServiceError)
+		{ polling_token_expires_at: 'tomorrow' },
+		{ polling_token_expires_at: '2030-01-01T00:15:00.1234567890Z' },
+		...['sub', 'capture_id', 'polling_token', 'polling_token_expires_at'].flatMap(key =>
+			[undefined, null, 42].map(value => ({ [key]: value }))),
+	]
+	for (const wire of [null, [], 'receipt', ...changes.map(change => ({ ...receiptWire(), ...change }))]) {
+		await withFetch(() => Response.json(wire, { status: 202 }), async () => {
+			await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
+				code: 'invalid_response', retryable: true, status: 202,
+				message: 'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+			})
+		})
+	}
+	await withFetch(() => Response.json({ ...receiptWire(), polling_token_expires_at: new Date(0).toISOString() }, { status: 202 }), async () => {
+		await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({ code: 'polling_grant_expired', retryable: false })
 	})
 })
 
+test('preserves supported expiry offsets, fractional precision, and UUID-shaped capture identifiers', async () => {
+	const clock = spyOn(Date, 'now').mockReturnValue(Date.parse('2030-01-01T00:00:00Z'))
+	const captureId = '01234567-89ab-0cde-0f01-23456789abcd'
+	const original = capture()
+	const bundle = { ...original, fields: original.fields.map(field => field.name === 'capture_id' ? { ...field, value: captureId } : field) }
+	try {
+		for (const expires of ['2030-01-01T00:15:00Z', '2030-01-01T00:15:00.123456789Z', '2030-01-01T01:15:00.123456789+01:00', '2029-12-31T19:15:00-05:00']) {
+			await withFetch((_url, init) => init.method === 'PUT'
+				? Response.json({ ...receiptWire(), capture_id: captureId, polling_token_expires_at: expires }, { status: 202 })
+				: Response.json(statusWire('Completed', { capture_id: captureId })), async () => {
+				const grant = await submitEnrollment(bundle, authorization, options())
+				expect(grant.pollingTokenExpiresAt).toBe(expires)
+				expect(await getEnrollmentStatus(grant, options())).toEqual({ sub: SUB, captureId, state: 'duplicate' })
+			})
+		}
+	} finally { clock.mockRestore() }
+})
+
 test('surfaces a retryable submit error without replaying its consumed ownership proof', async () => {
-	let calls = 0
-	await withFetch(() => { calls++; return Response.json({ error: 'polling_grant_unavailable', retryable: true }, { status: 503 }) }, async () => {
-		await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
-			code: 'polling_grant_unavailable', retryable: true, status: 503,
+	for (const [body, status, expected] of [
+		[{ error: 'polling_grant_unavailable', retryable: true }, 503, { code: 'polling_grant_unavailable', retryable: true, status: 503 }],
+		[{ error: 'invalid_capture', retryable: false, metadata: { version: 3 } }, 400, { code: 'invalid_capture', retryable: false, status: 400 }],
+		[{ error: null, retryable: true }, 503, { code: 'invalid_response', retryable: true, status: 503, message: 'Signup service returned an invalid enrollment response (HTTP 503).' }],
+	] as const) {
+		let calls = 0
+		await withFetch(() => { calls++; return Response.json(body, { status }) }, async () => {
+			await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject(expected)
 		})
-	})
-	expect(calls).toBe(1)
+		expect(calls).toBe(1)
+	}
 })
 
 test('an ambiguous submission reports that a fresh proof is required and is not retried', async () => {
@@ -154,24 +188,35 @@ test('decodes signed credential bytes and distinguishes duplicate, failed, and e
 	const cases = [
 		[statusWire('Completed', { unique: true, credential }), { state: 'completed', credential: bytes }],
 		[statusWire('Completed'), { state: 'duplicate' }],
+		[statusWire('Received', { unique: true }), { state: 'pending', status: 'Received' }],
+		[statusWire('PendingActivation'), { state: 'pending', status: 'PendingActivation' }],
 		[statusWire('Failed', { error: 'MPC_RESULT_FAILED' }), { state: 'failed', reason: 'MPC_RESULT_FAILED' }],
-		[statusWire('Error'), { state: 'failed' }],
-		[statusWire('Expired'), { state: 'expired' }],
+		[statusWire('Error', { unique: true }), { state: 'failed' }],
+		[statusWire('Expired', { unique: true }), { state: 'expired' }],
 	] as const
 	for (const [wire, expected] of cases) await withFetch(() => Response.json(wire), async () => {
-		expect(await pollEnrollment(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, ...expected })
+		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, ...expected })
 	})
 })
 
 test('rejects polling responses for another capture or with inconsistent completion data', async () => {
 	for (const wire of [
+		null, [], 'status',
+		...['sub', 'capture_id', 'status', 'unique'].flatMap(key =>
+			[undefined, null, 42].map(value => statusWire('InProgress', { [key]: value }))),
 		statusWire('InProgress', { sub: '0x456' }), statusWire('InProgress', { capture_id: CHALLENGE_ID }),
 		statusWire('NewStatus'), statusWire('Completed', { unique: true }),
+		statusWire('Completed', { unique: true, credential: null }),
+		statusWire('Completed', { unique: true, credential: 42 }),
+		statusWire('Completed', { unique: true, credential: '' }),
 		statusWire('Completed', { unique: true, credential: 'not base64' }),
 		statusWire('Completed', { unique: true, credential: 'AB==' }),
 		statusWire('Completed', { credential: btoa('{}') }), statusWire('Received', { credential: btoa('{}') }),
+		...['Received', 'InProgress', 'PendingActivation', 'Completed', 'Failed', 'Error', 'Expired'].map(status => statusWire(status, { credential: null })),
 		statusWire('InProgress', { unique: 'false' }), statusWire('InProgress', { error: null }),
+		statusWire('InProgress', { error: 42 }),
 		statusWire('Failed', { error: 'x'.repeat(1025) }),
+		statusWire('Failed', { error: '😀'.repeat(513) }),
 	]) await withFetch(() => Response.json(wire), async () => {
 		await expect(getEnrollmentStatus(receipt(), options())).rejects.toMatchObject({ code: 'invalid_response' })
 	})
@@ -192,7 +237,7 @@ test('ignores additive receipt and status metadata without following response UR
 })
 
 test('recognizes a failed capture with free-form backend text without returning that text', async () => {
-	for (const error of ['MPC response missing for private subject 0x123abc', 'NEW_BACKEND_ERROR']) {
+	for (const error of ['MPC response missing for private subject 0x123abc', 'NEW_BACKEND_ERROR', '😀'.repeat(512)]) {
 		await withFetch(() => Response.json(statusWire('Failed', { error })), async () => {
 			expect(await getEnrollmentStatus(receipt(), options())).toEqual({
 				sub: SUB, captureId: CAPTURE_ID, state: 'failed', reason: 'capture_processing_failed',
@@ -331,6 +376,11 @@ test('rejects malformed responses without exposing arbitrary server text in erro
 		new Response('{', { headers: { 'Content-Type': 'application/json' } }),
 		Response.json({ error: sensitive, retryable: true }, { status: 503 }),
 		Response.json({ error: 'x'.repeat(129), retryable: true }, { status: 503 }),
+		...[null, [], { retryable: true }, { error: 'capture_store_unavailable' },
+			{ error: null, retryable: true }, { error: 42, retryable: true },
+			{ error: 'capture_store_unavailable', retryable: null }, { error: 'capture_store_unavailable', retryable: 'true' },
+		].map(body => Response.json(body, { status: 503 })),
+		Response.json(statusWire('Completed', { unique: true, credential: sensitive })),
 	]) await withFetch(() => response, async () => {
 		try {
 			await getEnrollmentStatus(receipt(), options())
