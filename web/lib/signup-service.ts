@@ -175,13 +175,24 @@ export async function submitEnrollment(
 	for (const field of capture.fields) body.append(field.name, field.value)
 	body.append('world_id_challenge_id', authorization.challengeId)
 	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
-	const value = record(await requestJson(url, {
-		method: 'PUT', headers: { 'X-Nitro-Attestation': capture.attestation_header }, body,
-	}, 202, options), ['sub', 'capture_id', 'polling_token', 'polling_token_expires_at'])
-	if (value.sub !== identity.sub || value.capture_id !== identity.captureId || typeof value.polling_token !== 'string' || typeof value.polling_token_expires_at !== 'string') return invalidResponse()
-	const receipt = { sub: identity.sub, captureId: identity.captureId, pollingToken: value.polling_token, pollingTokenExpiresAt: value.polling_token_expires_at }
-	validateReceipt(receipt)
-	return receipt
+	try {
+		const value = record(await requestJson(url, {
+			method: 'PUT', headers: { 'X-Nitro-Attestation': capture.attestation_header }, body,
+		}, 202, options), ['sub', 'capture_id', 'polling_token', 'polling_token_expires_at'])
+		if (value.sub !== identity.sub || value.capture_id !== identity.captureId || typeof value.polling_token !== 'string' || typeof value.polling_token_expires_at !== 'string') return invalidResponse()
+		const receipt = { sub: identity.sub, captureId: identity.captureId, pollingToken: value.polling_token, pollingTokenExpiresAt: value.polling_token_expires_at }
+		validateReceipt(receipt)
+		return receipt
+	} catch (cause) {
+		if (options.signal.aborted) throw options.signal.reason
+		if (cause instanceof SignupServiceError && cause.code === 'invalid_response' && (cause.status === undefined || cause.status === 202)) {
+			throw new SignupServiceError(
+				'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+				cause.code, true, cause.status ?? 202, { cause },
+			)
+		}
+		throw cause
+	}
 }
 
 function credentialBytes(value: unknown): Uint8Array {
