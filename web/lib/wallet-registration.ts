@@ -4,7 +4,7 @@ import type { WalletKit } from "./walletkit";
 import { abortable, pause } from "./async";
 import { registrationState, saveRegistrationState } from "./wallet-persistence";
 
-export async function activateWallet(
+export async function openOrRegisterAuthenticator(
   wallet: WalletKit,
   seed: Uint8Array,
   credentialId: string,

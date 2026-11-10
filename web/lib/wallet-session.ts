@@ -5,7 +5,7 @@ import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy
 import { registrationState, saveRegistrationState } from './wallet-persistence';
 import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
-import { activateWallet } from "./wallet-registration";
+import { openOrRegisterAuthenticator } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { isSharedRpId, rpIdForNewPasskey } from "./passkey-rp";
@@ -105,7 +105,7 @@ export async function openRequestWallet(signal: AbortSignal, progress: (message:
         controller.abort(); session.client.terminate();
       },
     });
-    await activateWallet(account, seed, credentialId, deadline, () => progress("Getting your World ID ready…"), registerIfMissing);
+    await openOrRegisterAuthenticator(account, seed, credentialId, deadline, () => progress("Getting your World ID ready…"), registerIfMissing);
   }, mode);
   // Opening failures reject the opener. Later failures are explicit results for
   // the request flow, including when capture has not yet finished.
@@ -124,7 +124,7 @@ export async function openAuthenticator(signal: AbortSignal, progress: (message:
   let account: AccountWallet | undefined;
   await openWithPasskey(signal, async (session, seed, credentialId, deadline, registerIfMissing) => {
     account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
-    await activateWallet(account, seed, credentialId, deadline, progress, registerIfMissing);
+    await openOrRegisterAuthenticator(account, seed, credentialId, deadline, progress, registerIfMissing);
   }, mode);
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
   return account;
