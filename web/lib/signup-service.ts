@@ -1,13 +1,11 @@
 import { abortable, pause } from './async'
-import { type EnrollmentCapture, isCanonicalSubject, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
+import { type EnrollmentCapture, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
+import { EnrollmentStatusSchema, SignupServiceErrorSchema, SubmissionReceiptSchema } from './signup-service-contract'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const MAX_PROOF_BYTES = 768 * 1024
 const REQUEST_TIMEOUT_MS = 10_000
 const POLLING_TIMEOUT_MS = 120_000
-const TOKEN = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/
-const ERROR_CODE = /^[A-Za-z][A-Za-z0-9_]{0,127}$/
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/
 
 export interface SignupServiceOptions {
 	/** A trusted configuration value, never a URL supplied by an enrollment response. */
@@ -53,22 +51,6 @@ function invalidResponse(): never {
 	throw new SignupServiceError('Signup service returned an invalid enrollment response.', 'invalid_response', false)
 }
 
-function record(value: unknown, required: string[]): Record<string, unknown> {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidResponse()
-	const object = value as Record<string, unknown>
-	if (required.some(key => !Object.hasOwn(object, key))) {
-		return invalidResponse()
-	}
-	return object
-}
-
-function expiration(value: unknown): number {
-	if (typeof value !== 'string' || value.length > 40 || !TIMESTAMP.test(value)) return invalidResponse()
-	const milliseconds = Date.parse(value)
-	if (!Number.isFinite(milliseconds)) return invalidResponse()
-	return milliseconds
-}
-
 function endpoint(value: string): URL {
 	const url = new URL(value)
 	const localHttp = url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
@@ -86,10 +68,12 @@ function grantExpired(): SignupServiceError {
 }
 
 function validateReceipt(receipt: EnrollmentReceipt): number {
-	if (!isCanonicalSubject(receipt.sub) || !isCanonicalUuid(receipt.captureId) || typeof receipt.pollingToken !== 'string' || !TOKEN.test(receipt.pollingToken)) {
-		return invalidResponse()
-	}
-	const expires = expiration(receipt.pollingTokenExpiresAt)
+	const parsed = SubmissionReceiptSchema.safeParse({
+		sub: receipt.sub, capture_id: receipt.captureId,
+		polling_token: receipt.pollingToken, polling_token_expires_at: receipt.pollingTokenExpiresAt,
+	})
+	if (!parsed.success) return invalidResponse()
+	const expires = Date.parse(parsed.data.polling_token_expires_at)
 	if (expires <= Date.now()) throw grantExpired()
 	return expires
 }
@@ -138,8 +122,9 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 		responseStatus = response.status
 		const value = await readJson(response, signal)
 		if (response.status !== expectedStatus) {
-			const error = record(value, ['error', 'retryable'])
-			if (typeof error.error !== 'string' || !ERROR_CODE.test(error.error) || typeof error.retryable !== 'boolean') return invalidResponse()
+			const parsed = SignupServiceErrorSchema.safeParse(value)
+			if (!parsed.success) return invalidResponse()
+			const error = parsed.data
 			throw new SignupServiceError(`Signup service returned ${error.error}.`, error.error, error.retryable, response.status)
 		}
 		return value
@@ -176,10 +161,12 @@ export async function submitEnrollment(
 	body.append('world_id_challenge_id', authorization.challengeId)
 	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
 	try {
-		const value = record(await requestJson(url, {
+		const parsed = SubmissionReceiptSchema.safeParse(await requestJson(url, {
 			method: 'PUT', headers: { 'X-Nitro-Attestation': capture.attestation_header }, body,
-		}, 202, options), ['sub', 'capture_id', 'polling_token', 'polling_token_expires_at'])
-		if (value.sub !== identity.sub || value.capture_id !== identity.captureId || typeof value.polling_token !== 'string' || typeof value.polling_token_expires_at !== 'string') return invalidResponse()
+		}, 202, options))
+		if (!parsed.success) return invalidResponse()
+		const value = parsed.data
+		if (value.sub !== identity.sub || value.capture_id !== identity.captureId) return invalidResponse()
 		const receipt = { sub: identity.sub, captureId: identity.captureId, pollingToken: value.polling_token, pollingTokenExpiresAt: value.polling_token_expires_at }
 		validateReceipt(receipt)
 		return receipt
@@ -195,8 +182,8 @@ export async function submitEnrollment(
 	}
 }
 
-function credentialBytes(value: unknown): Uint8Array {
-	if (typeof value !== 'string' || !(/^[A-Za-z0-9+/]+={0,2}$/.test(value) || /^[A-Za-z0-9_-]+={0,2}$/.test(value))) return invalidResponse()
+function credentialBytes(value: string): Uint8Array {
+	if (!(/^[A-Za-z0-9+/]+={0,2}$/.test(value) || /^[A-Za-z0-9_-]+={0,2}$/.test(value))) return invalidResponse()
 	const standard = value.replace(/-/g, '+').replace(/_/g, '/')
 	try {
 		const decoded = atob(standard)
@@ -213,15 +200,16 @@ export async function getEnrollmentStatus(receipt: EnrollmentReceipt, options: S
 	validateReceipt(receipt)
 	const url = endpoint(options.endpoint)
 	url.searchParams.set('sub', receipt.sub)
-	const value = record(await requestJson(url, {
+	const parsed = EnrollmentStatusSchema.safeParse(await requestJson(url, {
 		method: 'GET', headers: { Authorization: `Bearer ${receipt.pollingToken}` },
-	}, 200, options), ['sub', 'capture_id', 'status', 'unique'])
-	if (value.sub !== receipt.sub || value.capture_id !== receipt.captureId || typeof value.unique !== 'boolean' || (Object.hasOwn(value, 'error') && (typeof value.error !== 'string' || value.error.length > 1024))) return invalidResponse()
+	}, 200, options))
+	if (!parsed.success) return invalidResponse()
+	const value = parsed.data
+	if (value.sub !== receipt.sub || value.capture_id !== receipt.captureId) return invalidResponse()
 	const identity = { sub: receipt.sub, captureId: receipt.captureId }
 	if (value.status === 'Completed' && value.unique) {
 		return { ...identity, state: 'completed', credential: credentialBytes(value.credential) }
 	}
-	if (Object.hasOwn(value, 'credential')) return invalidResponse()
 	switch (value.status) {
 		case 'Received': case 'InProgress': case 'PendingActivation':
 			return { ...identity, state: 'pending', status: value.status }
