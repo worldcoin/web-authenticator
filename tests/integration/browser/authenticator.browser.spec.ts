@@ -347,8 +347,12 @@ if (!("bun" in process.versions)) {
     expect(violations).toEqual([]);
   });
 
-  for (const providerArrays of [false, true]) {
-  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${providerArrays ? "provider arrays" : "native buffers"})`, async ({ page, browserName }) => {
+  for (const scenario of [
+    { name: "native buffers", providerArrays: false, omitCreationResults: false },
+    { name: "provider arrays", providerArrays: true, omitCreationResults: false },
+    { name: "assertion fallback", providerArrays: false, omitCreationResults: true },
+  ]) {
+  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${scenario.name})`, async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Virtual PRF requires Chromium CDP");
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
@@ -357,14 +361,27 @@ if (!("bun" in process.versions)) {
       protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true,
       hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true,
     } });
-    if (providerArrays) await page.addInitScript(() => {
+    await page.addInitScript(({ providerArrays, omitCreationResults }) => {
+      const ceremonies = { create: 0, get: 0 };
+      Object.assign(window, { passkeyCeremonies: ceremonies });
+      const create = navigator.credentials.create.bind(navigator.credentials);
+      const get = navigator.credentials.get.bind(navigator.credentials);
+      navigator.credentials.create = options => { ceremonies.create++; return create(options); };
+      navigator.credentials.get = options => { ceremonies.get++; return get(options); };
       const original = PublicKeyCredential.prototype.getClientExtensionResults;
       PublicKeyCredential.prototype.getClientExtensionResults = function () {
         const output = original.call(this);
-        const result = (output as unknown as { prf?: { results?: { first?: unknown } } }).prf?.results;
-        if (result?.first instanceof ArrayBuffer) result.first = Array.from(new Uint8Array(result.first));
+        const prf = (output as unknown as { prf?: { results?: { first?: unknown } } }).prf;
+        if (omitCreationResults && this.response instanceof AuthenticatorAttestationResponse && prf) delete prf.results;
+        const result = prf?.results;
+        if (providerArrays && result?.first instanceof ArrayBuffer) result.first = Array.from(new Uint8Array(result.first));
         return output;
       };
+    }, scenario);
+    const ceremonies = () => page.evaluate(() => (window as typeof window & { passkeyCeremonies: { create: number; get: number } }).passkeyCeremonies);
+    let storageOpened = 0;
+    page.on("console", message => {
+      if (message.text().includes("walletkit.storage_open") && message.text().includes("completed")) storageOpened++;
     });
     let registrations = 0;
     await page.route("https://**/*", async route => {
@@ -375,6 +392,8 @@ if (!("bun" in process.versions)) {
     await openSelfieRequest(page, "", "http://localhost:4194");
     await page.getByRole("button", { name: "Save with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("Setup didn’t finish", { timeout: 90_000 });
+    expect(await ceremonies()).toEqual({ create: 1, get: scenario.omitCreationResults ? 1 : 0 });
+    expect(storageOpened).toBe(1);
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
     expect(Object.values(saved)).toContain("submitting");
@@ -383,6 +402,8 @@ if (!("bun" in process.versions)) {
     await page.goto("http://localhost:4194/");
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("Retry with your existing passkey", { timeout: 90_000 });
+    expect(await ceremonies()).toEqual({ create: 0, get: 1 });
+    expect(storageOpened).toBe(2);
     expect(registrations).toBe(before);
     expect(await page.evaluate(() => localStorage.getItem("world-id-wallet-v1"))).toBe(saved["world-id-wallet-v1"]);
   });

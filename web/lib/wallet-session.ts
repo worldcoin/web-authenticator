@@ -143,6 +143,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
       saveRegistrationState(legacy.credentialId, legacy.registration);
     }
   }
+  let createdCredential: PublicKeyCredential | undefined;
   if (profile === undefined) {
     const rpId = await rpIdForNewPasskey(window.location.origin, PublicKeyCredential);
     const credential = await logFlowStep(rpId ? "passkey.create_shared_rp" : "passkey.create", () => navigator.credentials.create({
@@ -156,12 +157,15 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
         attestation: "none", timeout: 60_000,
-        extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
+        extensions: { prf: { eval: { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
       },
     })).catch(sharedRpFailure(rpId));
     if (!(credential instanceof PublicKeyCredential)) throw new WalletOpenError("Passkey creation was not completed.");
-    const extensions = credential.getClientExtensionResults() as AuthenticationExtensionsClientOutputs & { prf?: { enabled?: boolean } };
+    const extensions = credential.getClientExtensionResults() as PrfOutputs & { prf?: { enabled?: boolean } };
     if (extensions.prf?.enabled !== true) throw new WalletOpenError("This passkey provider does not support PRF. Choose a PRF-capable provider.");
+    // Providers that evaluate PRF during creation need no second WebAuthn ceremony.
+    // Missing results require an assertion; malformed results fail validation below.
+    if (extensions.prf.results !== undefined) createdCredential = credential;
     const createdId = Array.from(new Uint8Array(credential.rawId), b => b.toString(16).padStart(2, "0")).join("");
     profile = rpId ? { version: 1, credentialId: createdId, rpId } : { version: 1, credentialId: createdId };
     // Persist only the public credential ID, before opening any encrypted storage.
@@ -169,7 +173,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
   }
   const credentialId = Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
   const unlockRpId = profile.rpId;
-  const credential = await logFlowStep(unlockRpId ? "passkey.unlock_prf_shared_rp" : "passkey.unlock_prf", () => navigator.credentials.get({
+  const credential = createdCredential ?? await logFlowStep(unlockRpId ? "passkey.unlock_prf_shared_rp" : "passkey.unlock_prf", () => navigator.credentials.get({
     signal,
     publicKey: {
       ...(unlockRpId ? { rpId: unlockRpId } : {}),
