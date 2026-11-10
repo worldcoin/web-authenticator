@@ -4,6 +4,7 @@ import { activateWallet } from "../lib/wallet-registration";
 import { registrationState, saveRegistrationState } from "../lib/wallet-persistence";
 import type { WalletKit } from "../lib/walletkit";
 import { WalletRegistrationError } from "../lib/wallet-errors";
+import * as asyncOps from "../lib/async";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterAll(() => GlobalRegistrator.unregister());
@@ -35,6 +36,38 @@ test("ambiguous registration is persisted; retry checks the account without subm
 test("finalized registration never submits again", async () => {
   saveRegistrationState("ab", "finalized"); const f = fixture(); await activate(f.wallet);
   expect(f.calls).toEqual(["init"]);
+});
+test("an existing account without browser registration metadata never registers again", async () => {
+  const f = fixture();
+  f.wallet.initializeAuthenticator = async () => { f.calls.push("init"); };
+  await activate(f.wallet);
+  expect(f.calls).toEqual(["init"]);
+  expect(registrationState("ab")).toBe("finalized");
+});
+test("an account lookup outage does not authorize registration", async () => {
+  const f = fixture();
+  f.wallet.initializeAuthenticator = async () => {
+    throw Object.assign(new Error("Indexer unavailable"), { code: "NetworkError" });
+  };
+  await expect(activate(f.wallet)).rejects.toThrow("Retry with your existing passkey");
+  expect(f.calls).toEqual(["terminate"]);
+  expect(registrationState("ab")).toBeNull();
+});
+test("discovered-passkey recovery uses bounded reads without creating a missing account", async () => {
+  const f = fixture();
+  let reads = 0;
+  f.wallet.initializeAuthenticator = async () => {
+    reads++;
+    throw Object.assign(new Error("Account is not indexed"), { code: "AccountDoesNotExist" });
+  };
+  const pause = spyOn(asyncOps, "pause").mockResolvedValue();
+  try {
+    await expect(activateWallet(f.wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {}, false))
+      .rejects.toThrow("No new account was created");
+    expect(reads).toBe(9);
+    expect(f.calls).toEqual(["terminate"]);
+    expect(registrationState("ab")).toBeNull();
+  } finally { pause.mockRestore(); }
 });
 test("malformed registration metadata fails closed", async () => {
   window.localStorage.setItem("world-id-staging-registration-v1:ab", "unknown");
