@@ -4,10 +4,10 @@ import { RequestCompletion } from "./components/RequestCompletion";
 import { ConsentContinuationContext } from "./AppShell";
 import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
-import { hasSavedWallet, type RequestWalletSession, type WalletOpenMode } from "./lib/wallet-session";
+import type { RequestWalletSession } from "./lib/wallet-session";
 import { walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
-import { captureFrame, requestFrame } from "./components/styles";
+import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string };
@@ -28,7 +28,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   expired: boolean;
   onDispose: () => void;
   onTransitionChange: (active: boolean) => void;
-  onUnlock: (signal: AbortSignal, progress: (message: string) => void, mode?: WalletOpenMode) => Promise<RequestWalletSession>;
+  onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
   const [flow, setFlow] = useState<Flow>({ stage: "intro" });
   const [paused, setPaused] = useState(() => document.hidden);
@@ -37,8 +37,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   const [openError, setOpenError] = useState<string>();
   const [openProgress, setOpenProgress] = useState("Opening authenticator…");
   const continuationRef = use(ConsentContinuationContext);
-  const pendingStart = useRef<WalletOpenMode | null>(null);
-  const selectedMode = useRef<WalletOpenMode>("either");
+  const pendingStart = useRef(false);
   const operation = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const session = useRef<RequestWalletSession | null>(null);
@@ -103,11 +102,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
-  const start = useCallback(async (mode: WalletOpenMode = selectedMode.current) => {
-    if (loading) { pendingStart.current = mode; return; }
-    pendingStart.current = null;
+  const start = useCallback(async () => {
+    if (loading) { pendingStart.current = true; return; }
+    pendingStart.current = false;
     if (!incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
-    selectedMode.current = mode;
     try { checkExpiry(incoming.proof); }
     catch { setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return; }
     const controller = new AbortController();
@@ -117,7 +115,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     try {
       const current = await abortable(onUnlock(deadline, message => {
         if (!deadline.aborted) setOpenProgress(message);
-      }, mode).then(value => {
+      }).then(value => {
         if (deadline.aborted) { value.dispose(); deadline.throwIfAborted(); }
         session.current = value; return value;
       }), deadline);
@@ -135,7 +133,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         stop();
         if (cause instanceof RequestExpiredError) {
           setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose();
-        } else setOpenError(walletOpenErrorMessage(cause));
+        } else {
+          setOpenError(walletOpenErrorMessage(cause));
+          setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
+        }
       }
     } finally { setOpening(false); }
   }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop]);
@@ -147,9 +148,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     return () => { if (continuationRef.current === proceed) continuationRef.current = null; };
   }, [continuationRef, start]);
   useEffect(() => {
-    if (pendingStart.current === null || loading) return;
-    const mode = pendingStart.current;
-    const timer = setTimeout(() => void start(mode), 0);
+    if (!pendingStart.current || loading) return;
+    const timer = setTimeout(() => void start(), 0);
     return () => clearTimeout(timer);
   }, [loading, start]);
 
@@ -192,6 +192,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }
   };
 
+  if (opening) return <div className={requestFrame}>
+    <div className={screenContent}><div className={centeredLayout}>
+      <p className={body} role="status">{openProgress}</p>
+    </div></div>
+    <div className={actions}><button className={secondaryAction} onClick={() => void cancel()}>Cancel request</button></div>
+  </div>;
+
   if (flow.stage === "setup-error") return <div className={requestFrame}>
     <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onRetry={() => {
       completing.current = false; setOpenError(undefined); setFlow({ stage: "intro" });
@@ -224,11 +231,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       rp={incoming?.label}
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
-      busy={opening}
-      busyMessage={openProgress}
-      detail={openError}
+      busy={false}
       onStart={() => void start()}
-      onOpenExisting={!hasSavedWallet() ? () => void start("open") : undefined}
       onCancel={() => void cancel()}
     />
   </div>;
