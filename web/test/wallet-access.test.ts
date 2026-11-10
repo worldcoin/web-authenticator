@@ -12,7 +12,13 @@ afterAll(() => GlobalRegistrator.unregister());
 
 test("explicit access mode cannot create or replace a saved authenticator", async () => {
   const signal = new AbortController().signal;
-  await expect(openAuthenticator(signal, () => {}, "open")).rejects.toThrow("No saved authenticator");
+  let requested: CredentialRequestOptions | undefined;
+  Object.defineProperty(navigator, "credentials", { configurable: true, value: {
+    get: async (options: CredentialRequestOptions) => { requested = options; throw new DOMException("Cancelled", "NotAllowedError"); },
+    create: async () => { throw new Error("Sign-in must not create a passkey"); },
+  } });
+  await expect(openAuthenticator(signal, () => {}, "open")).rejects.toThrow("Cancelled");
+  expect(requested?.publicKey?.allowCredentials).toBeUndefined();
   localStorage.setItem("world-id-wallet-v1", '{"version":1,"credentialId":"ab"}');
   await expect(openAuthenticator(signal, () => {}, "create")).rejects.toThrow("already exists");
   expect(localStorage.getItem("world-id-wallet-v1")).toBe('{"version":1,"credentialId":"ab"}');

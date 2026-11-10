@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
-import { signedRequest, encryptedRequest, openSelfieRequest } from "../fixtures/request";
+import { signedRequest, encryptedRequest, openSelfieRequest, installRequestWallet } from "../fixtures/request";
 
 // Pause when React commits the stage, before polling can skip a short animation.
 async function hideAtStage(page: Page, stage: string) {
@@ -17,12 +17,15 @@ async function hideAtStage(page: Page, stage: string) {
 }
 
 if (!("bun" in process.versions)) {
+  test.beforeEach(async ({ page }, info) => {
+    if (!info.title.startsWith("real virtual PRF") && !info.title.startsWith("creating a World ID shows progress")) await installRequestWallet(page);
+  });
   test("root is an authenticator, with no implicit RP or network registration", async ({ page }, info) => {
     const external: string[] = [];
     page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1:4194")) external.push(request.url()); });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("body")).not.toContainText("Zoom");
     expect(external).toEqual([]);
@@ -38,7 +41,7 @@ if (!("bun" in process.versions)) {
     }
   });
 
-  test("public capture retries failure and automatically completes before optional saving", async ({ page }, info) => {
+  test("public capture retries failure and completes with its already unlocked wallet", async ({ page }, info) => {
     await installCamera(page);
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
@@ -83,14 +86,10 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await expect(page.getByTestId("request-completion")).toHaveCSS("opacity", "1");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-capture-success.png`, fullPage: true });
-    await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
-    await expect(page.getByTestId("save-decision")).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-save-choice.png`, fullPage: true });
-    await page.getByRole("button", { name: "Not now" }).click();
-    await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    await expect(page.getByText("You can close this page.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-finished.png`, fullPage: true });
-    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(["wid_consent"]);
   });
 
   test.describe("automatic completion lifecycle", () => {
@@ -149,9 +148,8 @@ if (!("bun" in process.versions)) {
           document.dispatchEvent(new Event("visibilitychange"));
         });
         await page.clock.runFor(2000);
-        await expect(page.getByRole("heading", { name: "Save your authenticator?" })).toBeVisible();
+        await expect(page.getByText("You can close this page.")).toBeVisible();
         expect(await page.getByRole("button", { name: "Menu" }).boundingBox()).toEqual(footerPosition);
-        await page.getByRole("button", { name: "Not now" }).click();
         await page.clock.runFor(10_000);
         await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
         await expect(page.getByText("You can close this page.")).toBeVisible();
@@ -217,7 +215,7 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
     await expect(page.getByRole("button", { name: "Create a new World ID" })).toBeEnabled();
     await expect(page.locator("video")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled();
     expect(cameraCalls).toBe(0);
     expect(new URL(page.url()).pathname).toBe("/");
     // The server serves the app on this path, so a reload keeps the screen.
@@ -240,8 +238,8 @@ if (!("bun" in process.versions)) {
     });
     await page.goto("/");
     const signIn = page.getByRole("button", { name: "Sign in with passkey" });
-    await expect(signIn).toBeDisabled();
-    await expect(signIn).toHaveCSS("background-color", "rgb(231, 235, 240)");
+    await expect(signIn).toBeEnabled();
+    await expect(signIn).toHaveCSS("background-color", "rgb(10, 92, 254)");
     await page.getByRole("button", { name: "Create a new World ID" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
     await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");
@@ -323,7 +321,8 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
-    test("a request link shows the consent screen, then its intro", async ({ page }) => {
+    test("a request link continues from consent into passkey unlock and camera", async ({ page }) => {
+      await installCamera(page);
       const { payload, registry } = await signedRequest(11);
       const encrypted = await encryptedRequest(payload);
       await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
@@ -331,8 +330,7 @@ if (!("bun" in process.versions)) {
       await page.goto("/verify" + encrypted.query);
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
       await page.getByRole("button", { name: "Decline" }).click();
-      await expect(page.getByRole("heading", { name: "Complete a Selfie Check" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Start selfie check" })).toBeEnabled();
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toBeVisible();
     });
   });
 
@@ -352,7 +350,7 @@ if (!("bun" in process.versions)) {
     { name: "provider arrays", providerArrays: true, omitCreationResults: false },
     { name: "assertion fallback", providerArrays: false, omitCreationResults: true },
   ]) {
-  test(`real virtual PRF and WalletKit vault survive a failed staging registration without resubmitting (${scenario.name})`, async ({ page, browserName }) => {
+  test(`real virtual PRF and WalletKit vault fail closed on unavailable account lookup (${scenario.name})`, async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Virtual PRF requires Chromium CDP");
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
@@ -390,15 +388,14 @@ if (!("bun" in process.versions)) {
     });
     await installCamera(page);
     await openSelfieRequest(page, "", "http://localhost:4194");
-    await page.getByRole("button", { name: "Save with passkey" }).click();
-    await expect(page.getByRole("alert")).toContainText("Setup didn’t finish", { timeout: 90_000 });
+    await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible({ timeout: 90_000 });
     expect(await ceremonies()).toEqual({ create: 1, get: scenario.omitCreationResults ? 1 : 0 });
     expect(storageOpened).toBe(1);
     const saved = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
     expect(JSON.parse(saved["world-id-wallet-v1"])).toEqual({ version: 1, credentialId: expect.any(String) });
-    expect(Object.values(saved)).toContain("submitting");
+    expect(Object.values(saved)).not.toContain("submitting");
     const before = registrations;
-    expect(before).toBe(1);
+    expect(before).toBe(0);
     await page.goto("http://localhost:4194/");
     await page.getByRole("button", { name: "Sign in with passkey" }).click();
     await expect(page.getByRole("alert")).toContainText("Retry with your existing passkey", { timeout: 90_000 });

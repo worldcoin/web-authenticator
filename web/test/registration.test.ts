@@ -11,10 +11,11 @@ beforeEach(() => window.localStorage.clear());
 function fixture() {
   const calls: string[] = [];
   let fail = false;
+  let registered = ["submitting", "finalized"].includes(window.localStorage.getItem("world-id-staging-registration-v1:ab") ?? "");
   const wallet = {
-    register: async () => { expect(registrationState("ab")).toBe("submitting"); calls.push("register"); if (fail) throw new Error("network"); },
+    register: async () => { expect(registrationState("ab")).toBe("submitting"); calls.push("register"); if (fail) throw new Error("network"); registered = true; },
     pollRegistration: async () => ({ state: "finalized" }),
-    initializeAuthenticator: async () => { calls.push("init"); },
+    initializeAuthenticator: async () => { calls.push("init"); if (!registered) throw Object.assign(new Error("missing account"), { code: "AccountDoesNotExist" }); },
     terminate: () => calls.push("terminate"),
   } as unknown as WalletKit;
   return { wallet, calls, fail: () => { fail = true; } };
@@ -22,7 +23,7 @@ function fixture() {
 const activate = (wallet: WalletKit) => activateWallet(wallet, new Uint8Array(32), "ab", new AbortController().signal, () => {});
 test("registers once and initializes the encrypted wallet", async () => {
   const f = fixture(); await activate(f.wallet);
-  expect(f.calls).toEqual(["register", "init"]);
+  expect(f.calls).toEqual(["init", "register", "init"]);
   expect(registrationState("ab")).toBe("finalized");
 });
 test("ambiguous registration is persisted; retry checks the account without submitting again", async () => {
@@ -46,10 +47,10 @@ test("a definitive registration failure allows an explicit retry with the same p
   f.wallet.pollRegistration = async () => ({ state: "failed", error: "gateway rejected" });
   await expect(activate(f.wallet)).rejects.toThrow("Registration failed");
   expect(registrationState("ab")).toBe("failed");
-  expect(f.calls).toEqual(["register", "terminate"]);
+  expect(f.calls).toEqual(["init", "register", "terminate"]);
   const retry = fixture();
   await activate(retry.wallet);
-  expect(retry.calls).toEqual(["register", "init"]);
+  expect(retry.calls).toEqual(["init", "register", "init"]);
   expect(registrationState("ab")).toBe("finalized");
 });
 

@@ -8,6 +8,7 @@ import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
 import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
+import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
@@ -22,7 +23,7 @@ afterEach(() => { cleanup(); visit("/"); });
 async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
-  const calls = { prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
+  const calls = { unlocked: 0, prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
     proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
     validate: async () => {}, cancel: async () => {},
@@ -36,6 +37,7 @@ async function fixture(schema: number, available = false) {
   const services = {
     load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
+    unlock: async (): Promise<RequestWalletSession> => { calls.unlocked++; return { ready: Promise.resolve({ wallet }), dispose: () => wallet.terminate() }; },
     prove: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
   };
   return { services, calls, incoming, wallet };
@@ -64,6 +66,7 @@ test("request intro names the RP only after validation, then starts the check", 
   fireEvent.click(view.getByRole("button", { name: "Start selfie check" }));
   expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   expect(opened).toBe(0);
+  expect(f.calls.unlocked).toBe(1);
 });
 for (const [name, failure, title] of [
   ["expired", new RequestExpiredError("expired"), "This request has expired"],
@@ -111,14 +114,15 @@ test("a first visit sees the consent screen before the home page, and the choice
   expect(saved).toEqual(["granted", "denied"]);
 });
 
-test("a request link waits behind the consent screen and opens on its intro once the user chooses", async () => {
+test("a request link waits behind consent and continues to unlock and capture once the user chooses", async () => {
   const f = await fixture(11);
   const consent: ConsentClient = { read: async () => "unset", save: async choice => choice };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Decline" }));
-  expect(await view.findByRole("button", { name: "Start selfie check" })).toBeTruthy();
+  expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+  expect(f.calls.unlocked).toBe(1);
 });
 
 test("a failed consent save keeps the consent screen with an error", async () => {
@@ -137,7 +141,7 @@ test("unreadable consent storage asks again rather than assuming a choice", asyn
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
 });
 
-test("public Selfie capture finishes ephemerally without opening a wallet or sending a proof", async () => {
+test("public Selfie capture reuses the unlocked session without another save prompt or a proof", async () => {
   const f = await fixture(11);
   let opened = 0;
   f.services.open = async () => { opened++; throw new Error("Public capture must not open a wallet"); };
@@ -149,11 +153,13 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
     // Browser lifecycle tests inspect transient animation states with a controlled clock.
-    expect(await view.findByRole("heading", { name: "Save your authenticator?" }, { timeout: 4000 })).toBeTruthy();
-    expect(opened).toBe(0);
-    fireEvent.click(view.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(f.calls.terminated).toBe(1), { timeout: 4000 });
+    await waitFor(() => expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true), { timeout: 4000 });
+    expect(f.calls.unlocked).toBe(1);
+    expect(f.calls.terminated).toBe(1);
+    expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
     expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
     expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
     expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
     expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
@@ -170,16 +176,18 @@ test("public non-Selfie requests stop before capture or wallet access", async ()
   expect(await view.findByRole("heading", { name: "This request isn’t supported here" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
   expect(view.queryByRole("button", { name: /passkey|Approve/ })).toBeNull();
-  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
   expect(f.calls.listed).toBe(0);
 });
 
 for (const fails of [false, true]) {
-  test(`optional passkey saving ${fails ? "reports failure and allows declining" : "closes the saved wallet and finishes"}`, async () => {
+  test(`background account preparation ${fails ? "surfaces failure" : "waits after capture without another passkey"}`, async () => {
     const f = await fixture(11);
-    let opened = 0;
-    const open = f.services.open;
-    f.services.open = async () => { opened++; if (fails) throw new Error("passkey unavailable"); return open(); };
+    const ready = Promise.withResolvers<{ wallet: WalletKit } | { error: unknown }>();
+    f.services.unlock = async () => {
+      f.calls.unlocked++;
+      return { ready: ready.promise, dispose: () => f.wallet.terminate() };
+    };
     const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
       image: new Blob(["test"], { type: "image/jpeg" }),
       timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
@@ -187,33 +195,21 @@ for (const fails of [false, true]) {
     try {
       const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
       fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
-      const save = await view.findByRole("button", { name: "Save with passkey" }, { timeout: 4000 });
-      expect(opened).toBe(0);
-      expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-      fireEvent.click(save);
-      if (fails) {
-        expect(await view.findByRole("alert")).toBeTruthy();
-        expect(view.getByText(/Setup didn’t finish. A passkey may already have been saved/)).toBeTruthy();
-        fireEvent.click(view.getByRole("button", { name: "Not now" }));
-      }
-      expect(await view.findByRole("heading", { name: fails ? "Selfie captured" : "Authenticator saved" })).toBeTruthy();
-      expect(opened).toBe(1);
-      expect(f.calls.terminated).toBe(fails ? 0 : 1);
-      expect(f.calls.prove).toBe(0);
+      await waitFor(() => expect(view.getByTestId("request-frame").getAttribute("data-stage")).toBe("preparing"));
+      expect(f.calls.unlocked).toBe(1);
+      expect(f.calls.terminated).toBe(0);
       expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
-      expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
+      await act(async () => { ready.resolve(fails ? { error: new WalletOpenError("Registration is unavailable.") } : { wallet: f.wallet }); });
       if (fails) {
-        expect(view.queryByRole("button", { name: "Go to authenticator" })).toBeNull();
+        await view.findByRole("heading", { name: "Something went wrong" });
+        expect(view.getByText("Registration is unavailable.")).toBeTruthy();
       } else {
-        localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
-        fireEvent.click(view.getByRole("button", { name: "Go to authenticator" }));
-        expect(await view.findByRole("heading", { name: "Your World ID, in this browser." })).toBeTruthy();
-        expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
-        expect(opened).toBe(1);
-        expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
-        expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
+        await waitFor(() => expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true), { timeout: 4000 });
+        expect(captureMock).toHaveBeenCalledTimes(1);
       }
-    } finally { captureMock.mockRestore(); localStorage.clear(); }
+      expect(f.calls.terminated).toBe(1);
+      expect(f.calls.unlocked).toBe(1);
+    } finally { captureMock.mockRestore(); }
   });
 }
 
@@ -238,7 +234,7 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     return f.wallet;
   } }} consent={decidedConsent} />);
   try {
-    expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((await view.findByRole("button", { name: "Sign in with passkey" }) as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByRole("button", { name: /Link an authenticator/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
@@ -264,7 +260,7 @@ test("saved access requires explicit sign-in and shows credentials without start
     fireEvent.click(view.getByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
     expect(opened).toBe(1);
-    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
     fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
     expect(f.calls.terminated).toBe(1);
     expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
@@ -301,7 +297,7 @@ for (const mode of ["create", "open"] as const) {
     try {
       const action = mode === "open" ? "Sign in with passkey" : "Create a new World ID";
       const unavailable = mode === "open" ? "Create a new World ID" : "Sign in with passkey";
-      expect((await view.findByRole("button", { name: unavailable }) as HTMLButtonElement).disabled).toBe(true);
+      expect((await view.findByRole("button", { name: unavailable }) as HTMLButtonElement).disabled).toBe(mode === "open");
       fireEvent.click(view.getByRole("button", { name: action }));
       expect(view.getByRole("status").textContent).toContain(mode === "open" ? "Use your passkey" : "Create your passkey");
       expect(view.queryByRole("button", { name: action })).toBeNull();

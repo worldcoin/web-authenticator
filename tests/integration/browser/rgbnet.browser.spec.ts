@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
-import { openSelfieRequest } from "../fixtures/request";
+import { openSelfieRequest, installRequestWallet } from "../fixtures/request";
 
 async function openSelfie(page: Page, query = "") {
   await openSelfieRequest(page, query);
@@ -9,6 +9,7 @@ async function openSelfie(page: Page, query = "") {
 }
 
 if (!("bun" in process.versions)) {
+  test.beforeEach(async ({ page }) => { await installRequestWallet(page); });
   test("landing and saved access do not start the camera or load its runtime", async ({ page }) => {
     const modelRequests: string[] = [];
     page.on("request", request => {
@@ -29,11 +30,10 @@ if (!("bun" in process.versions)) {
       page.on("request", request => { if (["POST", "PUT"].includes(request.method())) uploads.push(request.url()); });
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
+      await expect(page.getByText("You can close this page.")).toBeVisible();
       expect(await page.evaluate(() => (window as any).cameraTest.stopped)).toBeGreaterThan(0);
       expect(uploads).toEqual([]);
       await expect(page.locator("video")).toHaveCount(0);
-      await page.getByRole("button", { name: "Not now" }).click();
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
@@ -52,7 +52,7 @@ if (!("bun" in process.versions)) {
         };
       });
       await openSelfieRequest(page, "wide");
-      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
+      await expect(page.getByText("You can close this page.")).toBeVisible();
       const frame = await page.evaluate(() => (window as typeof window & {
         capturedFrame: { width: number; height: number; previewRatio: number };
       }).capturedFrame);

@@ -9,14 +9,16 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * confirmed. Expired, invalid and unsupported requests end here: there is no
  * way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false }: {
+export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, busyMessage = "Opening authenticator…", onStart, onOpenExisting, onCancel, selfieOnly = false }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
   detail?: string | null;
   returnUrl?: string;
   busy: boolean;
+  busyMessage?: string;
   onStart: () => void;
+  onOpenExisting?: () => void;
   onCancel: () => void;
   selfieOnly?: boolean;
 }) {
@@ -45,13 +47,15 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
           {detail && <p className={`${detailCopy} text-[#4e4e4e]`}>{detail}</p>}
         </>}
       </div>
+      {open && detail && <p className={detailCopy} role="alert">{detail}</p>}
     </div></div>
     <div className={actions}>
       {open && <>
         <button className={primaryAction} disabled={state !== "ready" || busy} onClick={onStart}>
-          <span aria-live="polite">{state === "ready" ? selfieOnly ? "Start selfie check" : "Start check" : "Verifying request…"}</span>
+          <span aria-live="polite">{busy ? busyMessage : state === "ready" ? selfieOnly ? "Start selfie check" : "Start check" : "Verifying request…"}</span>
         </button>
-        {state === "ready" && <button className={secondaryAction} disabled={busy} onClick={onCancel}>Cancel request</button>}
+        {state === "ready" && onOpenExisting && <button className={secondaryAction} disabled={busy} onClick={onOpenExisting}>Use an existing passkey</button>}
+        {state === "ready" && <button className={secondaryAction} onClick={onCancel}>Cancel request</button>}
       </>}
       {!open && returnUrl && <a className={`${primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
     </div>
