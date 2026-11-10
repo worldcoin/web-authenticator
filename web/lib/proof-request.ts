@@ -2,44 +2,63 @@ import type { CredentialMetadata } from './walletkit'
 import { acceptsRequestEnvironment, type ProtocolEnvironment } from '../../config/environment'
 import { currentProtocolEnvironment } from './environment'
 import { hexToBytes, keccak256, stringToHex, verifyMessage, type Hex } from 'viem'
+import { z } from 'zod'
 
-export type Requirement = {
-	identifier: string
-	issuer_schema_id: number
-	signal?: string | null
-	genesis_issued_at_min?: number | null
-	expires_at_min?: number | null
-}
-export type Constraint = string | { any: Constraint[] } | { all: Constraint[] }
-export type ProofRequest = {
-	id: string
-	version: 1
-	proof_type: 'uniqueness'
-	rp_id: string
-	oprf_key_id: string
-	nonce: Hex
-	signature: Hex
-	created_at: number
-	expires_at: number
-	action: Hex
-	session_id: null
-	proof_requests: Requirement[]
-	constraints?: Constraint | null
-}
-export type Payload = {
-	app_id: string
-	action: string
-	environment: 'staging' | 'sandbox' | 'production'
-	proof_request: ProofRequest
-	require_user_presence?: boolean
-	identity_attributes?: unknown[]
-	return_to_url?: string
-}
-const uint = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 const record = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value)
 const hex = (value: unknown, size: number): value is Hex =>
 	typeof value === 'string' && new RegExp(`^0x[0-9a-fA-F]{${size * 2}}$`).test(value)
+const unsignedInteger = z.number().refine(value => Number.isSafeInteger(value) && value >= 0)
+const fixedHex = (size: number) => z.custom<Hex>(value => hex(value, size))
+
+const RequirementSchema = z.looseObject({
+	identifier: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/),
+	issuer_schema_id: unsignedInteger,
+	signal: z.string().regex(/^0x(?:[0-9a-f]{2})*$/i).refine(value => value.length <= 4098).nullish(),
+	genesis_issued_at_min: unsignedInteger.nullish(),
+	expires_at_min: unsignedInteger.nullish(),
+})
+const ProofProtocolSchema = z.looseObject({
+	version: z.literal(1),
+	proof_type: z.literal('uniqueness'),
+	session_id: z.null().optional(),
+})
+const ProofMetadataSchema = ProofProtocolSchema.extend({
+	id: z.string().refine(value => value.length > 0 && value.length <= 128),
+	rp_id: z.string().regex(/^rp_[0-9a-f]{1,16}$/i),
+	oprf_key_id: z.string().regex(/^0x[0-9a-f]{1,40}$/i),
+	nonce: fixedHex(32),
+	signature: fixedHex(65),
+	created_at: unsignedInteger,
+	expires_at: unsignedInteger,
+	action: fixedHex(32),
+})
+const PayloadMetadataSchema = z.looseObject({
+	app_id: z.string().regex(/^app_[0-9a-f]{32}$/i),
+	action: z.string().refine(value => value.length <= 1024),
+	environment: z.enum(['staging', 'sandbox', 'production']),
+	proof_request: ProofMetadataSchema,
+})
+const PayloadOptionsSchema = z.object({
+	require_user_presence: z.boolean().optional(),
+	identity_attributes: z.custom<unknown[]>(Array.isArray).nullish(),
+	return_to_url: z.string().optional(),
+})
+const RequirementsSchema = z.custom<unknown[]>(value => Array.isArray(value) && value.length >= 1 && value.length <= 32)
+const RpRegistrySchema = z.object({
+	signer: fixedHex(20),
+	oprfKeyId: ProofMetadataSchema.shape.oprf_key_id,
+})
+
+export type Requirement = z.infer<typeof RequirementSchema>
+export type Constraint = string | { any: Constraint[] } | { all: Constraint[] }
+export type ProofRequest = z.infer<typeof ProofMetadataSchema> & {
+	proof_requests: Requirement[]
+	constraints?: Constraint | null
+}
+export type Payload = z.infer<typeof PayloadMetadataSchema> & z.infer<typeof PayloadOptionsSchema> & {
+	proof_request: ProofRequest
+}
 /** The request is past its signed expiry, or the bridge no longer holds it. */
 export class RequestExpiredError extends Error {}
 
@@ -57,66 +76,55 @@ export function parsePayload(json: string, environment = currentProtocolEnvironm
 	if (json.length > 131072) throw new Error('Request payload is too large.')
 	const p: unknown = JSON.parse(json)
 	if (!record(p) || !acceptsRequestEnvironment(p.environment, environment)) throw new Error(`This authenticator accepts ${environment} requests only.`)
-	const r = p.proof_request
-	if (!record(r) || r.version !== 1 || r.proof_type !== 'uniqueness' || r.session_id != null)
+	if (!ProofProtocolSchema.safeParse(p.proof_request).success)
 		throw new Error('Only World ID 4.0 uniqueness requests are supported by this web authenticator.')
-	if (
-		typeof p.app_id !== 'string' ||
-		!/^app_[0-9a-f]{32}$/i.test(p.app_id) ||
-		typeof p.action !== 'string' ||
-		p.action.length > 1024 ||
-		typeof r.id !== 'string' ||
-		r.id.length > 128 ||
-		!r.id ||
-		typeof r.rp_id !== 'string' ||
-		!/^rp_[0-9a-f]{1,16}$/i.test(r.rp_id) ||
-		typeof r.oprf_key_id !== 'string' ||
-		!/^0x[0-9a-f]{1,40}$/i.test(r.oprf_key_id) ||
-		!hex(r.nonce, 32) ||
-		!hex(r.signature, 65) ||
-		!hex(r.action, 32) ||
-		!uint(r.created_at) ||
-		!uint(r.expires_at)
-	)
-		throw new Error('Malformed World ID request metadata.')
-	if (BigInt(r.action) !== BigInt(keccak256(stringToHex(p.action))) >> BigInt(8))
+	const parsed = PayloadMetadataSchema.safeParse(p)
+	if (!parsed.success) throw new Error('Malformed World ID request metadata.')
+	const r = parsed.data.proof_request
+	if (BigInt(r.action) !== BigInt(keccak256(stringToHex(parsed.data.action))) >> BigInt(8))
 		throw new Error('The displayed action does not match the signed action.')
-	if (!Array.isArray(r.proof_requests) || r.proof_requests.length < 1 || r.proof_requests.length > 32)
-		throw new Error('Invalid credential requirements.')
+	const requirements = RequirementsSchema.safeParse(r.proof_requests)
+	if (!requirements.success) throw new Error('Invalid credential requirements.')
 	const ids = new Set<string>()
-	for (const item of r.proof_requests) {
-		if (
-			!record(item) ||
-			typeof item.identifier !== 'string' ||
-			!/^[a-zA-Z0-9_-]{1,80}$/.test(item.identifier) ||
-			ids.has(item.identifier) ||
-			!uint(item.issuer_schema_id) ||
-			(item.signal != null &&
-				(typeof item.signal !== 'string' ||
-					!/^0x(?:[0-9a-f]{2})*$/i.test(item.signal) ||
-					item.signal.length > 4098)) ||
-			(item.genesis_issued_at_min != null && !uint(item.genesis_issued_at_min)) ||
-			(item.expires_at_min != null && !uint(item.expires_at_min))
-		)
+	const proofRequests: Requirement[] = []
+	for (const item of requirements.data) {
+		const requirement = RequirementSchema.safeParse(item)
+		if (!requirement.success || ids.has(requirement.data.identifier))
 			throw new Error('Malformed credential requirement.')
-		ids.add(item.identifier)
+		ids.add(requirement.data.identifier)
+		proofRequests.push(requirement.data)
 	}
 	let count = 0
-	const constraint = (node: unknown, depth = 0): void => {
+	const constraint = (node: unknown, depth = 0): Constraint => {
 		if (++count > 64 || depth > 8) throw new Error('Credential constraints exceed supported limits.')
-		if (typeof node === 'string' && ids.has(node)) return
+		if (typeof node === 'string' && ids.has(node)) return node
 		if (!record(node) || Object.keys(node).length !== 1) throw new Error('Invalid credential constraints.')
 		const children = node.any ?? node.all
 		if (!Array.isArray(children) || children.length < 1) throw new Error('Invalid credential constraints.')
-		children.forEach(child => constraint(child, depth + 1))
+		const parsedChildren: Constraint[] = []
+		for (const child of children) parsedChildren.push(constraint(child, depth + 1))
+		return 'any' in node ? { any: parsedChildren } : { all: parsedChildren }
 	}
-	if (r.constraints != null) constraint(r.constraints)
-	if (p.require_user_presence !== undefined && typeof p.require_user_presence !== 'boolean')
+	const constraints = r.constraints == null ? r.constraints : constraint(r.constraints)
+	const requireUserPresence = PayloadOptionsSchema.shape.require_user_presence.safeParse(p.require_user_presence)
+	if (!requireUserPresence.success)
 		throw new Error('Invalid user presence requirement.')
-	if (p.identity_attributes != null && !Array.isArray(p.identity_attributes))
+	const identityAttributes = PayloadOptionsSchema.shape.identity_attributes.safeParse(p.identity_attributes)
+	if (!identityAttributes.success)
 		throw new Error('Invalid identity attribute requirements.')
-	if (p.return_to_url !== undefined && typeof p.return_to_url !== 'string') throw new Error('Invalid return URL.')
-	const payload = p as unknown as Payload
+	const returnToUrl = PayloadOptionsSchema.shape.return_to_url.safeParse(p.return_to_url)
+	if (!returnToUrl.success) throw new Error('Invalid return URL.')
+	const payload: Payload = {
+		...parsed.data,
+		proof_request: {
+			...r,
+			proof_requests: proofRequests,
+			...(constraints !== undefined ? { constraints } : {}),
+		},
+		...(requireUserPresence.data !== undefined ? { require_user_presence: requireUserPresence.data } : {}),
+		...(identityAttributes.data !== undefined ? { identity_attributes: identityAttributes.data } : {}),
+		...(returnToUrl.data !== undefined ? { return_to_url: returnToUrl.data } : {}),
+	}
 	checkExpiry(payload.proof_request)
 	return payload
 }
@@ -131,8 +139,9 @@ export async function validateSignature(request: ProofRequest, signal: AbortSign
 		throw new Error(
 			`Could not validate this RP against the ${environment} registry. It may be unregistered, inactive, or temporarily unavailable.`
 		)
-	const rp = (await response.json()) as { signer: Hex; oprfKeyId: string }
-	if (!rp || !hex(rp.signer, 20) || typeof rp.oprfKeyId !== 'string' || !/^0x[0-9a-f]{1,40}$/i.test(rp.oprfKeyId)) throw new Error('Invalid RP registry response.')
+	const parsed = RpRegistrySchema.safeParse(await response.json())
+	if (!parsed.success) throw new Error('Invalid RP registry response.')
+	const rp = parsed.data
 	if (BigInt(rp.oprfKeyId) !== BigInt(request.oprf_key_id))
 		throw new Error('Request OPRF key does not match the registered RP.')
 	const message = new Uint8Array(81)

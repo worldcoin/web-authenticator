@@ -6,6 +6,7 @@ import {
 	type InitializeOptions as WorkerOptions,
 	type WalletKit as PublishedWalletKit,
 } from '@worldcoin/walletkit-web'
+import { parseProofResponse } from './proof-response'
 export type { RecoveryData, RegistrationStatus } from '@worldcoin/walletkit-web'
 export type { CredentialRecord as CredentialMetadata } from '@worldcoin/walletkit-web'
 
@@ -145,8 +146,8 @@ export class WalletKit {
 		try {
 			const response = await authenticator.generateProof(request, now)
 			try {
-				const result = JSON.parse(await response.toJson())
-				for (const item of result.responses ?? []) {
+				const result = parseProofResponse(await response.toJson())
+				for (const item of result.responses) {
 					if (String(item.issuer_schema_id) !== '11') continue
 					const credential = await this.store.fetchCredential(BigInt(11), now)
 					try {
