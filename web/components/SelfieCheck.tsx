@@ -10,11 +10,12 @@ const CAMERA_WIDTH = "w-[min(345px,max(60px,calc((100svh_-_292px)*0.7163)))]";
 const RETRY = "min-h-12 max-w-45 flex-1 rounded-2xl bg-background-secondary p-3 text-[15px] text-foreground hover:bg-[#ededed]";
 
 /** Local capture only. Completion does not issue a credential or satisfy an RP request. */
-export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostics = false }: {
+export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostics = false, completionHint }: {
   onClose: () => void;
   onComplete?: () => void;
   backLabel: string;
   diagnostics?: boolean;
+  completionHint?: string;
 }) {
   const setCaptureActive = use(CaptureScreenContext);
   useEffect(() => { setCaptureActive(true); return () => setCaptureActive(false); }, [setCaptureActive]);
@@ -109,7 +110,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center"><h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>{state.hint && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{state.hint}</p>}</div>
+      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center"><h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>{(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}</div>
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />

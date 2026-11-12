@@ -1,48 +1,58 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, use, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { SaveAccessDecision } from "./components/SaveAccessDecision";
+import { ConsentContinuationContext } from "./AppShell";
 import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
-import { checkExpiry } from "./lib/proof-request";
-import type { WalletKit } from "./lib/walletkit";
+import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
+import type { RequestWalletSession } from "./lib/wallet-session";
+import { walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
-import { captureFrame, requestFrame } from "./components/styles";
+import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "save" | "finished" | "cancelled" | "expired"; returnUrl?: string; saved?: boolean };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
   confirmation: { duration: 1500, next: "confirmation-exit", motion: false },
-  "confirmation-exit": { duration: 250, next: "save", motion: true },
+  "confirmation-exit": { duration: 250, next: "finished", motion: true },
 } as const;
 // Pausing the clock also pauses every animation in the sequence.
 const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
 /** App requests hold a temporary capture; saved authenticator access lives on its own route. */
-export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onOpenAuthenticator, onSave, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onTransitionChange }: {
   incoming: IncomingRequest | null;
   loading: boolean;
   failed: boolean;
   expired: boolean;
   onDispose: () => void;
-  onOpenAuthenticator: () => void;
   onTransitionChange: (active: boolean) => void;
-  onSave: (signal: AbortSignal, progress: (message: string) => void) => Promise<WalletKit>;
+  onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
   const [flow, setFlow] = useState<Flow>({ stage: "intro" });
   const [paused, setPaused] = useState(() => document.hidden);
   const [cancelError, setCancelError] = useState<string>();
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string>();
-  const savingController = useRef<AbortController | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string>();
+  const [openProgress, setOpenProgress] = useState("Opening authenticator…");
+  const continuationRef = use(ConsentContinuationContext);
+  const pendingStart = useRef(false);
+  const operation = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
+  const session = useRef<RequestWalletSession | null>(null);
+  const completing = useRef(false);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
-  useEffect(() => {
-    const stop = () => { cancelling.current?.abort(); savingController.current?.abort(); };
-    window.addEventListener("pagehide", stop);
-    return () => { stop(); window.removeEventListener("pagehide", stop); };
+  const stop = useCallback(() => {
+    operation.current?.abort(); operation.current = null;
+    session.current?.dispose(); session.current = null;
   }, []);
+  useEffect(() => {
+    const leave = () => { stop(); cancelling.current?.abort(); };
+    window.addEventListener("pagehide", leave);
+    return () => { leave(); window.removeEventListener("pagehide", leave); };
+  }, [stop]);
+  useEffect(() => { if (expired) stop(); }, [expired, stop]);
 
   const automatic = flow.stage in COMPLETION_STEPS;
   useLayoutEffect(() => {
@@ -88,43 +98,82 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   }, [flow.stage]);
 
   const finish = (stage: "cancelled" | "expired") => {
+    stop();
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
-  const start = () => {
-    if (!incoming || loading || failed || expired || unsupported || flow.stage !== "intro") return;
-    // A suspended tab can click before the expiry timer runs.
-    try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
-    setFlow({ stage: "capture" });
-  };
-  const complete = () => {
-    if (incoming) {
-      try { checkExpiry(incoming.proof); } catch { finish("expired"); return; }
-    }
-    // Local capture supplies the completion signal until real enrollment is connected.
-    setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
-    onDispose();
-  };
-  const finishDecision = (saved: boolean) => {
-    setFlow(current => ({ ...current, stage: "finished", saved }));
-  };
-  const save = async () => {
-    if (flow.stage !== "save" || savingController.current) return;
+  const start = useCallback(async () => {
+    if (loading) { pendingStart.current = true; return; }
+    pendingStart.current = false;
+    if (!incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
+    try { checkExpiry(incoming.proof); }
+    catch { setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return; }
     const controller = new AbortController();
-    savingController.current = controller;
-    setSaving(true); setSaveError(undefined);
+    operation.current = controller;
+    const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
+    setOpening(true); setOpenError(undefined); setOpenProgress("Opening authenticator…");
     try {
-      const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
-      await abortable(onSave(deadline, () => {}).then(wallet => {
-        // Also close a wallet returned after cancellation; saving must never open management UI.
-        wallet.terminate();
+      const current = await abortable(onUnlock(deadline, message => {
+        if (!deadline.aborted) setOpenProgress(message);
+      }).then(value => {
+        if (deadline.aborted) { value.dispose(); deadline.throwIfAborted(); }
+        session.current = value; return value;
       }), deadline);
-      if (!controller.signal.aborted) finishDecision(true);
-    } catch {
-      if (!controller.signal.aborted) setSaveError("Setup didn’t finish. A passkey may already have been saved. Retry with that passkey, or choose Not now to close.");
-    } finally {
-      if (savingController.current === controller) savingController.current = null;
-      if (!controller.signal.aborted) setSaving(false);
+      deadline.throwIfAborted();
+      checkExpiry(incoming.proof);
+      setFlow({ stage: "capture" });
+      void current.ready.then(result => {
+        if (deadline.aborted || session.current !== current || !("error" in result)) return;
+        stop();
+        setOpenError(walletOpenErrorMessage(result.error));
+        setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
+      });
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        stop();
+        if (cause instanceof RequestExpiredError) {
+          setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose();
+        } else {
+          setOpenError(walletOpenErrorMessage(cause));
+          setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
+        }
+      }
+    } finally { setOpening(false); }
+  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop]);
+
+  useEffect(() => {
+    if (!continuationRef) return;
+    const proceed = () => { void start(); };
+    continuationRef.current = proceed;
+    return () => { if (continuationRef.current === proceed) continuationRef.current = null; };
+  }, [continuationRef, start]);
+  useEffect(() => {
+    if (!pendingStart.current || loading) return;
+    const timer = setTimeout(() => void start(), 0);
+    return () => clearTimeout(timer);
+  }, [loading, start]);
+
+  const complete = async () => {
+    const current = session.current;
+    if (!current || completing.current) return;
+    completing.current = true;
+    try {
+      if (incoming) checkExpiry(incoming.proof);
+      setFlow({ stage: "preparing", returnUrl: incoming?.returnUrl });
+      const result = await current.ready;
+      if (session.current !== current) return;
+      if ("error" in result) throw result.error;
+      if (incoming) checkExpiry(incoming.proof);
+      stop();
+      // Real attested enrollment and proof delivery are connected separately.
+      setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
+      onDispose();
+    } catch (cause) {
+      if (session.current !== current) return;
+      stop();
+      if (cause instanceof RequestExpiredError) { finish("expired"); return; }
+      setOpenError(walletOpenErrorMessage(cause));
+      setFlow({ stage: "setup-error", returnUrl: incoming?.returnUrl });
     }
   };
   const cancel = async () => {
@@ -143,12 +192,21 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }
   };
 
-  if (flow.stage === "save") return <div className={`${requestFrame} motion-safe:animate-completion-in`} data-testid="save-decision">
-    <SaveAccessDecision busy={saving} error={saveError} onSave={() => void save()} onSkip={() => { if (!savingController.current) finishDecision(false); }} />
+  if (opening) return <div className={requestFrame}>
+    <div className={screenContent}><div className={centeredLayout}>
+      <p className={body} role="status">{openProgress}</p>
+    </div></div>
+    <div className={actions}><button className={secondaryAction} onClick={() => void cancel()}>Cancel request</button></div>
+  </div>;
+
+  if (flow.stage === "setup-error") return <div className={requestFrame}>
+    <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onRetry={() => {
+      completing.current = false; setOpenError(undefined); setFlow({ stage: "intro" });
+    }} />
   </div>;
 
   if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
-    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} saved={flow.saved} returnUrl={flow.returnUrl} detail={cancelError} onOpen={onOpenAuthenticator} />
+    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} returnUrl={flow.returnUrl} detail={cancelError} />
   </div>;
 
   if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className={`${requestFrame} ${sequence}`} data-stage={flow.stage} data-paused={paused}>
@@ -156,13 +214,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   </div>;
 
   // Expiry unmounts an unfinished capture. Accepted completion has already disposed the request.
-  if (flow.stage === "capture" && expired) return <div className={requestFrame}>
+  if ((flow.stage === "capture" || flow.stage === "preparing") && expired) return <div className={requestFrame}>
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
   </div>;
 
-  if (flow.stage === "capture" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
+  if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={complete} />
+      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={() => void complete()} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
     </Suspense>
   </div>;
 
@@ -174,7 +232,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
       busy={false}
-      onStart={start}
+      onStart={() => void start()}
       onCancel={() => void cancel()}
     />
   </div>;
