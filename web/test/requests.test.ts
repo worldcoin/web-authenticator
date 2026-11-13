@@ -1,10 +1,12 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { keccak256, stringToHex } from "viem";
 import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload, validateSignature } from "../lib/proof-request";
 import { createProof } from "../lib/prove";
 import type { WalletKit } from "../lib/walletkit";
+import { proofResponse } from "./fixtures/proof-response";
 
 let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); });
@@ -34,7 +36,7 @@ test("fetches, decrypts and validates a real-format RP request; encrypts the mat
   const f = await fixture();
   const incoming = await loadIncomingRequest("http://localhost" + f.encrypted.query, signal(), () => {});
   expect(incoming?.proof).toEqual(f.payload.proof_request);
-  const response = { id: "test-request", responses: [{ issuer_schema_id: 11, proof: "test-proof" }] };
+  const response = proofResponse();
   await incoming!.deliver(JSON.stringify(response), signal());
   expect(f.sent).toEqual([{ proof_response: response }]);
   await incoming!.cancel(signal());
@@ -83,7 +85,7 @@ test("proof generation revalidates the request and passes its constraints unchan
   let serialized = "";
   const wallet = {
     listCredentials: async () => [{ issuerSchemaId: 11n, isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n }],
-    generateProof: async (json: string) => { serialized = json; return JSON.stringify({ id: incoming.proof.id, responses: [{}] }); },
+    generateProof: async (json: string) => { serialized = json; return JSON.stringify({ ...proofResponse(), id: incoming.proof.id }); },
     terminate: () => {},
   } as unknown as WalletKit;
   await createProof(incoming, wallet, signal(), () => {});
@@ -111,6 +113,103 @@ test("payload validation rejects expiry, misleading action and malformed nested 
   expect(() => parsePayload(JSON.stringify({ ...payload, return_to_url: 4 }))).toThrow();
   for (const overrides of [{ expires_at: 1 }, { constraints: "unknown" }, { constraints: { any: [] } }, { constraints: { all: ["credential"], extra: true } }]) {
     expect(() => parsePayload(JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, ...overrides } }))).toThrow();
+  }
+});
+
+test("payload schemas preserve nullish fields and additive RP metadata", async () => {
+  const { payload } = await signedRequest();
+  const wire = {
+    ...payload,
+    require_user_presence: false,
+    identity_attributes: null,
+    return_to_url: "",
+    extension: { version: 2 },
+    proof_request: {
+      ...payload.proof_request,
+      session_id: undefined,
+      extension: { nested: true },
+      proof_requests: [{
+        ...payload.proof_request.proof_requests[0],
+        signal: null, genesis_issued_at_min: null, expires_at_min: null,
+        extension: ["retained"],
+      }],
+    },
+  };
+  for (const input of [
+    wire,
+    { ...wire, identity_attributes: undefined, proof_request: { ...wire.proof_request, session_id: null, constraints: null } },
+    { ...wire, identity_attributes: [{ nested: [false, null, 3, ""] }], proof_request: { ...wire.proof_request, constraints: undefined } },
+  ]) {
+    const json = JSON.stringify(input);
+    expect(parsePayload(json)).toStrictEqual(JSON.parse(json));
+  }
+});
+
+test("payload schemas retain UTF-16 string limits and bounded integer requirements", async () => {
+  const { payload } = await signedRequest();
+  for (const length of [512, 513]) {
+    const action = "😀".repeat(length);
+    const signedAction = `0x${(BigInt(keccak256(stringToHex(action))) >> 8n).toString(16).padStart(64, "0")}`;
+    const json = JSON.stringify({ ...payload, action, proof_request: { ...payload.proof_request, action: signedAction } });
+    if (length === 512) expect(() => parsePayload(json)).not.toThrow();
+    else expect(() => parsePayload(json)).toThrow("Malformed World ID request metadata.");
+  }
+  for (const length of [64, 65]) {
+    const json = JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, id: "😀".repeat(length) } });
+    if (length === 64) expect(() => parsePayload(json)).not.toThrow();
+    else expect(() => parsePayload(json)).toThrow("Malformed World ID request metadata.");
+  }
+  for (const requirement of [
+    { identifier: "credential", issuer_schema_id: Number.MAX_SAFE_INTEGER + 1 },
+    { identifier: "credential", issuer_schema_id: -1 },
+    { identifier: "credential", issuer_schema_id: 1.5 },
+    { identifier: "credential", issuer_schema_id: 11, signal: "0x" + "ab".repeat(2049) },
+    { identifier: "credential", issuer_schema_id: 11, expires_at_min: -1 },
+  ]) {
+    expect(() => parsePayload(JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, proof_requests: [requirement] } })))
+      .toThrow("Malformed credential requirement.");
+  }
+  const duplicate = Array(2).fill(payload.proof_request.proof_requests[0]);
+  expect(() => parsePayload(JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, proof_requests: duplicate } })))
+    .toThrow("Malformed credential requirement.");
+});
+
+test("constraint validation enforces node and depth budgets before descending", async () => {
+  const { payload } = await signedRequest();
+  const parse = (constraints: unknown) => parsePayload(JSON.stringify({ ...payload, proof_request: { ...payload.proof_request, constraints } }));
+  expect(() => parse({ all: Array(63).fill("credential") })).not.toThrow();
+  expect(() => parse({ all: Array(64).fill("credential") })).toThrow("Credential constraints exceed supported limits.");
+  let constraints: unknown = "credential";
+  for (let depth = 1; depth <= 100; depth++) {
+    constraints = { any: [constraints] };
+    if (depth === 8) expect(() => parse(constraints)).not.toThrow();
+    if (depth === 9 || depth === 100) expect(() => parse(constraints)).toThrow("Credential constraints exceed supported limits.");
+  }
+  expect(() => parse({ all: ["credential"], metadata: true })).toThrow("Invalid credential constraints.");
+});
+
+test("payload schema failures keep the existing error precedence and field messages", async () => {
+  const { payload } = await signedRequest();
+  for (const [change, message] of [
+    [{ proof_request: { ...payload.proof_request, version: 2 }, app_id: null }, "Only World ID 4.0 uniqueness requests"],
+    [{ action: "misleading", proof_request: { ...payload.proof_request, proof_requests: [] } }, "The displayed action does not match the signed action."],
+    [{ proof_request: { ...payload.proof_request, proof_requests: [] } }, "Invalid credential requirements."],
+    [{ proof_request: { ...payload.proof_request, proof_requests: Array(33).fill(null) } }, "Invalid credential requirements."],
+    [{ require_user_presence: null }, "Invalid user presence requirement."],
+    [{ identity_attributes: {} }, "Invalid identity attribute requirements."],
+    [{ return_to_url: null }, "Invalid return URL."],
+  ] as const) {
+    expect(() => parsePayload(JSON.stringify({ ...payload, ...change }))).toThrow(message);
+  }
+});
+
+test("malformed RP registry fields retain the safe registry error", async () => {
+  const { payload } = await signedRequest();
+  const mock = spyOn(globalThis, "fetch");
+  restore = () => mock.mockRestore();
+  for (const registry of [null, [], { signer: "private-text", oprfKeyId: "0x1" }, { signer: `0x${"1".repeat(40)}`, oprfKeyId: 1 }]) {
+    mock.mockResolvedValue(Response.json(registry));
+    await expect(validateSignature(payload.proof_request, signal())).rejects.toThrow("Invalid RP registry response.");
   }
 });
 
