@@ -164,7 +164,7 @@ export async function captureSelfie(video: HTMLVideoElement, signal: AbortSignal
       canvas = grabFrame(video);
       const frame = canvas;
       const image = await withAbort(new Promise<Blob>((resolve, reject) => {
-        frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/jpeg", 0.9);
+        frame.toBlob(value => value ? resolve(value) : reject(new Error("We couldn't save this capture in memory. Please try again.")), "image/png");
       }), attempt);
       previewRetained = options.retainPreviewUntilAbort === true;
       return {
