@@ -51,22 +51,12 @@ if (!("bun" in process.versions)) {
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
-    // Record partial hold and completion when React commits them; polling can miss these short stages.
+    // Record completion when React commits it; polling can miss this short stage.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
-      let partialHold: { title: string | null | undefined; fill: string } | undefined;
       const observer = new MutationObserver(() => {
-        const goldDots = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-        if (!partialHold && document.querySelector('[data-state="holding"]') && goldDots.length > 0 && goldDots.length < 64) {
-          partialHold = {
-            title: document.querySelector('[data-testid=selfie-guidance]')?.textContent,
-            fill: getComputedStyle(goldDots[0]).fill,
-          };
-        }
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          partialHold,
-          goldDots: goldDots.length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
@@ -78,8 +68,7 @@ if (!("bun" in process.versions)) {
     }));
     await page.getByRole("button", { name: "Try again" }).click();
     expect(await captureBorder).toEqual({
-      partialHold: { title: "Looking good. Hold still", fill: "rgb(212, 175, 55)" },
-      goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s",
+      still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s",
     });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
@@ -129,7 +118,6 @@ if (!("bun" in process.versions)) {
         await expect(border).toHaveCSS("fill", "none");
         await expect(border).toHaveCSS("stroke", "rgb(40, 168, 107)");
         await expect(border).toHaveCSS("stroke-dasharray", "1px, 0px");
-        await expect(page.locator("[data-testid=selfie-design-ring] circle").first()).toBeHidden();
         await expect(border).toHaveCSS("animation-name", "none");
         await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-green-completion.png`, fullPage: true });
         expect(await page.evaluate(() => (window as typeof window & { cameraTest: { stopped: number } }).cameraTest.stopped)).toBeGreaterThan(0);

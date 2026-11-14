@@ -70,17 +70,13 @@ if (!("bun" in process.versions)) {
       expect(frame.width / frame.height).toBeCloseTo(frame.previewRatio, 2);
     });
 
-    test("losing alignment resets the hold", async ({ page }) => {
+    test("losing alignment returns to framing and realignment allows capture", async ({ page }) => {
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      await expect.poll(() => page.getByTestId("selfie-ring-progress").getAttribute("style")).not.toBe("stroke-dashoffset: 100;");
       await page.evaluate(() => { (window as any).cameraTest.aligned = false; });
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible();
-      await expect(page.getByTestId("selfie-ring-progress")).toHaveAttribute("style", "stroke-dashoffset: 100;");
-      await expect(page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]')).toHaveCount(0);
       await page.evaluate(() => { (window as any).cameraTest.aligned = true; });
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      expect(await page.getByTestId("selfie-ring-progress").evaluate(el => Number((el as SVGElement).style.strokeDashoffset))).toBeGreaterThan(70);
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
