@@ -37,25 +37,34 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
-    test("a 16:9 camera produces a JPEG matching the portrait preview crop", async ({ page }) => {
+    test("a 16:9 camera produces a PNG matching the portrait preview crop", async ({ page }) => {
       await page.addInitScript(() => {
         const original = HTMLCanvasElement.prototype.toBlob;
         HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
-          if (type === "image/jpeg") {
+          if (type === "image/png") {
             const video = document.querySelector("video")!;
-            Object.assign(window, { capturedFrame: {
+            const frame = {
               width: this.width, height: this.height,
               previewRatio: video.clientWidth / video.clientHeight,
-            } });
+            };
+            return original.call(this, blob => {
+              if (blob) Object.assign(window, { capturedFrame: { ...frame, blob } });
+              callback(blob);
+            }, type, quality);
           }
           return original.call(this, callback, type, quality);
         };
       });
       await openSelfieRequest(page, "wide");
-      await expect(page.getByRole("button", { name: "Save with passkey" })).toBeVisible();
-      const frame = await page.evaluate(() => (window as typeof window & {
-        capturedFrame: { width: number; height: number; previewRatio: number };
-      }).capturedFrame);
+      await expect.poll(() => page.evaluate(() => "capturedFrame" in window)).toBe(true);
+      const frame = await page.evaluate(async () => {
+        const { blob, ...dimensions } = (window as typeof window & {
+          capturedFrame: { width: number; height: number; previewRatio: number; blob: Blob };
+        }).capturedFrame;
+        return { ...dimensions, mime: blob.type, signature: [...new Uint8Array(await blob.slice(0, 8).arrayBuffer())] };
+      });
+      expect(frame.mime).toBe("image/png");
+      expect(frame.signature).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
       expect(frame.height).toBe(720);
       expect(frame.width).toBeLessThan(720);
       expect(frame.width / frame.height).toBeCloseTo(frame.previewRatio, 2);

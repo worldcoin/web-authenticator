@@ -102,10 +102,34 @@ export class WalletKit {
 		let sub: FieldElement | undefined
 		try {
 			sub = await authenticator.computeCredentialSub(factor)
-			return { blindingFactor: await factor.toHexString(), sub: await sub.toHexString() }
+			const subject = await sub.toHexString()
+			if (!/^0x[0-9a-f]+$/i.test(subject) || BigInt(subject) === 0n) {
+				throw new Error('Credential subject must be a nonzero hex field element')
+			}
+			return { blindingFactor: await factor.toHexString(), sub: `0x${BigInt(subject).toString(16)}` }
 		} finally {
 			sub?.free()
 			factor.free()
+		}
+	}
+
+	async proveCredentialSub(nonce: string, context: string, blindingFactor: string, sub: string, now = nowSeconds()) {
+		const authenticator = this.currentAuthenticator()
+		let nonceField: FieldElement | undefined
+		let contextField: FieldElement | undefined
+		let factorField: FieldElement | undefined
+		let subField: FieldElement | undefined
+		try {
+			nonceField = await this.client.FieldElement.tryFromHexString(nonce)
+			contextField = await this.client.FieldElement.tryFromHexString(context)
+			factorField = await this.client.FieldElement.tryFromHexString(blindingFactor)
+			subField = await this.client.FieldElement.tryFromHexString(sub)
+			return await authenticator.proveCredentialSub(nonceField, contextField, factorField, subField, now)
+		} finally {
+			subField?.free()
+			factorField?.free()
+			contextField?.free()
+			nonceField?.free()
 		}
 	}
 

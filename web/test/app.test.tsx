@@ -142,7 +142,7 @@ test("public Selfie capture finishes ephemerally without opening a wallet or sen
   let opened = 0;
   f.services.open = async () => { opened++; throw new Error("Public capture must not open a wallet"); };
   const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
-    image: new Blob(["test"], { type: "image/jpeg" }),
+    image: new Blob(["test"], { type: "image/png" }),
     timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
   });
   try {
@@ -181,7 +181,7 @@ for (const fails of [false, true]) {
     const open = f.services.open;
     f.services.open = async () => { opened++; if (fails) throw new Error("passkey unavailable"); return open(); };
     const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
-      image: new Blob(["test"], { type: "image/jpeg" }),
+      image: new Blob(["test"], { type: "image/png" }),
       timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
     });
     try {
