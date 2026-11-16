@@ -1,18 +1,17 @@
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { use, useEffect, useRef, useState } from "react";
 import { CompletionAnimationContext } from "./AppShell";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
-import { openAuthenticator } from "./lib/wallet-session";
+import { openAuthenticator, openRequestWallet } from "./lib/wallet-session";
 import { PublicRequestFlow } from "./PublicRequestFlow";
 
-export const defaultServices = { open: openAuthenticator, load: loadIncomingRequest };
+export const defaultServices = { open: openAuthenticator, load: loadIncomingRequest, unlock: openRequestWallet };
 export type Services = typeof defaultServices;
 
 /** Where request links open: loads and validates the request in the URL, then runs the flow. */
 export function VerifyPage({ services }: { services: Services }) {
   const { history } = useRouter();
-  const navigate = useNavigate();
   const setCompletionAnimating = use(CompletionAnimationContext);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +51,6 @@ export function VerifyPage({ services }: { services: Services }) {
   }, [incoming]);
 
   return <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-    onTransitionChange={setCompletionAnimating} onSave={services.open} onDispose={() => { setIncoming(null); source.current = null; }}
-    // Replace: the request is spent, so going back to this URL would only show an invalid request.
-    onOpenAuthenticator={() => void navigate({ to: "/authenticator", replace: true })} />;
+    onTransitionChange={setCompletionAnimating} onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}
+    />;
 }

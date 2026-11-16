@@ -13,7 +13,7 @@ const open = async () => { throw new Error("not used"); };
 const requestId = "550e8400-e29b-41d4-a716-446655440000";
 
 function app(load: (source: string) => Promise<null> = async () => null) {
-  return render(<AuthenticatorAppV1 services={{ open, load }} consent={consent} />);
+  return render(<AuthenticatorAppV1 services={{ open, load, unlock: open }} consent={consent} />);
 }
 
 test("the root path opens the authenticator and does not read request links", async () => {
