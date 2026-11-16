@@ -46,3 +46,42 @@ export async function openSelfieRequest(page: Page, query = "", origin = "") {
   await page.goto(origin + "/verify" + encrypted.query + (query ? "&" + query.replace(/^\?/, "") : ""));
   await page.getByRole("button", { name: "Start selfie check" }).click();
 }
+
+/** Isolates capture/UI checks from passkey providers and live account services. */
+export async function installRequestWallet(page: Page) {
+  await page.addInitScript(() => {
+    class FixtureCredential {
+      static async getClientCapabilities() { return {}; }
+      type = "public-key";
+      rawId = Uint8Array.of(0xab).buffer;
+      getClientExtensionResults() { return { prf: { enabled: true, results: { first: new Uint8Array(32).fill(7).buffer } } }; }
+    }
+    Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: FixtureCredential });
+    Object.defineProperty(navigator, "credentials", { configurable: true, value: {
+      create: async () => new FixtureCredential(), get: async () => new FixtureCredential(),
+    } });
+    class WalletWorker {
+      onmessage?: (event: { data: unknown }) => void;
+      private nextHandle = 0;
+      postMessage(data: { id: number; op: string; target?: { class?: string; static?: string; method?: string; function?: string } }) {
+        const target = data.target;
+        let result: unknown;
+        let error: { name: string; message: string } | undefined;
+        if (data.op === "call") {
+          if (target?.class && ["StorageKeys", "StoragePaths", "CredentialStore", "EmbeddedZkArtifacts", "Authenticator"].includes(target.class)) result = { $ref: ++this.nextHandle };
+          else if (target?.function === "recoveryDataFromSeed") result = {};
+          else if (target?.method === "listCredentials") result = [];
+          else if (target?.method !== "initStorage") error = { name: "Error", message: "Unexpected fixture wallet operation" };
+        }
+        queueMicrotask(() => this.onmessage?.({ data: error ? { id: data.id, ok: false, error } : { id: data.id, ok: true, result } }));
+      }
+      terminate() { this.onmessage = undefined; }
+    }
+    const NativeWorker = window.Worker;
+    window.Worker = new Proxy(NativeWorker, {
+      construct(target, args) {
+        return String(args[0]).includes("walletkit.worker") ? new WalletWorker() : Reflect.construct(target, args);
+      },
+    });
+  });
+}
