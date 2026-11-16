@@ -5,7 +5,7 @@ import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy
 import { registrationState, saveRegistrationState } from './wallet-persistence';
 import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
-import { activateWallet } from "./wallet-registration";
+import { openOrRegisterAuthenticator } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { isSharedRpId, rpIdForNewPasskey } from "./passkey-rp";
@@ -32,6 +32,11 @@ export interface WalletProfile {
 export interface WalletSession {
   readonly client: WalletKit;
   readonly store: CredentialStore;
+}
+
+export interface RequestWalletSession {
+  readonly ready: Promise<{ wallet: AccountWallet } | { error: unknown }>;
+  dispose(): void;
 }
 
 type PrfOutputs = AuthenticationExtensionsClientOutputs & {
@@ -82,21 +87,50 @@ export async function openPasskeyWallet(signal: AbortSignal): Promise<WalletSess
   return openWithPasskey(signal);
 }
 
+/** The camera can open with the vault while account activation continues. */
+export async function openRequestWallet(signal: AbortSignal, progress: (message: string) => void = () => {}, mode: WalletOpenMode = "either"): Promise<RequestWalletSession> {
+  let resolveOpened!: (session: RequestWalletSession) => void;
+  let rejectOpened!: (cause: unknown) => void;
+  const opened = new Promise<RequestWalletSession>((resolve, reject) => { resolveOpened = resolve; rejectOpened = reject; });
+  const controller = new AbortController();
+  let account!: AccountWallet;
+  // Keep the existing lock and seed ownership until activation settles, without
+  // blocking camera startup or copying the seed into a second lifetime.
+  const operation = openWithPasskey(AbortSignal.any([signal, controller.signal]), async (session, seed, credentialId, deadline, registerIfMissing) => {
+    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
+    resolveOpened({
+      ready,
+      dispose: () => {
+        if (controller.signal.aborted) return;
+        controller.abort(); session.client.terminate();
+      },
+    });
+    await openOrRegisterAuthenticator(account, seed, credentialId, deadline, () => progress("Getting your World ID ready…"), registerIfMissing);
+  }, mode);
+  // Opening failures reject the opener. Later failures are explicit results for
+  // the request flow, including when capture has not yet finished.
+  const ready = operation.then(
+    () => ({ wallet: account }),
+    error => { rejectOpened(error); return { error }; },
+  );
+  return opened;
+}
+
 /**
  * Opens or creates an authenticator according to the requested mode.
  * The seed stays inside the unlock scope and is erased after account activation.
  */
 export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void, mode: WalletOpenMode = "either"): Promise<AccountWallet> {
   let account: AccountWallet | undefined;
-  await openWithPasskey(signal, async (session, seed, credentialId, deadline) => {
+  await openWithPasskey(signal, async (session, seed, credentialId, deadline, registerIfMissing) => {
     account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
-    await activateWallet(account, seed, credentialId, deadline, progress);
+    await openOrRegisterAuthenticator(account, seed, credentialId, deadline, progress, registerIfMissing);
   }, mode);
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
   return account;
 }
 
-type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal) => Promise<void>;
+type Activate = (session: WalletSession, seed: Uint8Array, credentialId: string, signal: AbortSignal, registerIfMissing: boolean) => Promise<void>;
 
 async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: WalletOpenMode = "either"): Promise<WalletSession> {
   if (!window.isSecureContext || typeof PublicKeyCredential === "undefined") {
@@ -111,9 +145,8 @@ async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: W
   return navigator.locks.request("world-id-wallet-setup-v1", { ifAvailable: true }, async (lock) => {
     if (lock === null) throw new WalletOpenError("Wallet setup is already running in another tab.");
     const saved = window.localStorage.getItem(PROFILE_KEY) !== null || window.localStorage.getItem(LEGACY_PROFILE_KEY) !== null;
-    if (mode === "open" && !saved) throw new WalletOpenError("No saved authenticator was found in this browser.");
     if (mode === "create" && saved) throw new WalletOpenError("An authenticator already exists in this browser. Sign in to continue.");
-    return openWalletUnderLock(signal, activate);
+    return openWalletUnderLock(signal, activate, mode);
   });
 }
 
@@ -130,7 +163,7 @@ function sharedRpFailure(rpId: string | undefined): (cause: unknown) => never {
   };
 }
 
-async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Promise<WalletSession> {
+async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mode: WalletOpenMode = "either"): Promise<WalletSession> {
   signal.throwIfAborted();
   const saved = window.localStorage.getItem(PROFILE_KEY);
   let profile = saved === null ? undefined : parseWalletProfile(saved);
@@ -143,7 +176,9 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
       saveRegistrationState(legacy.credentialId, legacy.registration);
     }
   }
-  if (profile === undefined) {
+  let createdCredential: PublicKeyCredential | undefined;
+  const discovering = profile === undefined && mode === "open";
+  if (profile === undefined && !discovering) {
     const rpId = await rpIdForNewPasskey(window.location.origin, PublicKeyCredential);
     const credential = await logFlowStep(rpId ? "passkey.create_shared_rp" : "passkey.create", () => navigator.credentials.create({
       signal,
@@ -156,25 +191,28 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
         attestation: "none", timeout: 60_000,
-        extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
+        extensions: { prf: { eval: { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
       },
     })).catch(sharedRpFailure(rpId));
     if (!(credential instanceof PublicKeyCredential)) throw new WalletOpenError("Passkey creation was not completed.");
-    const extensions = credential.getClientExtensionResults() as AuthenticationExtensionsClientOutputs & { prf?: { enabled?: boolean } };
+    const extensions = credential.getClientExtensionResults() as PrfOutputs & { prf?: { enabled?: boolean } };
     if (extensions.prf?.enabled !== true) throw new WalletOpenError("This passkey provider does not support PRF. Choose a PRF-capable provider.");
+    // Providers that evaluate PRF during creation need no second WebAuthn ceremony.
+    // Missing results require an assertion; malformed results fail validation below.
+    if (extensions.prf.results !== undefined) createdCredential = credential;
     const createdId = Array.from(new Uint8Array(credential.rawId), b => b.toString(16).padStart(2, "0")).join("");
     profile = rpId ? { version: 1, credentialId: createdId, rpId } : { version: 1, credentialId: createdId };
     // Persist only the public credential ID, before opening any encrypted storage.
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   }
-  const credentialId = Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16));
-  const unlockRpId = profile.rpId;
-  const credential = await logFlowStep(unlockRpId ? "passkey.unlock_prf_shared_rp" : "passkey.unlock_prf", () => navigator.credentials.get({
+  const credentialId = profile ? Uint8Array.from(profile.credentialId.match(/../g)!, pair => Number.parseInt(pair, 16)) : undefined;
+  const unlockRpId = profile?.rpId ?? (discovering ? await rpIdForNewPasskey(window.location.origin, PublicKeyCredential) : undefined);
+  const credential = createdCredential ?? await logFlowStep(unlockRpId ? "passkey.unlock_prf_shared_rp" : "passkey.unlock_prf", () => navigator.credentials.get({
     signal,
     publicKey: {
       ...(unlockRpId ? { rpId: unlockRpId } : {}),
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ type: "public-key", id: credentialId }],
+      ...(credentialId ? { allowCredentials: [{ type: "public-key" as const, id: credentialId }] } : {}),
       userVerification: "required", timeout: 60_000,
       extensions: { prf: { eval: useLegacy ? { first: new TextEncoder().encode(AUTHENTICATOR_SALT), second: new TextEncoder().encode(STORAGE_SALT) } : { first: PRF_INPUT } } } as AuthenticationExtensionsClientInputs,
     },
@@ -183,7 +221,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     throw new WalletOpenError("Passkey unlock was not completed.");
   }
   const actualId = new Uint8Array(credential.rawId);
-  if (actualId.length !== credentialId.length || actualId.some((byte, index) => byte !== credentialId[index])) {
+  if (actualId.length === 0 || actualId.length > 1024 || (credentialId && (actualId.length !== credentialId.length || actualId.some((byte, index) => byte !== credentialId[index])))) {
     throw new WalletOpenError("The passkey does not match this wallet.");
   }
   const outputs = (credential.getClientExtensionResults() as PrfOutputs).prf?.results;
@@ -195,6 +233,8 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     second?.fill(0);
     throw new WalletOpenError("This passkey did not provide the PRF output needed to unlock your wallet.");
   }
+  const selectedId = Array.from(actualId, byte => byte.toString(16).padStart(2, "0")).join("");
+  const selectedProfile: WalletProfile = profile ?? (unlockRpId ? { version: 1, credentialId: selectedId, rpId: unlockRpId } : { version: 1, credentialId: selectedId });
   let keys: Awaited<ReturnType<typeof deriveWalletKeys>> | undefined;
   let client: WalletKit | undefined;
   const opening = new AbortController();
@@ -209,7 +249,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
     client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal: opening.signal }));
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : credentialId));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : actualId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");
     const paths = await client.StoragePaths.fromRoot(`/walletkit/${useLegacy ? "passkey-" : ""}${root}`);
     let store: CredentialStore;
@@ -222,7 +262,9 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate): Pr
     }
     signal.throwIfAborted();
     opening.signal.throwIfAborted();
-    if (activate) await abortable(activate({ client, store }, keys.seed, profile.credentialId, opening.signal), opening.signal);
+    if (activate) await abortable(activate({ client, store }, keys.seed, selectedProfile.credentialId, opening.signal, !discovering), opening.signal);
+    // Only retain a discovered profile after its account has actually opened.
+    if (discovering) window.localStorage.setItem(PROFILE_KEY, JSON.stringify(selectedProfile));
     return { client, store };
   } catch (error) {
     client?.terminate();
