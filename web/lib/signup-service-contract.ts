@@ -6,17 +6,8 @@ const captureIdentity = {
 	capture_id: z.string().refine(isCanonicalUuid),
 }
 
-const pollingToken = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/)
-const expiration = z.string().max(40)
-	.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/)
-	.refine(value => Number.isFinite(Date.parse(value)))
-
 // Object schemas accept additive metadata; known fields retain their exact wire constraints.
-export const SubmissionReceiptSchema = z.object({
-	...captureIdentity,
-	polling_token: pollingToken,
-	polling_token_expires_at: expiration,
-})
+export const SubmissionReceiptSchema = z.object(captureIdentity)
 
 const status = z.object({
 	...captureIdentity,

@@ -31,12 +31,11 @@ function capture(): EnrollmentCapture {
 }
 
 function receipt(): EnrollmentReceipt {
-	return { sub: SUB, captureId: CAPTURE_ID, pollingToken: 'A'.repeat(43), pollingTokenExpiresAt: new Date(Date.now() + 900_000).toISOString() }
+	return { sub: SUB, captureId: CAPTURE_ID }
 }
 
 function receiptWire() {
-	const value = receipt()
-	return { sub: value.sub, capture_id: value.captureId, polling_token: value.pollingToken, polling_token_expires_at: value.pollingTokenExpiresAt }
+	return { sub: SUB, capture_id: CAPTURE_ID }
 }
 
 function statusWire(status = 'InProgress', extra: Record<string, unknown> = {}) {
@@ -79,9 +78,7 @@ test('submits unchanged attested fields, a raw CBOR file, and only the Nitro hea
 		expect(new Uint8Array(await file.arrayBuffer())).toEqual(proofCbor)
 		return Response.json(wire, { status: 202 })
 	}, async () => {
-		expect(await submitEnrollment(bundle, authorization, options())).toEqual({
-			sub: SUB, captureId: CAPTURE_ID, pollingToken: wire.polling_token, pollingTokenExpiresAt: wire.polling_token_expires_at,
-		})
+		expect(await submitEnrollment(bundle, authorization, options())).toEqual(receipt())
 	})
 	expect(calls).toBe(1)
 })
@@ -105,13 +102,10 @@ test('rejects malformed capture, authorization and endpoints before making a req
 	expect(calls).toBe(0)
 })
 
-test('validates receipt identity, grant encoding, and expiry', async () => {
+test('rejects malformed or mismatched receipt identities as unconfirmed submissions', async () => {
 	const changes = [
 		{ sub: '0x123abd' }, { capture_id: CHALLENGE_ID },
-		{ polling_token: 'not-a-token' }, { polling_token: 'A'.repeat(42) + 'B' },
-		{ polling_token_expires_at: 'tomorrow' },
-		{ polling_token_expires_at: '2030-01-01T00:15:00.1234567890Z' },
-		...['sub', 'capture_id', 'polling_token', 'polling_token_expires_at'].flatMap(key =>
+		...['sub', 'capture_id'].flatMap(key =>
 			[undefined, null, 42].map(value => ({ [key]: value }))),
 	]
 	for (const wire of [null, [], 'receipt', ...changes.map(change => ({ ...receiptWire(), ...change }))]) {
@@ -122,32 +116,24 @@ test('validates receipt identity, grant encoding, and expiry', async () => {
 			})
 		})
 	}
-	await withFetch(() => Response.json({ ...receiptWire(), polling_token_expires_at: new Date(0).toISOString() }, { status: 202 }), async () => {
-		await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({ code: 'polling_grant_expired', retryable: false })
-	})
 })
 
-test('preserves supported expiry offsets, fractional precision, and UUID-shaped capture identifiers', async () => {
-	const clock = spyOn(Date, 'now').mockReturnValue(Date.parse('2030-01-01T00:00:00Z'))
+test('accepts canonical UUID-shaped capture identifiers without a fixed version', async () => {
 	const captureId = '01234567-89ab-0cde-0f01-23456789abcd'
 	const original = capture()
 	const bundle = { ...original, fields: original.fields.map(field => field.name === 'capture_id' ? { ...field, value: captureId } : field) }
-	try {
-		for (const expires of ['2030-01-01T00:15:00Z', '2030-01-01T00:15:00.123456789Z', '2030-01-01T01:15:00.123456789+01:00', '2029-12-31T19:15:00-05:00']) {
-			await withFetch((_url, init) => init.method === 'PUT'
-				? Response.json({ ...receiptWire(), capture_id: captureId, polling_token_expires_at: expires }, { status: 202 })
-				: Response.json(statusWire('Completed', { capture_id: captureId })), async () => {
-				const grant = await submitEnrollment(bundle, authorization, options())
-				expect(grant.pollingTokenExpiresAt).toBe(expires)
-				expect(await getEnrollmentStatus(grant, options())).toEqual({ sub: SUB, captureId, state: 'duplicate' })
-			})
-		}
-	} finally { clock.mockRestore() }
+	await withFetch((_url, init) => init.method === 'PUT'
+		? Response.json({ ...receiptWire(), capture_id: captureId }, { status: 202 })
+		: Response.json(statusWire('Completed', { capture_id: captureId })), async () => {
+		const accepted = await submitEnrollment(bundle, authorization, options())
+		expect(accepted).toEqual({ sub: SUB, captureId })
+		expect(await getEnrollmentStatus(accepted, options())).toEqual({ sub: SUB, captureId, state: 'duplicate' })
+	})
 })
 
 test('surfaces a retryable submit error without replaying its consumed ownership proof', async () => {
 	for (const [body, status, expected] of [
-		[{ error: 'polling_grant_unavailable', retryable: true }, 503, { code: 'polling_grant_unavailable', retryable: true, status: 503 }],
+		[{ error: 'capture_store_unavailable', retryable: true }, 503, { code: 'capture_store_unavailable', retryable: true, status: 503 }],
 		[{ error: 'invalid_capture', retryable: false, metadata: { version: 3 } }, 400, { code: 'invalid_capture', retryable: false, status: 400 }],
 		[{ error: null, retryable: true }, 503, { code: 'invalid_response', retryable: true, status: 503, message: 'Signup service returned an invalid enrollment response (HTTP 503).' }],
 	] as const) {
@@ -167,18 +153,17 @@ test('an ambiguous submission reports that a fresh proof is required and is not 
 	expect(calls).toBe(1)
 })
 
-test('polls the configured endpoint using only the expected subject and bearer token', async () => {
-	const grant = receipt()
+test('polls the configured endpoint using only the expected subject without authorization', async () => {
 	await withFetch((url, init) => {
 		expect(url.origin + url.pathname).toBe(ENDPOINT)
 		expect([...url.searchParams]).toEqual([['sub', SUB]])
 		expect(init.method).toBe('GET')
 		expect(init.credentials).toBe('omit')
 		expect(init.redirect).toBe('error')
-		expect([...new Headers(init.headers)]).toEqual([['authorization', `Bearer ${grant.pollingToken}`]])
+		expect([...new Headers(init.headers)]).toEqual([])
 		return Response.json(statusWire())
 	}, async () => {
-		expect(await getEnrollmentStatus(grant, options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'pending', status: 'InProgress' })
+		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'pending', status: 'InProgress' })
 	})
 })
 
@@ -228,11 +213,14 @@ test('ignores additive receipt and status metadata without following response UR
 	await withFetch(url => {
 		expect(url.origin + url.pathname).toBe(ENDPOINT)
 		const body = ++calls === 1 ? wire : statusWire('Completed')
-		return Response.json({ ...body, metadata: { version: 3 }, polling_url: 'https://other.example/collect' }, { status: calls === 1 ? 202 : 200 })
+		return Response.json({
+			...body, metadata: { version: 3 }, polling_url: 'https://other.example/collect',
+			polling_token: 'opaque-service-token-v2', polling_token_expires_at: 'not-required',
+		}, { status: calls === 1 ? 202 : 200 })
 	}, async () => {
-		const grant = await submitEnrollment(capture(), authorization, options())
-		expect(grant).toEqual({ sub: SUB, captureId: CAPTURE_ID, pollingToken: wire.polling_token, pollingTokenExpiresAt: wire.polling_token_expires_at })
-		expect(await getEnrollmentStatus(grant, options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'duplicate' })
+		const accepted = await submitEnrollment(capture(), authorization, options())
+		expect(accepted).toEqual(receipt())
+		expect(await getEnrollmentStatus(accepted, options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'duplicate' })
 	})
 })
 
@@ -263,22 +251,25 @@ test('preserves edge HTTP status and retryability for HTML and malformed JSON fa
 	}
 })
 
-test('expired receipts fail before networking and invalid server grants stop polling', async () => {
+test('rejects invalid polling identities before networking', async () => {
 	let calls = 0
-	await withFetch(() => { calls++; return Response.json({ error: 'polling_grant_invalid', retryable: false }, { status: 401 }) }, async () => {
-		await expect(getEnrollmentStatus({ ...receipt(), pollingTokenExpiresAt: new Date(0).toISOString() }, options())).rejects.toMatchObject({ code: 'polling_grant_expired' })
-		expect(calls).toBe(0)
-		await expect(pollEnrollment(receipt(), options())).rejects.toMatchObject({ code: 'polling_grant_invalid', retryable: false, status: 401 })
+	await withFetch(() => { calls++; return Response.json(statusWire()) }, async () => {
+		for (const invalid of [{ ...receipt(), sub: '0x0' }, { ...receipt(), captureId: 'invalid' }]) {
+			await expect(getEnrollmentStatus(invalid, options())).rejects.toMatchObject({ code: 'invalid_response' })
+			await expect(pollEnrollment(invalid, options())).rejects.toMatchObject({ code: 'invalid_response' })
+		}
 	})
-	expect(calls).toBe(1)
+	expect(calls).toBe(0)
 })
 
 test('polling makes no retries after a failed GET', async () => {
-	let calls = 0
-	await withFetch(() => { calls++; return Response.json({ error: 'capture_store_unavailable', retryable: true }, { status: 503 }) }, async () => {
-		await expect(pollEnrollment(receipt(), options())).rejects.toMatchObject({ code: 'capture_store_unavailable', retryable: true })
-	})
-	expect(calls).toBe(1)
+	for (const [status, error, retryable] of [[401, 'unauthorized', false], [503, 'capture_store_unavailable', true]] as const) {
+		let calls = 0
+		await withFetch(() => { calls++; return Response.json({ error, retryable }, { status }) }, async () => {
+			await expect(pollEnrollment(receipt(), options())).rejects.toMatchObject({ code: error, retryable, status })
+		})
+		expect(calls).toBe(1)
+	}
 })
 
 test('polling waits between pending responses and stops at completion', async () => {
@@ -313,18 +304,6 @@ test('the polling deadline is bounded by two minutes and reports a resumable pen
 		})
 		expect(timeout).toHaveBeenCalledWith(120_000)
 	} finally { timeout.mockRestore() }
-})
-
-test('polling uses the earlier grant expiry as its deadline', async () => {
-	const now = Date.now()
-	const clock = spyOn(Date, 'now').mockReturnValue(now)
-	const timeout = spyOn(AbortSignal, 'timeout')
-	try {
-		await withFetch(() => Response.json(statusWire('Completed')), async () => {
-			await pollEnrollment({ ...receipt(), pollingTokenExpiresAt: new Date(now + 2500).toISOString() }, options())
-		})
-		expect(timeout).toHaveBeenCalledWith(2500)
-	} finally { timeout.mockRestore(); clock.mockRestore() }
 })
 
 test('cancellation interrupts a pending cadence and a pre-aborted call never fetches', async () => {
