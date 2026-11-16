@@ -1,5 +1,5 @@
 import { abortable, pause } from './async'
-import { type EnrollmentCapture, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
+import { type EnrollmentCapture, EnrollmentCaptureSchema, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
 import { EnrollmentStatusSchema, SignupServiceErrorSchema, SubmissionReceiptSchema } from './signup-service-contract'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
@@ -151,18 +151,21 @@ export async function submitEnrollment(
 	authorization: { challengeId: string; proofCbor: Uint8Array },
 	options: SignupServiceOptions,
 ): Promise<EnrollmentReceipt> {
-	const identity = validateEnrollmentCapture(capture)
+	const parsedCapture = EnrollmentCaptureSchema.safeParse(capture)
+	if (!parsedCapture.success) throw new TypeError('Invalid TEE enrollment bundle')
+	const bundle = parsedCapture.data
+	const identity = validateEnrollmentCapture(bundle)
 	if (!isCanonicalUuid(authorization.challengeId) || !(authorization.proofCbor instanceof Uint8Array) || authorization.proofCbor.byteLength === 0 || authorization.proofCbor.byteLength > MAX_PROOF_BYTES) {
 		throw new TypeError('Enrollment authorization requires a challenge UUID and a bounded, nonempty CBOR proof.')
 	}
 	const url = endpoint(options.endpoint)
 	const body = new FormData()
-	for (const field of capture.fields) body.append(field.name, field.value)
+	for (const field of bundle.fields) body.append(field.name, field.value)
 	body.append('world_id_challenge_id', authorization.challengeId)
 	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
 	try {
 		const parsed = SubmissionReceiptSchema.safeParse(await requestJson(url, {
-			method: 'PUT', headers: { 'X-Nitro-Attestation': capture.attestation_header }, body,
+			method: 'PUT', headers: { 'X-Nitro-Attestation': bundle.attestation_header }, body,
 		}, 202, options))
 		if (!parsed.success) return invalidResponse()
 		const value = parsed.data

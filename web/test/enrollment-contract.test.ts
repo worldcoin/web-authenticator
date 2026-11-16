@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ENROLLMENT_CONTEXT, parseEnrollmentChallenge, validateEnrollmentCapture } from "../lib/enrollment-contract";
+import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, validateEnrollmentCapture } from "../lib/enrollment-contract";
 import { CAPTURE_ID, enrollmentCapture, enrollmentChallenge } from "./fixtures/enrollment";
 
 test("enrollment context matches the proof-verification service's field element", () => {
@@ -9,8 +9,19 @@ test("enrollment context matches the proof-verification service's field element"
 test("v2 capture validation preserves the attested bytes, including old captures for authorized retries", () => {
   const capture = enrollmentCapture();
   const before = JSON.stringify(capture);
-  expect(validateEnrollmentCapture(capture)).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
+  const parsed = EnrollmentCaptureSchema.parse(capture);
+  expect(parsed).toEqual(capture);
+  expect(validateEnrollmentCapture(parsed)).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
   expect(JSON.stringify(capture)).toBe(before);
+});
+
+test("capture parsing rejects malformed field shapes before invariant validation", () => {
+  const capture = enrollmentCapture();
+  for (const value of [
+    null, [], {}, { ...capture, fields: null }, { ...capture, attestation_header: 42 },
+    ...[null, {}, { name: 42, value: "value" }, { name: "sub", value: 42 }, { name: "sub", value: "" }]
+      .map(field => ({ ...capture, fields: [field, ...capture.fields.slice(1)] })),
+  ]) expect(EnrollmentCaptureSchema.safeParse(value).success).toBe(false);
 });
 
 test("capture validation rejects omitted, unknown, duplicate and oversized fields", () => {
@@ -21,7 +32,7 @@ test("capture validation rejects omitted, unknown, duplicate and oversized field
     [...capture.fields.slice(1), capture.fields[1]],
     capture.fields.map(field => field.name === "pcp_version" ? { ...field, value: "é".repeat(4097) } : field),
   ]) {
-    expect(() => validateEnrollmentCapture({ ...capture, fields })).toThrow();
+    expect(() => validateEnrollmentCapture(EnrollmentCaptureSchema.parse({ ...capture, fields }))).toThrow();
   }
 });
 
@@ -35,10 +46,10 @@ test("capture validation rejects noncanonical signed values rather than normaliz
     ["face_embedding_shares_1", "not base64"],
   ]) {
     const fields = capture.fields.map(field => field.name === name ? { name, value } : field);
-    expect(() => validateEnrollmentCapture({ ...capture, fields })).toThrow();
+    expect(() => validateEnrollmentCapture(EnrollmentCaptureSchema.parse({ ...capture, fields }))).toThrow();
   }
   for (const attestation_header of ["", " Zg==", "Zh==", btoa("a".repeat(12_001))]) {
-    expect(() => validateEnrollmentCapture({ ...capture, attestation_header })).toThrow();
+    expect(EnrollmentCaptureSchema.safeParse({ ...capture, attestation_header }).success).toBe(false);
   }
 });
 

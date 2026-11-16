@@ -1,4 +1,5 @@
 import { keccak256, stringToHex } from "viem";
+import { z } from "zod";
 
 export interface EnrollmentCapture {
   readonly fields: readonly Readonly<{ name: string; value: string }>[];
@@ -22,41 +23,29 @@ const FIELDS = [
   "pcp_version", "associated_data_hash",
 ] as const;
 
-export function isCanonicalUuid(value: unknown): value is string {
-  return typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
-    value !== "00000000-0000-0000-0000-000000000000";
-}
+export const EnrollmentCaptureSchema: z.ZodType<EnrollmentCapture> = z.object({
+  fields: z.array(z.object({
+    name: z.string(),
+    value: z.string().min(1).refine(value => new TextEncoder().encode(value).length <= 8192),
+  })).length(FIELDS.length),
+  attestation_header: z.string().refine(value => canonicalBase64(value, 1, 12_000)),
+});
 
-export function isCanonicalSubject(value: unknown): value is string {
-  return typeof value === "string" && /^0x[1-9a-f][0-9a-f]{0,63}$/.test(value);
-}
+const EnrollmentChallengeSchema: z.ZodType<EnrollmentChallenge> = z.object({
+  challenge_id: z.string().refine(isCanonicalUuid),
+  nonce: z.string().regex(/^0x[0-9a-f]{64}$/),
+  challenge_type: z.literal("enrollment"),
+  expires_at: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+    .refine(value => Number.isFinite(Date.parse(value))),
+});
 
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function canonicalBase64(value: string, minBytes: number, maxBytes: number): boolean {
-  if (value.length > Math.ceil(maxBytes / 3) * 4 || value.length % 4 !== 0) return false;
-  try {
-    const bytes = atob(value);
-    return bytes.length >= minBytes && bytes.length <= maxBytes && btoa(bytes) === value;
-  } catch {
-    return false;
-  }
-}
-
-/** Validate the v2 wire shape without normalizing any attested field. */
-export function validateEnrollmentCapture(value: unknown): { sub: string; captureId: string } {
-  if (!object(value) || !Array.isArray(value.fields) || value.fields.length !== FIELDS.length ||
-    typeof value.attestation_header !== "string" || !canonicalBase64(value.attestation_header, 1, 12_000)) {
-    throw new TypeError("Invalid TEE enrollment bundle");
-  }
+/** Validate the invariants of a schema-parsed capture without normalizing attested fields. */
+export function validateEnrollmentCapture(value: EnrollmentCapture): { sub: string; captureId: string } {
   const fields = new Map<string, string>();
   const allowed = new Set<string>(FIELDS);
   for (const field of value.fields) {
-    if (!object(field) || typeof field.name !== "string" || !allowed.has(field.name) || fields.has(field.name) ||
-      typeof field.value !== "string" || field.value.length === 0 || new TextEncoder().encode(field.value).length > 8192) {
+    if (!allowed.has(field.name) || fields.has(field.name)) {
       throw new TypeError("Invalid or duplicate TEE enrollment field");
     }
     fields.set(field.name, field.value);
@@ -78,18 +67,28 @@ export function validateEnrollmentCapture(value: unknown): { sub: string; captur
 }
 
 export function parseEnrollmentChallenge(value: unknown, now = Date.now()): EnrollmentChallenge {
-  if (!object(value) || !isCanonicalUuid(value.challenge_id) || value.challenge_type !== "enrollment" ||
-    typeof value.nonce !== "string" || !/^0x[0-9a-f]{64}$/.test(value.nonce) ||
-    typeof value.expires_at !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value.expires_at) ||
-    !Number.isFinite(Date.parse(value.expires_at))) {
-    throw new TypeError("Invalid enrollment ownership challenge");
+  const parsed = EnrollmentChallengeSchema.safeParse(value);
+  if (!parsed.success) throw new TypeError("Invalid enrollment ownership challenge");
+  if (Date.parse(parsed.data.expires_at) <= now) throw new Error("Enrollment ownership challenge expired; obtain a fresh challenge");
+  return parsed.data;
+}
+
+export function isCanonicalUuid(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
+    value !== "00000000-0000-0000-0000-000000000000";
+}
+
+export function isCanonicalSubject(value: unknown): value is string {
+  return typeof value === "string" && /^0x[1-9a-f][0-9a-f]{0,63}$/.test(value);
+}
+
+function canonicalBase64(value: string, minBytes: number, maxBytes: number): boolean {
+  if (value.length > Math.ceil(maxBytes / 3) * 4 || value.length % 4 !== 0) return false;
+  try {
+    const bytes = atob(value);
+    return bytes.length >= minBytes && bytes.length <= maxBytes && btoa(bytes) === value;
+  } catch {
+    return false;
   }
-  if (Date.parse(value.expires_at) <= now) throw new Error("Enrollment ownership challenge expired; obtain a fresh challenge");
-  return {
-    challenge_id: value.challenge_id,
-    nonce: value.nonce,
-    challenge_type: "enrollment",
-    expires_at: value.expires_at,
-  };
 }
