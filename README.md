@@ -1,27 +1,23 @@
+<a href="https://docs.world.org/idkit">
+  <img src="https://raw.githubusercontent.com/worldcoin/world-id-docs/main/public/images/shared-readme/readme-header.png" alt="" />
+</a>
+
 # World ID Web Authenticator
 
-Unlock your World ID wallet with a passkey and approve requests from apps.
-Deployment settings select staging or production services: `VITE_APP_ENV` is baked
-into the browser build and `APP_ENV` configures the API/Worker. Both accept `staging`
-or `production`; local development defaults to staging. The hostname is validated
-against that setting and cannot switch networks. Production releases set both to
-`production` for `web.world.org`; staging uses `authenticator.toolsforhumanity.dev`.
+A standalone web authenticator for accessing a World ID wallet with a passkey and handling requests from apps.
 
-## Dependencies
+Requires Git, [Bun](https://bun.sh) 1.4.2 and a browser with WebAuthn PRF support.
 
-- [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.
-- [Biometrics TEE](https://github.com/worldcoin/biometrics-tee) — intended for face processing; not integrated yet.
+## 🚀 Quick start
 
-## Local Development
-
-Install [Bun](https://bun.sh) **1.4.2**, then:
-
-```sh
+```bash
+git clone https://github.com/worldcoin/web-authenticator.git
+cd web-authenticator
 bun install --frozen-lockfile
 bun run dev
 ```
 
-Open [localhost:4173](http://localhost:4173) in a browser with WebAuthn PRF support.
+Open [localhost:4173](http://localhost:4173). Local development uses staging by default.
 
 ## Repository Structure
 
@@ -34,9 +30,11 @@ tests/       Browser tests and integration fixtures
 
 `web/` and `api/` own their dependencies. Bun serves both from one origin.
 
-## Running Tests
+## 🧑‍💻 Developing locally
 
-```sh
+### Testing
+
+```bash
 bun run test
 bun x playwright install chromium webkit # First run only
 bun run test:browser
@@ -44,16 +42,32 @@ bun run test:browser
 
 Static checks:
 
-```sh
+```bash
 bun run lint
 bun run typecheck
 ```
 
-## Build and Run
+### Building and running
 
-```sh
+```bash
 bun run build
 bun run start
 ```
 
-[Container instructions](api/README.md#container) · [App request format](web/README.md#app-requests)
+## 🚢 Deployment
+
+`VITE_APP_ENV` configures the browser build and `APP_ENV` configures the API/Worker.
+Both accept `staging` or `production`; the browser origin must match the selected environment.
+
+- **Staging:** When configured, the [staging workflow](.github/workflows/cloudflare-staging.yml) tests and deploys `main` to [authenticator.toolsforhumanity.dev](https://authenticator.toolsforhumanity.dev).
+- **Production:** The [production workflow](.github/workflows/cloudflare-release.yml) promotes a staging-reviewed `main` commit to [web.world.org](https://web.world.org) after CI and environment approval.
+
+## 🔗 Related projects
+
+- [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.
+- [Biometrics TEE](https://github.com/worldcoin/biometrics-tee) — intended for face processing; not integrated yet.
+
+## 📄 Documentation
+
+- [Web app and request format](web/README.md)
+- [API and container](api/README.md)
