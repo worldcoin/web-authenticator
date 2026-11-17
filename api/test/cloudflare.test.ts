@@ -16,6 +16,7 @@ const environment = (fetchAsset: (request: Request) => Promise<Response>): Env =
   CF_ACCESS_TEAM_DOMAIN: "tfh-test.cloudflareaccess.com",
   CF_ACCESS_AUD: "test-audience",
   APP_ENV: "staging",
+  AI_BACKEND_BASE_URL: "",
   CF_VERSION_METADATA: { id: "test-version", tag: "a".repeat(40), timestamp: "2026-10-30T00:00:00.000Z" },
   ASSETS: { fetch: fetchAsset } as Fetcher,
 });
@@ -69,6 +70,7 @@ test("Worker preserves verify URLs, API methods and security headers", async () 
   expect(await page.text()).toContain("Authenticator");
   expect(paths).toEqual([origin + "/index.html"]);
   for (const [name, value] of Object.entries(securityHeaders("staging"))) expect(page.headers.get(name)).toBe(value);
+  expect((await handle(request("/api/debug-reports", { method: "POST", body: "{}" }), env)).status).toBe(410);
   expect((await handle(request("/api/health/ready"), env)).status).toBe(200);
   expect((await handle(request("/api/staging-rp?id=bad"), env)).status).toBe(400);
   expect((await handle(request("/api/health/live", { method: "POST" }), env)).status).toBe(404);
@@ -207,4 +209,30 @@ test("production requires its configured HTTPS origin and exposes its version", 
   expect(unconfigured.headers.get("content-security-policy")).toContain("connect-src 'self';");
   expect((await handle(request(), { ...env, APP_ENV: "staging" })).status).toBe(403);
   expect(authentications).toBe(1);
+});
+
+
+test("debug reports stay behind staging Access", async () => {
+  const env = { ...environment(async () => new Response()), AI_BACKEND_BASE_URL: "https://backend.example" };
+  const denied = createWorkerHandler(async () => Response.json({ error: "Forbidden" }, { status: 403 }));
+  expect((await denied(request("/api/debug-reports", { method: "POST", body: "{}" }), env)).status).toBe(403);
+});
+
+
+test("debug report upload registers background work with waitUntil", async () => {
+  const id = "550e8400-e29b-41d4-a716-446655440000";
+  const body = JSON.stringify({ sessionId: id, ts: 123, metadata: { os: "web", userAgent: "agent", appVersion: "1",
+    environment: "staging", faceAuthPurpose: "selfieEnrollment", flowId: id, result: "success", terminationReason: "success" } });
+  const env = { ...environment(async () => new Response()), AI_BACKEND_BASE_URL: "https://backend.example" };
+  const originalFetch = globalThis.fetch;
+  const pending: Promise<unknown>[] = [];
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
+    ? Response.json({ url: "https://bucket.example/key", headers: {} }) : new Response(null)) as unknown as typeof fetch;
+  try {
+    const ctx = { waitUntil: (task: Promise<unknown>) => { pending.push(task); } } as ExecutionContext;
+    const response = await createWorkerHandler(async () => undefined)(request("/api/debug-reports", { method: "POST", body }), env, ctx);
+    expect(response.status).toBe(202);
+    expect(pending).toHaveLength(1);
+    await Promise.all(pending);
+  } finally { globalThis.fetch = originalFetch; }
 });

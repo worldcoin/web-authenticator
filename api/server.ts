@@ -9,6 +9,7 @@ export function createServerOptions(options: { staticRoot?: string; environment?
   const staticRoot = resolve(options.staticRoot ?? DEFAULT_STATIC_ROOT);
   const environment = options.environment ?? AUTHENTICATOR_APP_CONFIG.environment;
   return {
+    maxRequestBodySize: 256 * 1024 + 16 * 1024,
     routes: secureRoutes(createRoutes({ staticRoot }), environment),
     fetch: withSecurityHeaders(request => serveStatic(request, staticRoot), environment),
     error: (error: Error) => internalError(error, environment),

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { securityHeaders } from "../lib/security-headers";
 import { secureRoutes } from "../lib/http";
 import { createServerOptions } from "../server";
+import { uploadDebugReport } from "../lib/debug-report-upload";
 const servers: ReturnType<typeof Bun.serve>[] = [];
 const start = (options: Parameters<typeof createServerOptions>[0] = {}) => {
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, ...createServerOptions(options) });
@@ -90,6 +91,9 @@ test("synthetic enrollment is absent even for valid localhost requests", async (
   }
   expect((await get("/api/capabilities")).status).toBe(404);
 });
+test("debug report upload is disabled by default", async () => {
+  expect((await get("/api/debug-reports", { method: "POST", body: "{}" })).status).toBe(410);
+});
 test("RP lookup rejects malformed identifiers without a remote call", async () => {
   const response = await get("/api/staging-rp?id=bad");
   expect(response.status).toBe(400);
@@ -134,4 +138,17 @@ test("all responses include no-referrer/no-store and bounded CSP destinations", 
   expectSecurityHeaders(response);
   expect(response.headers.get("content-security-policy")).toContain("https://staging-bridge.worldcoin.org");
   expect(response.headers.get("content-security-policy")).not.toContain("connect-src *");
+});
+
+test("Bun body limit preserves the route's JSON 413 and security headers", async () => {
+  const options = createServerOptions();
+  const routes = secureRoutes({ "/api/debug-reports": { POST: request => uploadDebugReport(request, "staging", new URL("https://backend.example"), () => {}) } }, "staging");
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, ...options, routes });
+  servers.push(server);
+  for (const size of [256 * 1024 + 1, 256 * 1024 + 16 * 1024]) {
+    const response = await fetch(server.url.origin + "/api/debug-reports", { method: "POST", body: " ".repeat(size) });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "Report too large" });
+    expectSecurityHeaders(response);
+  }
 });

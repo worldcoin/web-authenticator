@@ -1,3 +1,4 @@
+import { BodyTooLargeError, readBoundedBytes } from '../../packages/shared/read-bounded'
 import { decodeBase64, type Connector } from './connector'
 import { RequestExpiredError } from './proof-request'
 
@@ -7,31 +8,13 @@ function encode(bytes: Uint8Array<ArrayBuffer>): string {
 	return btoa(raw)
 }
 export async function readBounded(response: Response, limit = 262144): Promise<string> {
-	const reader = response.body?.getReader()
-	if (!reader) throw new Error('The bridge returned an empty response.')
-	const chunks: Uint8Array[] = []
-	let size = 0
+	if (!response.body) throw new Error('The bridge returned an empty response.')
 	try {
-		while (true) {
-			const { value, done } = await reader.read()
-			if (done) break
-			size += value.byteLength
-			if (size > limit) {
-				await reader.cancel()
-				throw new Error('The bridge response is too large.')
-			}
-			chunks.push(value)
-		}
-	} finally {
-		reader.releaseLock()
+		return new TextDecoder('utf-8', { fatal: true }).decode(await readBoundedBytes(response.body, limit))
+	} catch (error) {
+		if (error instanceof BodyTooLargeError) throw new Error('The bridge response is too large.')
+		throw error
 	}
-	const bytes = new Uint8Array(size)
-	let offset = 0
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset)
-		offset += chunk.length
-	}
-	return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 }
 export async function openBridge(connector: Connector, signal: AbortSignal) {
 	const key = await crypto.subtle.importKey('raw', connector.key, 'AES-GCM', false, ['decrypt', 'encrypt'])

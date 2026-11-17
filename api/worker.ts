@@ -1,3 +1,5 @@
+import { uploadDebugReport } from "./lib/debug-report-upload";
+import { parseAiBackendBaseUrl } from "./lib/config";
 import { createAccessVerifier } from "./lib/cloudflare-access";
 import { serveWorkerAsset } from "./lib/cloudflare-assets";
 import { internalError, withSecurityHeaders } from "./lib/http";
@@ -6,29 +8,48 @@ import { lookupRp } from "./lib/rp-handler";
 import { APP_ORIGINS, type ProtocolEnvironment } from "../config/environment";
 
 const verifyAccess = createAccessVerifier();
+let cachedBaseUrl: { value: string | undefined; url: URL | undefined } | undefined;
 
 export function createWorkerHandler(authenticate = verifyAccess) {
-  return (request: Request, env: Env) => {
+  return (request: Request, env: Env, ctx?: ExecutionContext) => {
     const environment = env.APP_ENV === "staging" || env.APP_ENV === "production" ? env.APP_ENV : undefined;
-    return withSecurityHeaders(request => handle(request, env, environment, authenticate), environment)(request);
+    return withSecurityHeaders(request => handle(request, env, environment, authenticate, ctx), environment)(request);
   };
 }
 
-async function handle(request: Request, env: Env, configured: ProtocolEnvironment | undefined, authenticate: typeof verifyAccess): Promise<Response> {
+async function handle(request: Request, env: Env, configured: ProtocolEnvironment | undefined, authenticate: typeof verifyAccess, ctx: ExecutionContext | undefined): Promise<Response> {
   try {
     if (configured === undefined) return Response.json({ error: "Invalid deployment configuration" }, { status: 503 });
     const environment = configured;
     const origin = APP_ORIGINS[environment];
+    const pathname = new URL(request.url).pathname;
+    const debugReportRequest = pathname === "/api/debug-reports" && request.method === "POST";
     if (environment === "staging") {
       const denied = await authenticate(request, env);
       if (denied) return denied;
-    } else if (new URL(request.url).origin !== origin) {
+    } else if (environment === "production" && new URL(request.url).origin !== origin) {
       return Response.json({ error: "Unsupported authenticator origin" }, { status: 421 });
     }
-    const pathname = new URL(request.url).pathname;
     const method = request.method === "HEAD" ? "GET" : request.method;
     let response: Response;
-    if (pathname === "/api/health/live" && method === "GET") response = healthLive();
+    if (debugReportRequest) {
+      let baseUrl: URL | undefined;
+      try {
+        if (!cachedBaseUrl || cachedBaseUrl.value !== env.AI_BACKEND_BASE_URL) {
+          cachedBaseUrl = { value: env.AI_BACKEND_BASE_URL, url: parseAiBackendBaseUrl(env.AI_BACKEND_BASE_URL) };
+        }
+        baseUrl = cachedBaseUrl.url;
+      }
+      catch {
+        // eslint-disable-next-line no-console -- Invalid deployment configuration.
+        console.error("debug_report_config_invalid");
+        return Response.json({ error: "Invalid deployment configuration" }, { status: 503 });
+      }
+      if (!baseUrl) return Response.json({ code: "debug_reports_disabled" }, { status: 410 });
+      if (!ctx) return Response.json({ error: "Execution context unavailable" }, { status: 503 });
+      response = await uploadDebugReport(request, environment, baseUrl, task => ctx.waitUntil(task));
+    }
+    else if (pathname === "/api/health/live" && method === "GET") response = healthLive();
     else if (pathname === "/api/health/ready" && method === "GET") {
       const index = await env.ASSETS.fetch(new Request(new URL("/index.html", request.url)));
       const available = index.status === 200;

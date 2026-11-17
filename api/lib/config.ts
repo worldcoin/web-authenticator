@@ -18,7 +18,18 @@ function envPort(): number {
   return port;
 }
 
+export function parseAiBackendBaseUrl(value: string | undefined): URL | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const url = new URL(trimmed);
+  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new TypeError("AI_BACKEND_BASE_URL must be an HTTPS origin");
+  }
+  return url;
+}
+
 export const AUTHENTICATOR_APP_CONFIG = Object.freeze({
+  aiBackendBaseUrl: parseAiBackendBaseUrl(envValue("AI_BACKEND_BASE_URL")),
   host: envValue("AUTHENTICATOR_HOST") ?? "127.0.0.1",
   port: envPort(),
   environment: parseAppEnvironment(envValue("APP_ENV") ?? "staging"),

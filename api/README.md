@@ -57,3 +57,22 @@ HTTPS for camera and passkey access.
 
 This packages the app; AWS hosting, Redis and secrets belong in deployment
 configuration and are not provisioned by this Dockerfile.
+
+## Debug reports
+
+`POST /api/debug-reports` accepts a strictly validated, environment-matched report
+of at most 256 KiB and returns 202 once it has been accepted for asynchronous
+forwarding. Acceptance does not guarantee delivery. Forwarding has no retries;
+upstream failures are logged without report data or presigned URLs.
+
+`AI_BACKEND_BASE_URL` is an HTTPS origin and is unset by default. An unset value
+returns 410; an invalid value is a deployment configuration error. Per-IP rate
+limiting is a Cloudflare zone rule, not Worker code; Bun has no rate limiter and
+needs an external limit when exposed publicly. Bun rejects declared bodies above its
+272 KiB server limit before routing, with its native 413 response. The endpoint
+needs no user authentication and sends no service token upstream; on staging it
+stays behind Cloudflare Access like every other path. Production enablement
+requires agreement on the report contract and upstream readiness.
+
+The browser imports only shared wire types from `packages/contracts`; API config
+and credentials must remain server-only.

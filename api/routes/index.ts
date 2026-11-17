@@ -1,3 +1,4 @@
+import { POST as debugReports } from "./api/debug-reports";
 import type { RouteTable } from "../lib/http";
 import { GET as healthLive } from "./api/health/live";
 import { ready as healthReady } from "./api/health/ready";
@@ -9,6 +10,7 @@ import { GET as stagingRp } from "./api/staging-rp";
 // except /api/* which must never return the SPA.
 export function createRoutes({ staticRoot }: { staticRoot: string }): RouteTable {
   return {
+    "/api/debug-reports": { POST: debugReports },
     "/api/health/live": { GET: healthLive },
     "/api/health/ready": { GET: healthReady(staticRoot) },
     "/api/staging-rp": { GET: stagingRp },
