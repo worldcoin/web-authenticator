@@ -10,6 +10,9 @@ if (!("bun" in process.versions)) {
   test.use({ storageState: { cookies: [], origins: origins.map(origin => ({ origin, localStorage: [
     { name: "wid_consent", value: JSON.stringify({ choice: "denied", version: "v1", at: Date.now() }) },
   ] })) } });
+  // Rejections finish while the page is still loading assets through the proxy route below.
+  // Let those in-flight handlers finish before teardown disposes their fetched responses.
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "wait" }); });
 
   for (const [origin, environment, accepted, endpoint] of [
     [origins[0]!, "production", configuredEnvironment === "production", "/api/rp"],
