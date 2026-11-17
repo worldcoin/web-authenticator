@@ -2,6 +2,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { WalletKit } from '../lib/walletkit'
 import type { WalletKit as PublishedWalletKit, CredentialStore } from '@worldcoin/walletkit-web'
+import { proofResponse } from './fixtures/proof-response'
 
 function fixture(actualSubject = '0x01') {
 	const freed: string[] = []
@@ -12,6 +13,7 @@ function fixture(actualSubject = '0x01') {
 	let writes = 0
 	let failInit = false
 	let failSub = false
+	let proofJson = JSON.stringify({ ...proofResponse('11'), responses: [proofResponse('11').responses[0], proofResponse('128').responses[0]] })
 	const credential = {
 		sub: async () => field('actual', actualSubject),
 		expiresAt: async () => BigInt(1000),
@@ -20,7 +22,7 @@ function fixture(actualSubject = '0x01') {
 		free: () => freed.push('credential'),
 	}
 	const response = {
-		toJson: async () => JSON.stringify({ responses: [{ issuer_schema_id: '11' }, { issuer_schema_id: '128' }] }),
+		toJson: async () => proofJson,
 		free: () => freed.push('response'),
 	}
 	const authenticator = {
@@ -59,6 +61,7 @@ function fixture(actualSubject = '0x01') {
 		failSub: () => {
 			failSub = true
 		},
+		proofJson: (json: string) => { proofJson = json },
 	}
 }
 
@@ -100,6 +103,18 @@ test('proof disclosure preserves only the selfie score and frees response/reques
 	const f = fixture()
 	await f.wallet.initializeAuthenticator(new Uint8Array(32))
 	const proof = JSON.parse(await f.wallet.generateProof('{}'))
-	assert.deepEqual(proof.responses, [{ issuer_schema_id: '11', claims: ['score'] }, { issuer_schema_id: '128' }])
+	assert.deepEqual(proof.responses, [{ ...proofResponse('11').responses[0], claims: ['score'] }, proofResponse('128').responses[0]])
 	for (const name of ['response', 'request', 'credential']) assert.ok(f.freed.includes(name))
+})
+
+test('malformed proof responses fail before credential access and release Rust handles', async () => {
+	for (const json of ['{private malformed payload', JSON.stringify({ ...proofResponse(), responses: [null] }), JSON.stringify({ ...proofResponse(), error: 'private upstream error' })]) {
+		const f = fixture()
+		await f.wallet.initializeAuthenticator(new Uint8Array(32))
+		f.proofJson(json)
+		await assert.rejects(f.wallet.generateProof('{}'), { message: 'WalletKit returned an invalid proof response.' })
+		assert.ok(f.freed.includes('response'))
+		assert.ok(f.freed.includes('request'))
+		assert.ok(!f.freed.includes('credential'))
+	}
 })

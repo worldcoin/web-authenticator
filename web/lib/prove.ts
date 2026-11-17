@@ -2,6 +2,7 @@ import { abortable } from "./async";
 import type { WalletKit } from "./walletkit";
 import { checkRequestCredentials, type IncomingRequest } from "./incoming-request";
 import { checkExpiry } from "./proof-request";
+import { parseProofResponse } from "./proof-response";
 
 export async function createProof(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal, progress: (message: string) => void): Promise<string> {
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
@@ -17,8 +18,8 @@ export async function createProof(incoming: IncomingRequest, wallet: WalletKit, 
     const proof = await abortable(wallet.generateProof(JSON.stringify(incoming.proof)), deadline);
     deadline.throwIfAborted();
     checkExpiry(incoming.proof);
-    const response = JSON.parse(proof) as { id?: unknown; error?: unknown; responses?: unknown };
-    if (response.id !== incoming.proof.id || response.error || !Array.isArray(response.responses) || !response.responses.length) {
+    const response = parseProofResponse(proof);
+    if (response.id !== incoming.proof.id) {
       throw new Error("WalletKit returned an invalid proof response.");
     }
     return proof;

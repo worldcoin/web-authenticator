@@ -3,6 +3,7 @@ import { currentProtocolEnvironment } from './environment'
 import type { WalletKit } from './walletkit'
 import { abortable } from './async'
 import { parseConnector, returnUrl } from './connector'
+import { parseProofResponse } from './proof-response'
 import {
 	credentialAvailability,
 	parsePayload,
@@ -62,18 +63,8 @@ export async function loadIncomingRequest(
 			await validateSignature(payload.proof_request, signal, environment)
 		},
 		deliver: async (proof, signal) => {
-			const response = JSON.parse(proof) as {
-				id?: unknown
-				error?: unknown
-				responses?: unknown
-				nonce?: unknown
-			}
-			if (
-				response.error ||
-				!Array.isArray(response.responses) ||
-				!response.responses.length ||
-				response.id !== payload.proof_request.id
-			)
+			const response = parseProofResponse(proof)
+			if (response.id !== payload.proof_request.id)
 				throw new Error('WalletKit returned an error or mismatched proof response.')
 			checkExpiry(payload.proof_request)
 			await bridge.send({ proof_response: response }, signal)
