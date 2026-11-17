@@ -4,6 +4,7 @@ import {
 	type SignupServiceOptions,
 	SignupServiceError,
 	getEnrollmentStatus,
+	getIdentityStatus,
 	pollEnrollment,
 	submitEnrollment,
 } from '../lib/signup-service'
@@ -34,12 +35,11 @@ function receipt(): EnrollmentReceipt {
 	return { sub: SUB, captureId: CAPTURE_ID }
 }
 
-function receiptWire() {
-	return { sub: SUB, capture_id: CAPTURE_ID }
-}
-
-function statusWire(status = 'InProgress', extra: Record<string, unknown> = {}) {
-	return { sub: SUB, capture_id: CAPTURE_ID, status, unique: false, ...extra }
+function statusWire(status = 'ENROLLMENT_IN_PROGRESS', extra: Record<string, unknown> = {}) {
+	return {
+		status: status === 'ENROLLMENT_UNIQUE_SUCCESSFUL' ? 'VERIFIED' : 'NEW',
+		enrollment_status: { capture_id: CAPTURE_ID, status, ...extra },
+	}
 }
 
 function options(signal = new AbortController().signal): SignupServiceOptions {
@@ -57,7 +57,7 @@ async function withFetch(
 
 test('submits unchanged attested fields, a raw CBOR file, and only the Nitro header', async () => {
 	const bundle = capture()
-	const wire = receiptWire()
+	const wire = {}
 	let calls = 0
 	await withFetch(async (url, init) => {
 		calls++
@@ -85,7 +85,7 @@ test('submits unchanged attested fields, a raw CBOR file, and only the Nitro hea
 
 test('rejects malformed capture, authorization and endpoints before making a request', async () => {
 	let calls = 0
-	await withFetch(() => { calls++; return Response.json(receiptWire(), { status: 202 }) }, async () => {
+	await withFetch(() => { calls++; return Response.json({}, { status: 202 }) }, async () => {
 		await expect(submitEnrollment({ ...capture(), fields: [] }, authorization, options())).rejects.toBeInstanceOf(TypeError)
 		for (const invalid of [
 			{ challengeId: 'not-a-uuid', proofCbor },
@@ -102,13 +102,8 @@ test('rejects malformed capture, authorization and endpoints before making a req
 	expect(calls).toBe(0)
 })
 
-test('rejects malformed or mismatched receipt identities as unconfirmed submissions', async () => {
-	const changes = [
-		{ sub: '0x123abd' }, { capture_id: CHALLENGE_ID },
-		...['sub', 'capture_id'].flatMap(key =>
-			[undefined, null, 42].map(value => ({ [key]: value }))),
-	]
-	for (const wire of [null, [], 'receipt', ...changes.map(change => ({ ...receiptWire(), ...change }))]) {
+test('rejects malformed acceptance bodies as unconfirmed submissions', async () => {
+	for (const wire of [null, [], 'receipt', 42]) {
 		await withFetch(() => Response.json(wire, { status: 202 }), async () => {
 			await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
 				code: 'invalid_response', retryable: true, status: 202,
@@ -118,13 +113,31 @@ test('rejects malformed or mismatched receipt identities as unconfirmed submissi
 	}
 })
 
+test('handles v1-compatible empty errors and rate limits without replaying PUT', async () => {
+	for (const status of [400, 401, 408, 409, 413, 422, 500, 503]) {
+		let calls = 0
+		await withFetch(() => { calls++; return new Response(null, { status }) }, async () => {
+			await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
+				code: 'http_error', status, retryable: status === 408 || status >= 500,
+			})
+			await expect(getEnrollmentStatus(receipt(), options())).rejects.toMatchObject({ code: 'http_error', status })
+		})
+		expect(calls).toBe(2)
+	}
+	await withFetch(() => Response.json({ error: 'RATE_LIMIT_EXCEEDED' }, { status: 429 }), async () => {
+		await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
+			code: 'RATE_LIMIT_EXCEEDED', status: 429, retryable: true,
+		})
+	})
+})
+
 test('accepts canonical UUID-shaped capture identifiers without a fixed version', async () => {
 	const captureId = '01234567-89ab-0cde-0f01-23456789abcd'
 	const original = capture()
 	const bundle = { ...original, fields: original.fields.map(field => field.name === 'capture_id' ? { ...field, value: captureId } : field) }
 	await withFetch((_url, init) => init.method === 'PUT'
-		? Response.json({ ...receiptWire(), capture_id: captureId }, { status: 202 })
-		: Response.json(statusWire('Completed', { capture_id: captureId })), async () => {
+		? Response.json({}, { status: 202 })
+		: Response.json(statusWire('ENROLLMENT_NOT_UNIQUE', { capture_id: captureId })), async () => {
 		const accepted = await submitEnrollment(bundle, authorization, options())
 		expect(accepted).toEqual({ sub: SUB, captureId })
 		expect(await getEnrollmentStatus(accepted, options())).toEqual({ sub: SUB, captureId, state: 'duplicate' })
@@ -134,6 +147,8 @@ test('accepts canonical UUID-shaped capture identifiers without a fixed version'
 test('surfaces a retryable submit error without replaying its consumed ownership proof', async () => {
 	for (const [body, status, expected] of [
 		[{ error: 'capture_store_unavailable', retryable: true }, 503, { code: 'capture_store_unavailable', retryable: true, status: 503 }],
+		[{ error: 'subject_bound_to_other_identity', retryable: false }, 409, { code: 'subject_bound_to_other_identity', retryable: false, status: 409 }],
+		[{ error: 'temporarily_disabled', retryable: false }, 503, { code: 'temporarily_disabled', retryable: false, status: 503 }],
 		[{ error: 'invalid_capture', retryable: false, metadata: { version: 3 } }, 400, { code: 'invalid_capture', retryable: false, status: 400 }],
 		[{ error: null, retryable: true }, 503, { code: 'invalid_response', retryable: true, status: 503, message: 'Signup service returned an invalid enrollment response (HTTP 503).' }],
 	] as const) {
@@ -163,56 +178,60 @@ test('polls the configured endpoint using only the expected subject without auth
 		expect([...new Headers(init.headers)]).toEqual([])
 		return Response.json(statusWire())
 	}, async () => {
-		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'pending', status: 'InProgress' })
+		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' })
 	})
 })
 
-test('decodes signed credential bytes and distinguishes duplicate, failed, and expired captures', async () => {
+test('returns the public identity DTO independently of a submitted capture', async () => {
+	for (const body of [
+		{ status: 'NEW' },
+		{ status: 'VERIFIED', last_successful_capture_id: 'older-mobile-capture',
+			enrollment_status: { status: 'ENROLLMENT_IN_PROGRESS', capture_id: 'new-capture', credential: 'previous-credential' } },
+		{ status: 'UNVERIFIED', deletion_status: { identity_status: 'active', deletion_request_id: 'deletion-id' } },
+	] as const) await withFetch(() => Response.json(body), async () => {
+		expect(await getIdentityStatus(SUB, options())).toEqual(body)
+	})
+})
+
+test('uses the same four public enrollment outcomes as Oxide', async () => {
 	const bytes = new TextEncoder().encode('{"version":"1","signature":"synthetic"}')
 	const credential = btoa(String.fromCharCode(...bytes))
 	const cases = [
-		[statusWire('Completed', { unique: true, credential }), { state: 'completed', credential: bytes }],
-		[statusWire('Completed'), { state: 'duplicate' }],
-		[statusWire('Received', { unique: true }), { state: 'pending', status: 'Received' }],
-		[statusWire('PendingActivation'), { state: 'pending', status: 'PendingActivation' }],
-		[statusWire('Failed', { error: 'MPC_RESULT_FAILED' }), { state: 'failed', reason: 'MPC_RESULT_FAILED' }],
-		[statusWire('Error', { unique: true }), { state: 'failed' }],
-		[statusWire('Expired', { unique: true }), { state: 'expired' }],
+		[statusWire('ENROLLMENT_UNIQUE_SUCCESSFUL', { credential }), { state: 'completed', credential: bytes }],
+		[statusWire('ENROLLMENT_NOT_UNIQUE'), { state: 'duplicate' }],
+		[statusWire('ENROLLMENT_FAILED'), { state: 'failed' }],
+		[statusWire(), { state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' }],
+		[statusWire('ENROLLMENT_IN_PROGRESS', { credential }), { state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' }],
+		[statusWire('ENROLLMENT_FAILED', { credential }), { state: 'failed' }],
+		[{ status: 'NEW' }, { state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' }],
+		[{ status: 'NEW', enrollment_status: null, last_successful_capture_id: null }, { state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' }],
+		[{ status: 'UNVERIFIED', deletion_status: { identity_status: 'active' } }, { state: 'failed', reason: 'identity_unavailable' }],
 	] as const
 	for (const [wire, expected] of cases) await withFetch(() => Response.json(wire), async () => {
-		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ sub: SUB, captureId: CAPTURE_ID, ...expected })
+		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ ...receipt(), ...expected })
 	})
 })
 
-test('rejects polling responses for another capture or with inconsistent completion data', async () => {
+test('rejects raw database states, mismatched captures and invalid successful credentials', async () => {
 	for (const wire of [
-		null, [], 'status',
-		...['sub', 'capture_id', 'status', 'unique'].flatMap(key =>
-			[undefined, null, 42].map(value => statusWire('InProgress', { [key]: value }))),
-		statusWire('InProgress', { sub: '0x456' }), statusWire('InProgress', { capture_id: CHALLENGE_ID }),
-		statusWire('NewStatus'), statusWire('Completed', { unique: true }),
-		statusWire('Completed', { unique: true, credential: null }),
-		statusWire('Completed', { unique: true, credential: 42 }),
-		statusWire('Completed', { unique: true, credential: '' }),
-		statusWire('Completed', { unique: true, credential: 'not base64' }),
-		statusWire('Completed', { unique: true, credential: 'AB==' }),
-		statusWire('Completed', { credential: btoa('{}') }), statusWire('Received', { credential: btoa('{}') }),
-		...['Received', 'InProgress', 'PendingActivation', 'Completed', 'Failed', 'Error', 'Expired'].map(status => statusWire(status, { credential: null })),
-		statusWire('InProgress', { unique: 'false' }), statusWire('InProgress', { error: null }),
-		statusWire('InProgress', { error: 42 }),
-		statusWire('Failed', { error: 'x'.repeat(1025) }),
-		statusWire('Failed', { error: '😀'.repeat(513) }),
+		null, [], 'status', { status: null }, { status: 'NewStatus' },
+		{ status: 'NEW', enrollment_status: 42 },
+		...['Received', 'InProgress', 'PendingActivation', 'Completed', 'Failed', 'Error', 'Expired'].map(status => statusWire(status)),
+		statusWire('ENROLLMENT_IN_PROGRESS', { capture_id: CHALLENGE_ID }),
+		statusWire('ENROLLMENT_IN_PROGRESS', { capture_id: 42 }),
+		...[undefined, null, 42, '', 'not base64', 'AB=='].map(credential => statusWire('ENROLLMENT_UNIQUE_SUCCESSFUL', { credential })),
+		{ status: 'VERIFIED', last_successful_capture_id: 42 },
 	]) await withFetch(() => Response.json(wire), async () => {
 		await expect(getEnrollmentStatus(receipt(), options())).rejects.toMatchObject({ code: 'invalid_response' })
 	})
 })
 
-test('ignores additive receipt and status metadata without following response URLs', async () => {
-	const wire = receiptWire()
+test('ignores additive acceptance and status metadata without following response URLs', async () => {
+	const wire = {}
 	let calls = 0
 	await withFetch(url => {
 		expect(url.origin + url.pathname).toBe(ENDPOINT)
-		const body = ++calls === 1 ? wire : statusWire('Completed')
+		const body = ++calls === 1 ? wire : statusWire('ENROLLMENT_NOT_UNIQUE')
 		return Response.json({
 			...body, metadata: { version: 3 }, polling_url: 'https://other.example/collect',
 			polling_token: 'opaque-service-token-v2', polling_token_expires_at: 'not-required',
@@ -224,18 +243,18 @@ test('ignores additive receipt and status metadata without following response UR
 	})
 })
 
-test('recognizes a failed capture with free-form backend text without returning that text', async () => {
-	for (const error of ['MPC response missing for private subject 0x123abc', 'NEW_BACKEND_ERROR', '😀'.repeat(512)]) {
-		await withFetch(() => Response.json(statusWire('Failed', { error })), async () => {
-			expect(await getEnrollmentStatus(receipt(), options())).toEqual({
-				sub: SUB, captureId: CAPTURE_ID, state: 'failed', reason: 'capture_processing_failed',
-			})
-		})
-	}
+test('ignores unrelated backend metadata on the public status body', async () => {
+	await withFetch(() => Response.json({
+		...statusWire('ENROLLMENT_FAILED'),
+		error: 'private internal backend diagnostic',
+		unique: true,
+	}), async () => {
+		expect(await getEnrollmentStatus(receipt(), options())).toEqual({ ...receipt(), state: 'failed' })
+	})
 })
 
 test('preserves edge HTTP status and retryability for HTML and malformed JSON failures', async () => {
-	for (const status of [403, 429, 503]) {
+	for (const status of [403, 408, 429, 503]) {
 		for (const json of [false, true]) {
 			const privateText = 'private edge diagnostic payload'
 			const response = new Response(json ? '{' + privateText : `<html>${privateText}</html>`, {
@@ -254,6 +273,7 @@ test('preserves edge HTTP status and retryability for HTML and malformed JSON fa
 test('rejects invalid polling identities before networking', async () => {
 	let calls = 0
 	await withFetch(() => { calls++; return Response.json(statusWire()) }, async () => {
+		await expect(getIdentityStatus('0x0', options())).rejects.toMatchObject({ code: 'invalid_response' })
 		for (const invalid of [{ ...receipt(), sub: '0x0' }, { ...receipt(), captureId: 'invalid' }]) {
 			await expect(getEnrollmentStatus(invalid, options())).rejects.toMatchObject({ code: 'invalid_response' })
 			await expect(pollEnrollment(invalid, options())).rejects.toMatchObject({ code: 'invalid_response' })
@@ -281,7 +301,7 @@ test('polling waits between pending responses and stops at completion', async ()
 		return originalTimeout(callback, 0, ...args)
 	}) as typeof setTimeout)
 	try {
-		await withFetch(() => Response.json(statusWire(++calls === 1 ? 'Received' : 'Completed')), async () => {
+		await withFetch(() => Response.json(statusWire(++calls === 1 ? 'ENROLLMENT_IN_PROGRESS' : 'ENROLLMENT_NOT_UNIQUE')), async () => {
 			expect(await pollEnrollment(receipt(), options())).toMatchObject({ state: 'duplicate' })
 		})
 		expect(calls).toBe(2)
@@ -355,11 +375,11 @@ test('rejects malformed responses without exposing arbitrary server text in erro
 		new Response('{', { headers: { 'Content-Type': 'application/json' } }),
 		Response.json({ error: sensitive, retryable: true }, { status: 503 }),
 		Response.json({ error: 'x'.repeat(129), retryable: true }, { status: 503 }),
-		...[null, [], { retryable: true }, { error: 'capture_store_unavailable' },
+		...[null, [], { retryable: true },
 			{ error: null, retryable: true }, { error: 42, retryable: true },
 			{ error: 'capture_store_unavailable', retryable: null }, { error: 'capture_store_unavailable', retryable: 'true' },
 		].map(body => Response.json(body, { status: 503 })),
-		Response.json(statusWire('Completed', { unique: true, credential: sensitive })),
+		Response.json(statusWire('ENROLLMENT_UNIQUE_SUCCESSFUL', { credential: sensitive })),
 	]) await withFetch(() => response, async () => {
 		try {
 			await getEnrollmentStatus(receipt(), options())
