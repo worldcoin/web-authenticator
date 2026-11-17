@@ -15,6 +15,8 @@ export interface EnvironmentConfig {
   readonly rpRegistry: `0x${string}`;
   /** Origins the page may connect to besides 'self'; becomes CSP `connect-src`. */
   readonly connectSrc: readonly string[];
+  /** ai-backend-go presign API and S3 upload origins for debug reports, or null while uploads are off. */
+  readonly debugReports: Readonly<{ apiOrigin: string; uploadOrigin: string }> | null;
   /** Attested selfie-enrollment TEE policy, or null while extraction is off for this environment. */
   readonly selfieEnrollment: SelfieEnrollmentPolicy | null;
 }
@@ -45,6 +47,7 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
       "https://indexer.us.id-infra.worldcoin.dev",
       ...oprfNodes("staging.world.oprf.taceo.network"),
     ]),
+    debugReports: null,
     selfieEnrollment: null,
   }),
   production: Object.freeze({
@@ -56,6 +59,7 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
       ...oprfNodes("world.oprf.taceo.network"),
     ]),
     // Off until worldcoin/tee-apps publishes a production client release policy.
+    debugReports: null,
     selfieEnrollment: null,
   }),
 });
@@ -66,11 +70,11 @@ export const APP_ORIGINS = Object.freeze({
 } as const);
 
 /** CSP `connect-src` sources for one environment, including its TEE endpoint when enabled. */
-export function connectSources(environment: ProtocolEnvironment): readonly string[] {
-  const config = ENVIRONMENTS[environment];
+export function connectSources(environment: ProtocolEnvironment, config: EnvironmentConfig = ENVIRONMENTS[environment]): readonly string[] {
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, ...tee];
+  const debugReports = config.debugReports ? [config.debugReports.apiOrigin, config.debugReports.uploadOrigin] : [];
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, ...tee, ...debugReports];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {
