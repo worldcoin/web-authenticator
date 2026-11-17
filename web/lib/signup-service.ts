@@ -1,6 +1,6 @@
 import { abortable, pause } from './async'
 import { type EnrollmentCapture, EnrollmentCaptureSchema, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
-import { EnrollmentStatusSchema, SignupServiceErrorSchema, SubmissionReceiptSchema } from './signup-service-contract'
+import { EnrollmentReceiptSchema, IdentityStatusSchema, type IdentityStatusResponse, SignupServiceErrorSchema, SubmissionAcceptanceSchema } from './signup-service-contract'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const MAX_PROOF_BYTES = 768 * 1024
@@ -22,12 +22,11 @@ export type EnrollmentResult = EnrollmentReceipt & (
 	| { state: 'completed'; credential: Uint8Array }
 	| { state: 'duplicate' }
 	| { state: 'failed'; reason?: string }
-	| { state: 'expired' }
 )
 
 export type EnrollmentStatus = EnrollmentResult | (EnrollmentReceipt & {
 	state: 'pending'
-	status: 'Received' | 'InProgress' | 'PendingActivation'
+	status: 'ENROLLMENT_IN_PROGRESS'
 })
 
 export class SignupServiceError extends Error {
@@ -62,12 +61,10 @@ export async function submitEnrollment(
 	body.append('world_id_challenge_id', authorization.challengeId)
 	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
 	try {
-		const parsed = SubmissionReceiptSchema.safeParse(await requestJson(url, {
+		const parsed = SubmissionAcceptanceSchema.safeParse(await requestJson(url, {
 			method: 'PUT', headers: { 'X-Nitro-Attestation': bundle.attestation_header }, body,
 		}, 202, options))
 		if (!parsed.success) return invalidResponse()
-		const value = parsed.data
-		if (value.sub !== identity.sub || value.capture_id !== identity.captureId) return invalidResponse()
 		return identity
 	} catch (cause) {
 		if (options.signal.aborted) throw options.signal.reason
@@ -101,34 +98,37 @@ export async function pollEnrollment(receipt: EnrollmentReceipt, options: Signup
 	}
 }
 
-/** Polls once; failed requests are surfaced without automatic retries. */
-// TODO: Add GET auth once agreed: https://github.com/worldcoin/web-authenticator/pull/36#discussion_r4585357470
+/** Polls one submitted capture; failed requests are surfaced without automatic retries. */
 export async function getEnrollmentStatus(receipt: EnrollmentReceipt, options: SignupServiceOptions): Promise<EnrollmentStatus> {
 	validateReceipt(receipt)
-	const url = endpoint(options.endpoint)
-	url.searchParams.set('sub', receipt.sub)
-	const parsed = EnrollmentStatusSchema.safeParse(await requestJson(url, {
-		method: 'GET',
-	}, 200, options))
-	if (!parsed.success) return invalidResponse()
-	const value = parsed.data
-	if (value.sub !== receipt.sub || value.capture_id !== receipt.captureId) return invalidResponse()
+	const value = await getIdentityStatus(receipt.sub, options)
 	const identity = { sub: receipt.sub, captureId: receipt.captureId }
-	if (value.status === 'Completed' && value.unique) {
-		return { ...identity, state: 'completed', credential: credentialBytes(value.credential) }
+	if (value.deletion_status || value.status === 'UNVERIFIED') {
+		return { ...identity, state: 'failed', reason: 'identity_unavailable' }
 	}
-	switch (value.status) {
-		case 'Received': case 'InProgress': case 'PendingActivation':
-			return { ...identity, state: 'pending', status: value.status }
-		case 'Completed': return { ...identity, state: 'duplicate' }
-		case 'Failed': case 'Error':
-			// The backend stores a free-form string. Expose its known code, never arbitrary text.
-			return { ...identity, state: 'failed', ...(typeof value.error === 'string' ? {
-				reason: value.error === 'MPC_RESULT_FAILED' ? value.error : 'capture_processing_failed',
-			} : {}) }
-		case 'Expired': return { ...identity, state: 'expired' }
-		default: return invalidResponse()
+	const enrollment = value.enrollment_status
+	if (!enrollment) return { ...identity, state: 'pending', status: 'ENROLLMENT_IN_PROGRESS' }
+	if (enrollment.capture_id !== receipt.captureId) return invalidResponse()
+	switch (enrollment.status) {
+		case 'ENROLLMENT_IN_PROGRESS':
+			return { ...identity, state: 'pending', status: enrollment.status }
+		case 'ENROLLMENT_UNIQUE_SUCCESSFUL':
+			if (typeof enrollment.credential !== 'string') return invalidResponse()
+			return { ...identity, state: 'completed', credential: credentialBytes(enrollment.credential) }
+		case 'ENROLLMENT_NOT_UNIQUE': return { ...identity, state: 'duplicate' }
+		case 'ENROLLMENT_FAILED': return { ...identity, state: 'failed' }
 	}
+}
+
+/** Fetches the same identity-status DTO used by Oxide, selected by v4 subject. */
+// TODO: Add GET auth once agreed: https://github.com/worldcoin/web-authenticator/pull/36#discussion_r4585357470
+export async function getIdentityStatus(sub: string, options: SignupServiceOptions): Promise<IdentityStatusResponse> {
+	if (!EnrollmentReceiptSchema.shape.sub.safeParse(sub).success) return invalidResponse()
+	const url = endpoint(options.endpoint)
+	url.searchParams.set('sub', sub)
+	const parsed = IdentityStatusSchema.safeParse(await requestJson(url, { method: 'GET' }, 200, options))
+	if (!parsed.success) return invalidResponse()
+	return parsed.data
 }
 
 async function requestJson(url: URL, init: RequestInit, expectedStatus: number, options: SignupServiceOptions): Promise<unknown> {
@@ -139,17 +139,21 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 	try {
 		const response = await abortable(fetch(url, { ...init, signal, credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }), signal)
 		responseStatus = response.status
-		const value = await readJson(response, signal)
+		const value = await readJson(response, signal, response.status !== expectedStatus)
 		if (response.status !== expectedStatus) {
+			const retryable = isRetryableStatus(response.status)
+			if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
+				throw new SignupServiceError(`Signup service returned HTTP ${response.status}.`, 'http_error', retryable, response.status)
+			}
 			const parsed = SignupServiceErrorSchema.safeParse(value)
 			if (!parsed.success) return invalidResponse()
 			const error = parsed.data
-			throw new SignupServiceError(`Signup service returned ${error.error}.`, error.error, error.retryable, response.status)
+			throw new SignupServiceError(`Signup service returned ${error.error}.`, error.error, error.retryable ?? retryable, response.status)
 		}
 		return value
 	} catch (cause) {
 		if (options.signal.aborted) throw options.signal.reason
-		const retryableStatus = responseStatus === 429 || (responseStatus !== undefined && responseStatus >= 500)
+		const retryableStatus = isRetryableStatus(responseStatus)
 		if (cause instanceof SignupServiceError) {
 			if (cause.status !== undefined || responseStatus === undefined) throw cause
 			throw new SignupServiceError(`Signup service returned an invalid enrollment response (HTTP ${responseStatus}).`, cause.code, retryableStatus, responseStatus)
@@ -164,8 +168,8 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 	}
 }
 
-async function readJson(response: Response, signal: AbortSignal): Promise<unknown> {
-	if (!response.body) return invalidResponse()
+async function readJson(response: Response, signal: AbortSignal, allowEmpty = false): Promise<unknown> {
+	if (!response.body) return allowEmpty ? {} : invalidResponse()
 	const reader = response.body.getReader()
 	const chunks: Uint8Array[] = []
 	let size = 0
@@ -184,6 +188,7 @@ async function readJson(response: Response, signal: AbortSignal): Promise<unknow
 		if (!complete) void reader.cancel().catch(() => {})
 		reader.releaseLock()
 	}
+	if (size === 0 && allowEmpty) return {}
 	if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') return invalidResponse()
 	const bytes = new Uint8Array(size)
 	let offset = 0
@@ -212,9 +217,7 @@ function credentialBytes(value: string): Uint8Array {
 }
 
 function validateReceipt(receipt: EnrollmentReceipt): void {
-	const parsed = SubmissionReceiptSchema.safeParse({
-		sub: receipt.sub, capture_id: receipt.captureId,
-	})
+	const parsed = EnrollmentReceiptSchema.safeParse(receipt)
 	if (!parsed.success) return invalidResponse()
 }
 
@@ -225,6 +228,10 @@ function endpoint(value: string): URL {
 		throw new TypeError('Signup endpoint must be an HTTPS /api/v2/identity URL without query, fragment, or credentials.')
 	}
 	return url
+}
+
+function isRetryableStatus(status: number | undefined): boolean {
+	return status === 408 || status === 429 || (status !== undefined && status >= 500)
 }
 
 function invalidResponse(): never {
