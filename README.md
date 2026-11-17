@@ -19,6 +19,8 @@ bun run dev
 
 Open [localhost:4173](http://localhost:4173). Local development uses staging by default.
 
+By default, IDKit requests route to `<base_url>/verify`. To test the full IDKit request flow, please set the `override_connector_base_url` field in your IDKit request builder to http://localhost:4173/verify to test locally
+
 ## Repository Structure
 
 ```text
@@ -64,8 +66,8 @@ Both accept `staging` or `production`; the browser origin must match the selecte
 
 ## 🔗 Related projects
 
-- [WalletKit](https://github.com/worldcoin/walletkit) — `@worldcoin/walletkit-web@0.27.1` for wallet storage, registration and proofs.
-- [Biometrics TEE](https://github.com/worldcoin/biometrics-tee) — intended for face processing; not integrated yet.
+- [WalletKit](https://github.com/worldcoin/walletkit)
+- [Biometrics TEE](https://github.com/worldcoin/biometrics-tee)
 
 ## 📄 Documentation
 
