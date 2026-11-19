@@ -41,6 +41,7 @@ jobs:
       - run: bun run build:cf
         env:
           VITE_APP_ENV: staging
+          VITE_POSEGUARD_TEST_MODE: ${{ vars.VITE_POSEGUARD_TEST_MODE || 'false' }}
       - name: Deploy the tested main commit
         run: bunx wrangler deploy --env staging --tag "$RELEASE_COMMIT"
         env:

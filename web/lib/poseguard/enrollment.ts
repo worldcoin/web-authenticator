@@ -1,4 +1,4 @@
-import { ENVIRONMENTS, type SelfieEnrollmentPolicy } from "../../../config/environment";
+import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
 import { abortable } from "../async";
 import { currentProtocolEnvironment } from "../environment";
 import { EnrollmentCaptureSchema, isCanonicalSubject, validateEnrollmentCapture } from "../enrollment-contract";
@@ -11,11 +11,16 @@ import type { RequestWalletSession } from "../wallet-session";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
 
-interface PoseGuardSignup {
+const TEST_CHALLENGE_ID = "00000000-0000-4000-8000-000000000001";
+const TEST_ATTESTATION_HEADER = btoa("poseguard test attestation");
+
+type PoseGuardSignup = {
   policy: SelfieEnrollmentPolicy;
   endpoint: string;
-  authorize: (identity: EnrollmentReceipt, signal: AbortSignal) => Promise<EnrollmentAuthorization>;
-}
+} & (
+  | { testMode: true }
+  | { testMode: false; authorize: (identity: EnrollmentReceipt, signal: AbortSignal) => Promise<EnrollmentAuthorization> }
+);
 
 export type PoseGuardOutcome = EnrollmentResult["state"] | "pending";
 
@@ -26,13 +31,19 @@ export type RunPoseGuard = (
 ) => Promise<PoseGuardOutcome>;
 
 export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
-  const { selfieEnrollment } = ENVIRONMENTS.staging;
-  const path = selfieEnrollment?.authorizationPath;
-  if (!selfieEnrollment || !path || currentProtocolEnvironment() !== "staging" ||
-    window.location.origin !== ENVIRONMENTS.staging.appOrigin) return;
+  const environment = currentProtocolEnvironment();
+  const { appOrigin, signupServiceOrigin, selfieEnrollment: policy } = ENVIRONMENTS[environment];
+  if (environment !== "staging" || window.location.origin !== appOrigin || !policy) return;
+
+  const endpoint = new URL("/api/v2/identity", signupServiceOrigin).href;
+  if (parsePoseGuardTestMode(import.meta.env.VITE_POSEGUARD_TEST_MODE, environment)) {
+    return { policy, endpoint, testMode: true };
+  }
+
+  const path = policy.authorizationPath;
+  if (!path) return;
   return {
-    policy: selfieEnrollment,
-    endpoint: new URL("/api/v2/identity", window.location.origin).href,
+    policy, endpoint, testMode: false,
     authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
   };
 }
@@ -49,7 +60,7 @@ export function createPoseGuardEnrollment(
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
     const signal = AbortSignal.any([viewSignal, requestSignal]);
-    const signupOptions = { endpoint: signup.endpoint, credentials: "same-origin" as const, signal };
+    const signupOptions = { endpoint: signup.endpoint, signal };
     try {
       signal.throwIfAborted();
       if (!receipt) {
@@ -86,11 +97,16 @@ export function createPoseGuardEnrollment(
           const bundle = result.enrollment;
           try {
             enrollmentSignal.throwIfAborted();
-            const capture = EnrollmentCaptureSchema.parse({ fields: bundle.fields, attestation_header: bundle.attestationHeader });
+            const capture = EnrollmentCaptureSchema.parse({
+              fields: bundle.fields,
+              attestation_header: signup.testMode ? TEST_ATTESTATION_HEADER : bundle.attestationHeader,
+            });
             const identity = validateEnrollmentCapture(capture);
             if (identity.sub !== sub) throw new Error("The selfie enrollment does not match this wallet.");
             update(checking("Submitting your selfie check"));
-            const authorization = await abortable(signup.authorize(identity, signal), signal);
+            const authorization = signup.testMode
+              ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
+              : await abortable(signup.authorize(identity, signal), signal);
             try {
               signal.throwIfAborted();
               // Keep the capture ID even if the server accepted the PUT and the response was lost.
