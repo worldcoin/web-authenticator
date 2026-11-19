@@ -1,9 +1,13 @@
 export type ProtocolEnvironment = "staging" | "production";
 
+export const POSE_GUARD_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
 /** A reviewed `worldcoin/tee-apps` selfie-enrollment client release policy. */
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
   readonly endpoint: string;
+  /** Same-origin path on an authenticated staging enrollment test deployment. */
+  readonly authorizationPath?: `/${string}`;
   /** Accepted Nitro measurements; more than one entry only while a release rolls out. */
   readonly releases: readonly Readonly<{ pcr0: string; pcr1: string; pcr2: string }>[];
 }
@@ -74,7 +78,9 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee];
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
+    ...(environment === "staging" && config.selfieEnrollment?.authorizationPath ? [POSE_GUARD_MODEL_URL] : []),
+  ];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {

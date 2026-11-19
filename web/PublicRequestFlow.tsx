@@ -7,10 +7,11 @@ import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
 import { walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
+import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -121,7 +122,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }), deadline);
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
-      setFlow({ stage: "capture" });
+      const signup = configuredPoseGuardSignup();
+      setFlow({ stage: "capture", enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
         stop();
@@ -220,7 +222,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
   if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={() => void complete()} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
+      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={flow.enroll ? undefined : () => void complete()} enroll={flow.enroll} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
     </Suspense>
   </div>;
 
