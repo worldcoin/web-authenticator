@@ -15,7 +15,6 @@ const POLLING_TIMEOUT_MS = 120_000
 export interface SignupServiceOptions {
 	/** A trusted configuration value, never a URL supplied by an enrollment response. */
 	endpoint: string
-	credentials?: "same-origin"
 	signal: AbortSignal
 }
 
@@ -48,7 +47,7 @@ export class SignupServiceError extends Error {
 	}
 }
 
-/** The staging test provider is trusted deployment configuration and uses the app's Access session. */
+/** Fetches ownership proof for the specific capture from trusted deployment configuration. */
 export async function getEnrollmentAuthorization(
 	path: string,
 	identity: EnrollmentReceipt,
@@ -169,7 +168,7 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 	signal.throwIfAborted()
 	let responseStatus: number | undefined
 	try {
-		const response = await abortable(fetch(url, { ...init, signal, credentials: init.credentials ?? options.credentials ?? 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }), signal)
+		const response = await abortable(fetch(url, { ...init, signal, credentials: init.credentials ?? 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }), signal)
 		responseStatus = response.status
 		const value = await readJson(response, signal, response.status !== expectedStatus)
 		if (response.status !== expectedStatus) {
@@ -192,7 +191,7 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 		}
 		const messages = {
 			PUT: 'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
-			POST: 'Could not get staging enrollment authorization.',
+			POST: 'Could not get enrollment authorization.',
 			GET: 'Enrollment status could not be checked. Resume polling with this receipt.',
 		}
 		const operation = init.method === 'PUT' || init.method === 'POST' ? init.method : 'GET'

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { collectPoseGuardImages, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
+import type { EnrollmentReceipt } from "../lib/signup-service";
 import type { RequestWalletSession } from "../lib/wallet-session";
 import { CAPTURE_ID, CHALLENGE_ID, enrollmentCapture } from "./fixtures/enrollment";
 
@@ -54,7 +55,10 @@ test("captures the accepted center and target frames in issued order", async () 
   expect(camera.released).toHaveLength(12);
 });
 
-test("submits the returned bundle over HTTP once and resumes from the matching receipt", async () => {
+test.each([
+  { mode: "verified", testMode: false },
+  { mode: "test", testMode: true },
+])("submits $mode evidence once and resumes from the matching receipt", async ({ testMode }) => {
   const capture = enrollmentCapture();
   const camera = cameraFrames();
   const request = new AbortController();
@@ -63,7 +67,7 @@ test("submits the returned bundle over HTTP once and resumes from the matching r
     attestationHeader: capture.attestation_header,
     encryptedCustody: Uint8Array.of(10, 11),
   };
-  const proof = new Uint8Array([0xa0]);
+  const proof = Uint8Array.of(0xa1, 0x01, 0x02);
   let puts = 0;
   let polls = 0;
   let sdkCalls = 0;
@@ -107,27 +111,28 @@ test("submits the returned bundle over HTTP once and resumes from the matching r
       },
     };
     const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
+    const authorize = async (identity: EnrollmentReceipt) => {
+      authorizationCalls++;
+      expect(identity).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
+      return { challengeId: CHALLENGE_ID, proofCbor: proof };
+    };
     const run = createPoseGuardEnrollment(session, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
-      async authorize(identity) {
-        authorizationCalls++;
-        expect(identity).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
-        return { challengeId: CHALLENGE_ID, proofCbor: proof };
-      },
+      ...(testMode ? { testMode } : { testMode, authorize }),
     }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
     await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
     await expect(run(video, signal, () => {})).resolves.toBe("completed");
-    expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: 1 });
+    expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: testMode ? 0 : 1 });
     expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
-    expect(submitted.header).toBe(capture.attestation_header);
+    expect(submitted.header).toBe(testMode ? btoa("poseguard test attestation") : capture.attestation_header);
     for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);
-    expect(submitted.body?.get("world_id_challenge_id")).toBe(CHALLENGE_ID);
+    expect(submitted.body?.get("world_id_challenge_id")).toBe(testMode ? "00000000-0000-4000-8000-000000000001" : CHALLENGE_ID);
     const sentProof = submitted.body?.get("world_id_ownership_proof");
     expect(sentProof).toBeInstanceOf(File);
-    expect(new Uint8Array(await (sentProof as File).arrayBuffer())).toEqual(Uint8Array.of(0xa0));
+    expect(new Uint8Array(await (sentProof as File).arrayBuffer())).toEqual(testMode ? Uint8Array.of(0xa0) : Uint8Array.of(0xa1, 0x01, 0x02));
     expect(bundle.encryptedCustody).toEqual(new Uint8Array(2));
   } finally {
     await server.stop(true);
