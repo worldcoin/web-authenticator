@@ -1,0 +1,140 @@
+import { expect, test } from "bun:test";
+import { collectPoseGuardImages, type PoseFrame } from "../lib/poseguard/capture";
+import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
+import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
+import type { EnrollmentReceipt } from "../lib/signup-service";
+import type { RequestWalletSession } from "../lib/wallet-session";
+import { CAPTURE_ID, CHALLENGE_ID, enrollmentCapture } from "./fixtures/enrollment";
+
+const prompt: PoseGuardPrompt = {
+  targets: [
+    { targetPitch: 0, targetYaw: 30 },
+    { targetPitch: 17, targetYaw: 0 },
+    { targetPitch: 0, targetYaw: -30 },
+  ],
+  expiresAt: 0,
+  captureTimeoutMs: 10_000,
+};
+
+function cameraFrames() {
+  // Include an out-of-tolerance frame before the final accepted image at each target.
+  const readings = [
+    [0, 0, 0], [600, 0, 0], [1200, 0, 0],
+    [1300, -30, 0], [1400, 30, 0], [1700, 30, 0],
+    [1800, 0, -17], [1900, 0, 17], [2200, 0, 17],
+    [2300, 30, 0], [2400, -30, 0], [2700, -30, 0],
+  ];
+  const encoded: number[] = [];
+  const released: number[] = [];
+  let index = 0;
+  const readFrame = async (): Promise<PoseFrame> => {
+    const candidate = readings[index];
+    if (!candidate) throw new Error("PoseGuard requested an unexpected frame.");
+    const marker = index++;
+    const [timestamp, yaw, pitch] = candidate;
+    return {
+      timestamp,
+      pose: { yaw, pitch, left: 0.25, right: 0.75, top: 0.2, bottom: 0.8 },
+      async png() { encoded.push(marker); return Uint8Array.of(marker); },
+      release() { released.push(marker); },
+    };
+  };
+  return { readFrame, encoded, released };
+}
+
+test("captures the accepted center and target frames in issued order", async () => {
+  const camera = cameraFrames();
+  const prompts: number[] = [];
+  const images = await collectPoseGuardImages(prompt, new AbortController().signal, camera.readFrame, state => {
+    const yaw = state.target?.targetYaw ?? 0;
+    if (state.phase === "framing" && (prompts.length === 0 || prompts.at(-1) !== yaw)) prompts.push(yaw);
+  });
+  expect(prompts).toEqual([0, 30, 0, -30]);
+  expect([images.centralPng, ...images.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
+  expect(camera.encoded).toEqual([2, 5, 8, 11]);
+  expect(camera.released).toHaveLength(12);
+});
+
+test.each([
+  { mode: "verified", testMode: false },
+  { mode: "test", testMode: true },
+])("submits $mode evidence once and resumes from the matching receipt", async ({ testMode }) => {
+  const capture = enrollmentCapture();
+  const camera = cameraFrames();
+  const request = new AbortController();
+  const bundle = {
+    fields: capture.fields.map(field => ({ ...field })),
+    attestationHeader: capture.attestation_header,
+    encryptedCustody: Uint8Array.of(10, 11),
+  };
+  const proof = Uint8Array.of(0xa1, 0x01, 0x02);
+  let puts = 0;
+  let polls = 0;
+  let sdkCalls = 0;
+  let authorizationCalls = 0;
+  const submitted: { header: string | null; body?: FormData } = { header: null };
+  const polledSubjects: (string | null)[] = [];
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(incoming) {
+      const url = new URL(incoming.url);
+      if (url.pathname !== "/api/v2/identity") return new Response(null, { status: 404 });
+      if (incoming.method === "PUT") {
+        puts++;
+        submitted.header = incoming.headers.get("X-Nitro-Attestation");
+        submitted.body = await incoming.formData();
+        return Response.json({}, { status: 202 });
+      }
+      polls++;
+      polledSubjects.push(url.searchParams.get("sub"));
+      if (polls === 1) return Response.json({}, { status: 503 });
+      return Response.json({
+        status: "VERIFIED",
+        enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_UNIQUE_SUCCESSFUL", credential: "AQI=" },
+      });
+    },
+  });
+  try {
+    const wallet = {
+      async prepareCredential(schema: bigint) {
+        expect(schema).toBe(11n);
+        return { sub: "0x1f" };
+      },
+      async enrollSelfieWithPoseGuard(_config: string, sub: string, key: Uint8Array, capture: PoseGuardCapture, signal: AbortSignal) {
+        sdkCalls++;
+        expect(sub).toBe("0x1f");
+        expect(key.byteLength).toBe(32);
+        const captured = await capture(prompt, signal);
+        expect([captured.centralPng, ...captured.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
+        return { status: "success", enrollment: bundle } as const;
+      },
+    };
+    const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
+    const authorize = async (identity: EnrollmentReceipt) => {
+      authorizationCalls++;
+      expect(identity).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
+      return { challengeId: CHALLENGE_ID, proofCbor: proof };
+    };
+    const run = createPoseGuardEnrollment(session, {
+      policy: { endpoint: "wss://tee.test", releases: [] },
+      endpoint: new URL("/api/v2/identity", server.url).href,
+      ...(testMode ? { testMode } : { testMode, authorize }),
+    }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+    const video = {} as HTMLVideoElement;
+    const signal = new AbortController().signal;
+    await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
+    await expect(run(video, signal, () => {})).resolves.toBe("completed");
+    expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: testMode ? 0 : 1 });
+    expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
+    expect(submitted.header).toBe(testMode ? btoa("poseguard test attestation") : capture.attestation_header);
+    for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);
+    expect(submitted.body?.get("world_id_challenge_id")).toBe(testMode ? "00000000-0000-4000-8000-000000000001" : CHALLENGE_ID);
+    const sentProof = submitted.body?.get("world_id_ownership_proof");
+    expect(sentProof).toBeInstanceOf(File);
+    expect(new Uint8Array(await (sentProof as File).arrayBuffer())).toEqual(testMode ? Uint8Array.of(0xa0) : Uint8Array.of(0xa1, 0x01, 0x02));
+    expect(bundle.encryptedCustody).toEqual(new Uint8Array(2));
+  } finally {
+    await server.stop(true);
+  }
+});

@@ -1,9 +1,13 @@
 export type ProtocolEnvironment = "staging" | "production";
 
+export const POSE_GUARD_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
 /** A reviewed `worldcoin/tee-apps` selfie-enrollment client release policy. */
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
   readonly endpoint: string;
+  /** Same-origin ownership proof provider for verified submission. */
+  readonly authorizationPath?: `/${string}`;
   /** Accepted Nitro measurements; more than one entry only while a release rolls out. */
   readonly releases: readonly Readonly<{ pcr0: string; pcr1: string; pcr2: string }>[];
 }
@@ -74,12 +78,21 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee];
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
+    ...(environment === "staging" && config.selfieEnrollment ? [POSE_GUARD_MODEL_URL] : []),
+  ];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {
   if (value === "staging" || value === "production") return value;
   throw new Error("APP_ENV must be staging or production.");
+}
+
+export function parsePoseGuardTestMode(value: unknown, environment: ProtocolEnvironment): boolean {
+  if (value === undefined || value === "false") return false;
+  if (value !== "true") throw new Error("VITE_POSEGUARD_TEST_MODE must be true or false.");
+  if (environment !== "staging") throw new Error("PoseGuard test mode requires a staging build.");
+  return true;
 }
 
 /** Validate where the configured build is served; the hostname never selects its network. */

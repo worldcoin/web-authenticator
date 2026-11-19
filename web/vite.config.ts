@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-import { parseAppEnvironment } from "../config/environment";
+import { parseAppEnvironment, parsePoseGuardTestMode } from "../config/environment";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const appRoot = fileURLToPath(new URL("./", import.meta.url));
@@ -36,8 +36,9 @@ function rejectServerModulesFromBrowser(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  // Fail the build on typos; Vite exposes this public setting to browser code.
-  parseAppEnvironment(loadEnv(mode, appRoot, "VITE_").VITE_APP_ENV ?? "staging");
+  const env = loadEnv(mode, appRoot, "VITE_");
+  const environment = parseAppEnvironment(env.VITE_APP_ENV ?? "staging");
+  parsePoseGuardTestMode(env.VITE_POSEGUARD_TEST_MODE, environment);
   return {
     root: appRoot,
     plugins: [rejectServerModulesFromBrowser(), react(), tailwindcss()],
