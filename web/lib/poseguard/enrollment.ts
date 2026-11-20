@@ -116,17 +116,18 @@ export function createPoseGuardEnrollment(
       if (!receipt) {
         const { capture, identity, wallet, blindingFactor } =
           await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera);
-        update(checking("Submitting your selfie check"));
+        update(checking("Getting enrollment authorization"));
         const authorization = signup.testMode
           ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
           : await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
         try {
           signal.throwIfAborted();
+          update(checking("Submitting to signup-service"));
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
           if (!signup.testMode && signup.saveCredential) owner = { wallet, factor: blindingFactor };
           const evidence = signup.testMode ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
-          receipt = await submitEnrollment(evidence, authorization, signupOptions);
+          receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
             (error instanceof SignupServiceError && error.status !== undefined &&
@@ -137,7 +138,7 @@ export function createPoseGuardEnrollment(
         }
       }
 
-      update(checking("Waiting for enrollment status"));
+      update(checking("Checking signup-service enrollment status"));
       try {
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state === "completed") {

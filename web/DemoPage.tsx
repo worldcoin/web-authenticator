@@ -187,7 +187,10 @@ function demoStatus(state: DemoState): { title: string; description: string } {
       : { title: "Saved credential verified", description: "The relying party verified a proof from the Selfie Check credential already in your wallet." };
   }
   if (state.phase === "captured") {
-    return { title: "PoseGuard captures accepted", description: "The staging TEE accepted your center image and all three target images." };
+    return {
+      title: "PoseGuard captures accepted",
+      description: "The staging TEE accepted all four captures. Signup-service submission was skipped on localhost.",
+    };
   }
   if (state.phase === "verifying") return { title: "Verifying your proof", description: "Waiting for the staging relying party." };
   if (state.phase === "ready") return { title: "Selfie Check request created", description: "Review the request below, then open Web Authenticator." };
