@@ -1,3 +1,4 @@
+import { isCanonicalSubject } from './enrollment-contract'
 import type { PoseGuardCapture } from "./poseguard/types";
 import {
 	type Authenticator,
@@ -103,7 +104,12 @@ export class WalletKit {
 		let sub: FieldElement | undefined
 		try {
 			sub = await authenticator.computeCredentialSub(factor)
-			return { blindingFactor: await factor.toHexString(), sub: await sub.toHexString() }
+			const sdkHex = await sub.toHexString()
+			const subject = sdkHex.replace(/^0x0+/, '0x')
+			if (sdkHex.length > 66 || !isCanonicalSubject(subject)) {
+				throw new Error('WalletKit returned an invalid enrollment subject.')
+			}
+			return { blindingFactor: await factor.toHexString(), sub: subject }
 		} finally {
 			sub?.free()
 			factor.free()
@@ -116,9 +122,11 @@ export class WalletKit {
 
 	async proveCredentialSub(nonce: string, context: string, factor: string, sub: string, now = nowSeconds()) {
 		const authenticator = this.currentAuthenticator()
+		if (!isCanonicalSubject(sub)) throw new Error('Invalid enrollment subject.')
+		const sdkSub = `0x${sub.slice(2).padStart(64, '0')}`
 		const fields: FieldElement[] = []
 		try {
-			for (const value of [nonce, context, factor, sub]) {
+			for (const value of [nonce, context, factor, sdkSub]) {
 				fields.push(await this.client.FieldElement.tryFromHexString(value))
 			}
 			const [nonceField, contextField, factorField, subField] = fields

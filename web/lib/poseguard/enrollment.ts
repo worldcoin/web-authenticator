@@ -1,7 +1,7 @@
 import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
 import { abortable } from "../async";
 import { currentProtocolEnvironment } from "../environment";
-import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, isCanonicalSubject, parseEnrollmentChallenge, validateEnrollmentCapture } from "../enrollment-contract";
+import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, validateEnrollmentCapture } from "../enrollment-contract";
 import { fetchEnrollmentChallenge } from "../enrollment-challenge";
 import { type CaptureState } from "../selfie-capture";
 import {
@@ -175,7 +175,6 @@ async function capturePoseGuard(
   if ("error" in state) throw state.error;
   const wallet = state.wallet;
   const { sub, blindingFactor } = await abortable(wallet.prepareCredential(11n), signal);
-  if (!isCanonicalSubject(sub)) throw new Error("WalletKit returned an invalid enrollment subject.");
   const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
   if (!("publicKey" in custody)) throw new Error("Could not prepare a custody key pair.");
   const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
