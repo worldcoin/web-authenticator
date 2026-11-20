@@ -1,11 +1,12 @@
 import { actions, centeredLayout, completionTitle, copy, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, signinPrimary } from "./styles";
 
-export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, transient = false, saved = false }: {
+export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, onReturn, transient = false, saved = false }: {
   state: "complete" | "cancelled" | "expired" | "error";
   returnUrl?: string;
   detail?: string;
   onRetry?: () => void;
   onOpen?: () => void;
+  onReturn?: () => void;
   transient?: boolean;
   saved?: boolean;
 }) {
@@ -31,7 +32,8 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, t
     {!transient && <div className={actions}>
       {showAuthenticator && <button className={`${signinPrimary} max-w-[345px]`} onClick={onOpen}>Go to authenticator</button>}
       {onRetry && <button className={primaryAction} onClick={onRetry}>Try again</button>}
-      {returnUrl && <a className={`${onRetry || showAuthenticator ? secondaryAction : primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
+      {onReturn ? <button type="button" className={onRetry ? secondaryAction : primaryAction} onClick={onReturn}>Return to demo</button>
+        : returnUrl && <a className={`${onRetry || showAuthenticator ? secondaryAction : primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
     </div>}
   </>;
 }

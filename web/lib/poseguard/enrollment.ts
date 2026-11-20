@@ -1,13 +1,15 @@
 import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
 import { abortable } from "../async";
 import { currentProtocolEnvironment } from "../environment";
-import { EnrollmentCaptureSchema, isCanonicalSubject, validateEnrollmentCapture } from "../enrollment-contract";
+import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, isCanonicalSubject, parseEnrollmentChallenge, validateEnrollmentCapture } from "../enrollment-contract";
+import { fetchEnrollmentChallenge } from "../enrollment-challenge";
 import { type CaptureState } from "../selfie-capture";
 import {
   getEnrollmentAuthorization, pollEnrollment, SignupServiceError, submitEnrollment,
   type EnrollmentAuthorization, type EnrollmentReceipt, type EnrollmentResult,
 } from "../signup-service";
 import type { RequestWalletSession } from "../wallet-session";
+import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
 
@@ -19,7 +21,11 @@ type PoseGuardSignup = {
   endpoint: string;
 } & (
   | { testMode: true }
-  | { testMode: false; authorize: (identity: EnrollmentReceipt, signal: AbortSignal) => Promise<EnrollmentAuthorization> }
+  | {
+    testMode: false;
+    saveCredential?: true;
+    authorize: (identity: EnrollmentReceipt, signal: AbortSignal, wallet: WalletKit, factor: string) => Promise<EnrollmentAuthorization>;
+  }
 );
 
 export type PoseGuardOutcome = EnrollmentResult["state"] | "pending";
@@ -48,6 +54,33 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   };
 }
 
+export function configureDemoEnrollment(session: RequestWalletSession, signal: AbortSignal): RunPoseGuard | undefined {
+  const { appOrigin, selfieEnrollment: policy, signupServiceOrigin } = ENVIRONMENTS.staging;
+  const challengeUrl = policy?.ownershipChallengeUrl;
+  if (currentProtocolEnvironment() !== "staging" || window.location.origin !== appOrigin || !policy || !challengeUrl) return;
+
+  return createPoseGuardEnrollment(session, {
+    testMode: false,
+    saveCredential: true,
+    policy,
+    endpoint: new URL("/api/v2/identity", signupServiceOrigin).href,
+    async authorize(identity, signal, wallet, factor) {
+      const challenge = await fetchEnrollmentChallenge({ endpoint: challengeUrl, signal });
+      const remaining = Math.min(120_000, Date.parse(challenge.expires_at) - Date.now());
+      if (remaining <= 0) throw new Error("The ownership challenge expired. Start a new check.");
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(remaining)]);
+      const proofCbor = await abortable(wallet.proveCredentialSub(challenge.nonce, ENROLLMENT_CONTEXT, factor, identity.sub), deadline);
+      try {
+        parseEnrollmentChallenge(challenge);
+        return { challengeId: challenge.challenge_id, proofCbor };
+      } catch (error) {
+        proofCbor.fill(0);
+        throw error;
+      }
+    },
+  }, signal);
+}
+
 export function createPoseGuardEnrollment(
   session: RequestWalletSession,
   signup: PoseGuardSignup,
@@ -55,6 +88,8 @@ export function createPoseGuardEnrollment(
   prepareCamera = preparePoseGuardCamera,
 ): RunPoseGuard {
   let receipt: EnrollmentReceipt | undefined;
+  let owner: { wallet: WalletKit; factor: string } | undefined;
+  let saved = false;
   let inFlight = false;
   return async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
@@ -63,11 +98,12 @@ export function createPoseGuardEnrollment(
     const signupOptions = { endpoint: signup.endpoint, signal };
     try {
       signal.throwIfAborted();
+      if (saved) return "completed";
       if (!receipt) {
         const state = await abortable(session.ready, signal);
         if ("error" in state) throw state.error;
         const wallet = state.wallet;
-        const { sub } = await abortable(wallet.prepareCredential(11n), signal);
+        const { sub, blindingFactor } = await abortable(wallet.prepareCredential(11n), signal);
         if (!isCanonicalSubject(sub)) throw new Error("WalletKit returned an invalid enrollment subject.");
         const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
         if (!("publicKey" in custody)) throw new Error("Could not prepare a custody key pair.");
@@ -106,11 +142,12 @@ export function createPoseGuardEnrollment(
             update(checking("Submitting your selfie check"));
             const authorization = signup.testMode
               ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
-              : await abortable(signup.authorize(identity, signal), signal);
+              : await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
             try {
               signal.throwIfAborted();
               // Keep the capture ID even if the server accepted the PUT and the response was lost.
               receipt = identity;
+              if (!signup.testMode && signup.saveCredential) owner = { wallet, factor: blindingFactor };
               receipt = await submitEnrollment(capture, authorization, signupOptions);
             } catch (error) {
               if (!signal.aborted && (error instanceof TypeError ||
@@ -121,7 +158,7 @@ export function createPoseGuardEnrollment(
               authorization.proofCbor.fill(0);
             }
           } finally {
-            // Test enrollment is attempt-scoped. Durable custody is wired by the verified enrollment flow.
+            // The signed credential is saved separately from the encrypted custody package.
             bundle.encryptedCustody.fill(0);
           }
         } finally {
@@ -136,7 +173,19 @@ export function createPoseGuardEnrollment(
       update(checking("Waiting for enrollment status"));
       try {
         const result = await pollEnrollment(receipt, signupOptions);
-        if (result.state === "completed") result.credential.fill(0);
+        if (result.state === "completed") {
+          try {
+            if (owner) {
+              update(checking("Saving your Selfie Check credential"));
+              const deadline = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+              await abortable(owner.wallet.storeCredential(result.credential, owner.factor, undefined, 11n), deadline);
+              saved = true;
+              owner = undefined;
+            }
+          } finally {
+            result.credential.fill(0);
+          }
+        }
         return result.state;
       } catch (error) {
         if (error instanceof SignupServiceError && error.code === "polling_timeout") return "pending";

@@ -8,6 +8,8 @@ export interface SelfieEnrollmentPolicy {
   readonly endpoint: string;
   /** Same-origin ownership proof provider for verified submission. */
   readonly authorizationPath?: `/${string}`;
+  /** Browser-accessible PVS enrollment challenge endpoint for verified enrollment. */
+  readonly ownershipChallengeUrl?: string;
   /** Accepted Nitro measurements; more than one entry only while a release rolls out. */
   readonly releases: readonly Readonly<{ pcr0: string; pcr1: string; pcr2: string }>[];
 }
@@ -78,7 +80,9 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
+  const challengeUrl = environment === "staging" ? config.selfieEnrollment?.ownershipChallengeUrl : undefined;
   return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
+    ...(challengeUrl ? [new URL(challengeUrl).href] : []),
     ...(environment === "staging" && config.selfieEnrollment ? [POSE_GUARD_MODEL_URL] : []),
   ];
 }

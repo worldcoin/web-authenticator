@@ -56,9 +56,10 @@ test("captures the accepted center and target frames in issued order", async () 
 });
 
 test.each([
-  { mode: "verified", testMode: false },
-  { mode: "test", testMode: true },
-])("submits $mode evidence once and resumes from the matching receipt", async ({ testMode }) => {
+  { mode: "verified", testMode: false, saveCredential: false },
+  { mode: "test", testMode: true, saveCredential: false },
+  { mode: "verified demo", testMode: false, saveCredential: true },
+])("submits $mode evidence once and resumes from the matching receipt", async ({ testMode, saveCredential }) => {
   const capture = enrollmentCapture();
   const camera = cameraFrames();
   const request = new AbortController();
@@ -72,6 +73,7 @@ test.each([
   let polls = 0;
   let sdkCalls = 0;
   let authorizationCalls = 0;
+  let stored = 0;
   const submitted: { header: string | null; body?: FormData } = { header: null };
   const polledSubjects: (string | null)[] = [];
   const server = Bun.serve({
@@ -99,7 +101,13 @@ test.each([
     const wallet = {
       async prepareCredential(schema: bigint) {
         expect(schema).toBe(11n);
-        return { sub: "0x1f" };
+        return { sub: "0x1f", blindingFactor: "0x2f" };
+      },
+      async storeCredential(bytes: Uint8Array, factor: string, _now: unknown, schema: bigint) {
+        expect([...bytes]).toEqual([1, 2]);
+        expect(factor).toBe("0x2f");
+        expect(schema).toBe(11n);
+        stored++;
       },
       async enrollSelfieWithPoseGuard(_config: string, sub: string, key: Uint8Array, capture: PoseGuardCapture, signal: AbortSignal) {
         sdkCalls++;
@@ -119,13 +127,18 @@ test.each([
     const run = createPoseGuardEnrollment(session, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
-      ...(testMode ? { testMode } : { testMode, authorize }),
+      ...(testMode ? { testMode } : { testMode, authorize, saveCredential: saveCredential ? true : undefined }),
     }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
     await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
     await expect(run(video, signal, () => {})).resolves.toBe("completed");
     expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: testMode ? 0 : 1 });
+    expect(stored).toBe(saveCredential ? 1 : 0);
+    if (saveCredential) await expect(run(video, signal, () => {})).resolves.toBe("completed");
+    expect(puts).toBe(1);
+    expect(polls).toBe(2);
+    expect(stored).toBe(saveCredential ? 1 : 0);
     expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
     expect(submitted.header).toBe(testMode ? btoa("poseguard test attestation") : capture.attestation_header);
     for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);

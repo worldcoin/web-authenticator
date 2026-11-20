@@ -127,7 +127,21 @@ export class WalletKit {
 		return client.enrollSelfieWithPoseGuard(config, sub, key, capture, { signal });
 	}
 
-	async storeCredential(serialized: Uint8Array, factor: string, now = nowSeconds()) {
+	async proveCredentialSub(nonce: string, context: string, factor: string, sub: string, now = nowSeconds()) {
+		const authenticator = this.currentAuthenticator()
+		const fields: FieldElement[] = []
+		try {
+			for (const value of [nonce, context, factor, sub]) {
+				fields.push(await this.client.FieldElement.tryFromHexString(value))
+			}
+			const [nonceField, contextField, factorField, subField] = fields
+			return await authenticator.proveCredentialSub(nonceField, contextField, factorField, subField, now)
+		} finally {
+			for (const field of fields) field.free()
+		}
+	}
+
+	async storeCredential(serialized: Uint8Array, factor: string, now = nowSeconds(), expectedSchema?: bigint) {
 		const authenticator = this.currentAuthenticator()
 		const credential = await this.client.Credential.fromBytes(serialized)
 		let blindingFactor: FieldElement | undefined
@@ -141,6 +155,9 @@ export class WalletKit {
 				throw new Error('Credential subject does not match this authenticator')
 			}
 			const issuerSchemaId = await credential.issuerSchemaId()
+			if (expectedSchema !== undefined && issuerSchemaId !== expectedSchema) {
+				throw new Error('The issuer returned an unexpected credential schema')
+			}
 			const credentialId = await this.store.storeCredential(
 				credential,
 				blindingFactor,

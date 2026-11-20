@@ -11,7 +11,8 @@
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
     "@tanstack/react-router": "1.170.46",
-    "@worldcoin/walletkit-web": "0.27.1",
+    "@worldcoin/idkit-core": "4.6.0",
+    "@worldcoin/walletkit-web": "0.31.0",
     "onnxruntime-web": "1.30.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
