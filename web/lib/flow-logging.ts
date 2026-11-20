@@ -1,3 +1,16 @@
+export function logPoseGuardStep<T>(step: string, operation: () => Promise<T>): Promise<T> {
+	return import.meta.env.DEV ? logFlowStep(`poseguard.${step}`, operation) : operation()
+}
+
+export function logPoseGuardEvent(
+	event: 'poseguard_prompt' | 'poseguard_target' | 'poseguard_rejected',
+	fields: Record<string, string | number>,
+) {
+	if (!import.meta.env.DEV) return
+	if (event === 'poseguard_rejected') console.warn(event, fields)
+	else console.info(event, fields)
+}
+
 // Never log arguments, results, or raw dependency errors: they can contain secrets.
 export async function logFlowStep<T>(step: string, operation: () => Promise<T>): Promise<T> {
 	const started = performance.now()

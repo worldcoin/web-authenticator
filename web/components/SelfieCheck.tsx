@@ -1,5 +1,6 @@
 import { use, useEffect, useRef, useState } from "react";
 import type { RunPoseGuard } from "../lib/poseguard/enrollment";
+import type { PoseDiagnostics, PoseGate } from "../lib/poseguard/types";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
@@ -33,6 +34,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const [visible, setVisible] = useState(() => !document.hidden);
   const [image, setImage] = useState<string>();
   const [timing, setTiming] = useState("");
+  const [poseDiagnostics, setPoseDiagnostics] = useState<PoseDiagnostics>();
 
   const clearImage = () => {
     if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
@@ -41,6 +43,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
   const restart = () => {
     controller.current?.abort();
     clearImage(); setImage(undefined); setTiming("");
+    setPoseDiagnostics(undefined);
     setState(INITIAL_CAPTURE_STATE); setAttempt(value => value + 1);
   };
   const close = () => { controller.current?.abort(); onClose(); };
@@ -49,6 +52,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     const pause = () => {
       controller.current?.abort();
       setVisible(false); setImage(undefined); setTiming("");
+      setPoseDiagnostics(undefined);
       setState({ phase: "paused", title: "Your camera is off", hint: "Return to this page to start fresh.", progress: 0, cameraReady: false });
     };
     const visibility = () => {
@@ -80,7 +84,9 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     controller.current = active;
     if (enroll) {
       void enroll(video.current, active.signal, next => {
-        if (!active.signal.aborted) setState(next);
+        if (active.signal.aborted) return;
+        setState(next);
+        if (next.poseDiagnostics) setPoseDiagnostics(next.poseDiagnostics);
       }).then(outcome => {
         if (active.signal.aborted) return;
         enrollmentFinished.current = outcome !== "pending";
@@ -143,6 +149,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
       </div>
+      {import.meta.env.DEV && enroll && <PoseGuardDiagnostics details={poseDiagnostics} />}
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
@@ -161,12 +168,32 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         {complete && <button className={RETRY} type="button" onClick={close}>{backLabel}</button>}
       </div>}
     </div>
-    <footer className="mt-auto text-center text-[12px] text-foreground-secondary" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
-      {enroll ? <p>Your captures are sent to the attested staging enrollment service.</p> : <>
+    {!enroll && <footer className="mt-auto text-center text-[12px] text-foreground-secondary" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <p className="flex items-center justify-center gap-1.5"><svg className="size-4" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="8.5" width="10" height="8" rx="2" stroke="currentColor" strokeWidth="1.3" /><path d="M7 8.5v-3a3 3 0 0 1 6 0v3M10 12v1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Your selfie stays on this device.</p>
       <details><summary className="inline-flex min-h-11 cursor-pointer list-none items-center underline underline-offset-3 [&::-webkit-details-marker]:hidden">About this check</summary><p className="mx-auto mt-[3px] mb-3 max-w-[310px] leading-[1.6]">This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
-      </>}
-    </footer>
+    </footer>}
     {diagnostics && <details className="mt-6 rounded-xl border border-[#e3e3e3] p-4 text-[12px]"><summary>Capture diagnostics</summary><pre className="whitespace-pre-wrap text-[10px]">{timing || "No capture yet."}</pre></details>}
   </section>;
+}
+
+const GATE_LABELS: Record<PoseGate, string> = {
+  no_estimate: "No usable pose estimate",
+  stale: "Waiting for a fresh frame",
+  framing: "Face too small or near the frame edge",
+  pitch: "Pitch outside target range",
+  yaw: "Yaw outside target range",
+  pitch_and_yaw: "Pitch and yaw outside target range",
+  aligned: "Pose matched",
+};
+
+function PoseGuardDiagnostics({ details }: { details?: PoseDiagnostics }) {
+  const { stream, png, sample } = details ?? {};
+  const estimate = sample?.pitch !== undefined && sample.yaw !== undefined ? `${sample.pitch}° / ${sample.yaw}°` : "unavailable";
+  return <aside className="w-full rounded-lg bg-background-secondary px-3 py-2 text-left text-xs leading-5 text-foreground tabular-nums" aria-label="PoseGuard diagnostics">
+    <p>Camera {stream?.join("×") ?? "pending"} · PNG crop {png?.join("×") ?? "pending"}</p>
+    {sample && <>
+      <p>Pitch / yaw · Target {sample.targetPitch.toFixed(1)}° / {sample.targetYaw.toFixed(1)}° · Estimate {estimate}</p>
+      <p>Step {sample.step} · {GATE_LABELS[sample.gate]}{sample.gate === "aligned" && ` · ${Math.min(sample.heldMs, sample.requiredMs)} / ${sample.requiredMs} ms held`}</p>
+    </>}
+  </aside>;
 }

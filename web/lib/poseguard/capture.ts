@@ -1,7 +1,8 @@
 import { abortable, pause } from "../async";
+import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../hold-steady-progress";
 import { grabFrame, type CaptureState } from "../selfie-capture";
-import type { PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
+import type { PoseDiagnostics, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
 import { openPoseDetector } from "./worker";
 
 const CHALLENGE_TIMEOUT_MS = 45_000;
@@ -12,6 +13,8 @@ const DIRECTIONS = ["right", "up and right", "up", "up and left", "left", "down 
 export interface PoseFrame {
   timestamp: number;
   pose: PoseObservation | null;
+  stale?: boolean;
+  dimensions?: Pick<PoseDiagnostics, "stream" | "png">;
   png(signal: AbortSignal): Promise<Uint8Array>;
   release(): void;
 }
@@ -39,8 +42,8 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
     active.throwIfAborted();
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Open this page in a browser with camera access over HTTPS or localhost.");
     const [detector] = await Promise.all([
-      openPoseDetector(active),
-      abortable(navigator.mediaDevices.getUserMedia({
+      logPoseGuardStep("detector_initialize", () => openPoseDetector(active)),
+      logPoseGuardStep("camera_open", () => abortable(navigator.mediaDevices.getUserMedia({
         audio: false, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
       }).then(async media => {
         if (active.aborted) {
@@ -53,8 +56,11 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
           track.addEventListener("ended", () => controller.abort(new Error("Your camera disconnected. Try again.")), { once: true });
         }
         await abortable(video.play(), active);
-        update({ phase: "framing", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true });
-      }), active),
+        update({
+          phase: "framing", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true,
+          poseDiagnostics: import.meta.env.DEV ? { stream: [video.videoWidth, video.videoHeight] } : undefined,
+        });
+      }), active)),
     ]);
     let lastVideoTime = -1;
     return {
@@ -65,6 +71,7 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
         signal.throwIfAborted();
         lastVideoTime = video.currentTime;
         const timestamp = performance.now();
+        const streamSize = import.meta.env.DEV ? [video.videoWidth, video.videoHeight] as const : undefined;
         const frame = grabFrame(video);
         const clear = () => { frame.width = frame.height = 0; };
         try {
@@ -73,9 +80,15 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
             return bitmap;
           }), signal);
           const observed = await abortable(detector.analyze(bitmap, timestamp), signal);
+          const stale = performance.now() - timestamp > SAMPLE_GAP_MS;
           return {
             timestamp,
-            pose: performance.now() - timestamp > SAMPLE_GAP_MS ? null : observed,
+            pose: stale ? null : observed,
+            stale,
+            dimensions: streamSize ? {
+              stream: streamSize,
+              png: [frame.width, frame.height],
+            } : undefined,
             png: signal => encodePng(frame, signal),
             release: clear,
           };
@@ -111,9 +124,15 @@ export async function collectPoseGuardImages(
     for (const target of steps) {
       active.throwIfAborted();
       const title = target ? `Turn your head ${poseDirection(target).label}` : "Look straight ahead";
+      const requiredMs = target ? 300 : CAPTURE_HOLD_DURATION_MS_V1;
       const completed = accepted.length;
       const phase = { title, target, cameraReady: true, poseStep: { index: completed + 1, total: steps.length } };
+      const shownAt = performance.now();
       update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
+      logPoseGuardEvent("poseguard_target", {
+        status: "shown", step: phase.poseStep.index, title,
+        targetPitch: target?.targetPitch ?? 0, targetYaw: target?.targetYaw ?? 0,
+      });
       let alignedSince: number | undefined;
       let lastTimestamp = -Infinity;
       // Paint each new target before looking for a matching frame.
@@ -124,18 +143,35 @@ export async function collectPoseGuardImages(
           active.throwIfAborted();
           if (frame.timestamp <= lastTimestamp || frame.timestamp - lastTimestamp > SAMPLE_GAP_MS) alignedSince = undefined;
           lastTimestamp = frame.timestamp;
-          if (matchesPose(frame.pose, target)) {
-            alignedSince ??= frame.timestamp;
-            const progress = Math.min(1, (frame.timestamp - alignedSince) / (target ? 300 : CAPTURE_HOLD_DURATION_MS_V1));
-            update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
+          const gate = frame.stale ? "stale" : poseGate(frame.pose, target);
+          const aligned = gate === "aligned";
+          alignedSince = aligned ? (alignedSince ?? frame.timestamp) : undefined;
+          const heldMs = alignedSince === undefined ? 0 : frame.timestamp - alignedSince;
+          const poseDiagnostics: PoseDiagnostics | undefined = import.meta.env.DEV ? {
+            ...frame.dimensions,
+            sample: {
+              step: phase.poseStep.index, targetPitch: target?.targetPitch ?? 0, targetYaw: target?.targetYaw ?? 0,
+              pitch: frame.pose ? Math.round(frame.pose.pitch) : undefined,
+              yaw: frame.pose ? Math.round(frame.pose.yaw) : undefined,
+              gate, heldMs: Math.round(heldMs), requiredMs,
+            },
+          } : undefined;
+          if (aligned) {
+            const progress = Math.min(1, heldMs / requiredMs);
+            update({ ...phase, poseDiagnostics, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
             if (progress === 1) {
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
               accepted.push(bytes);
+              logPoseGuardEvent("poseguard_target", {
+                status: "captured", step: phase.poseStep.index,
+                durationMs: Math.round(performance.now() - shownAt),
+                heldMs: Math.round(heldMs),
+                ...(frame.dimensions?.png ? { png: frame.dimensions.png.join("×") } : {}),
+              });
             }
           } else {
-            alignedSince = undefined;
-            update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
+            update({ ...phase, poseDiagnostics, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
           }
         } finally {
           frame.release();
@@ -150,12 +186,14 @@ export async function collectPoseGuardImages(
   }
 }
 
-function matchesPose(pose: PoseObservation | null, target: PoseTarget | null): boolean {
-  if (!pose) return false;
+function poseGate(pose: PoseObservation | null, target: PoseTarget | null): PoseGate {
+  if (!pose) return "no_estimate";
   const { left, right, top, bottom, pitch, yaw } = pose;
-  if (left < 0.02 || right > 0.98 || top < 0.02 || bottom > 0.98 || right - left < 0.34 || bottom - top < 0.25) return false;
-  return Math.abs(yaw - (target?.targetYaw ?? 0)) <= (target ? 8 : 6) &&
-    Math.abs(pitch - (target?.targetPitch ?? 0)) <= (target ? 8 : 10);
+  if (left < 0.02 || right > 0.98 || top < 0.02 || bottom > 0.98 || right - left < 0.34 || bottom - top < 0.25) return "framing";
+  const yawMatches = Math.abs(yaw - (target?.targetYaw ?? 0)) <= (target ? 8 : 6);
+  const pitchMatches = Math.abs(pitch - (target?.targetPitch ?? 0)) <= (target ? 8 : 10);
+  if (!pitchMatches) return yawMatches ? "pitch" : "pitch_and_yaw";
+  return yawMatches ? "aligned" : "yaw";
 }
 
 async function encodePng(frame: HTMLCanvasElement, signal: AbortSignal): Promise<Uint8Array> {

@@ -152,3 +152,50 @@ test.each([
     await server.stop(true);
   }
 });
+
+test.each([
+  { message: "Leaf index out of range.", attempts: 2, hint: "The staging indexer could not find your account in its proof tree yet." },
+  { message: "Leaf index cannot be 0.", attempts: 1, hint: "Leaf index cannot be 0." },
+])("bounds enrollment preparation retries for $message", async ({ message, attempts, hint }) => {
+  const body = JSON.stringify({ code: "invalid_leaf_index", message });
+  const error = Object.assign(new Error(`network_error at indexer: ${body} (NetworkError { status: Some(400) })`), {
+    name: "WalletKitError", code: "NetworkError",
+  });
+  let preparations = 0;
+  const session = {
+    ready: Promise.resolve({ wallet: { async prepareCredential() { preparations++; throw error; } } }),
+    dispose() {},
+  } as unknown as RequestWalletSession;
+  const signal = new AbortController().signal;
+  const updates: string[] = [];
+  const run = createPoseGuardEnrollment(session, {
+    policy: { endpoint: "wss://tee.test", releases: [] },
+    endpoint: "https://signup.test/api/v2/identity",
+    testMode: true,
+  }, signal, async () => { throw new Error("Camera must wait for enrollment preparation."); });
+
+  await expect(run({} as HTMLVideoElement, signal, state => updates.push(state.title))).rejects.toThrow(hint);
+  expect(preparations).toBe(attempts);
+  expect(updates.includes("Waiting for your World ID to sync")).toBe(attempts === 2);
+});
+
+test("reports a center quality rejection before authorizing submission", async () => {
+  const camera = cameraFrames();
+  const signal = new AbortController().signal;
+  const wallet = {
+    async prepareCredential() { return { sub: "0x1f", blindingFactor: "0x2f" }; },
+    async enrollSelfieWithPoseGuard(_config: string, _sub: string, _key: Uint8Array, capture: PoseGuardCapture, signal: AbortSignal) {
+      await capture(prompt, signal);
+      return { status: "failed", reason: "quality_rejected" } as const;
+    },
+  };
+  const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
+  const run = createPoseGuardEnrollment(session, {
+    policy: { endpoint: "wss://tee.test", releases: [] },
+    endpoint: "https://signup.test/api/v2/identity",
+    testMode: false,
+    async authorize() { throw new Error("The rejected batch cannot be submitted."); },
+  }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+
+  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow("The center frame did not pass");
+});

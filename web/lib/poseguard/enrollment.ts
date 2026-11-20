@@ -1,9 +1,11 @@
+import type { SelfieCaptureFailure } from "@worldcoin/walletkit-web";
 import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
-import { abortable } from "../async";
+import { abortable, pause } from "../async";
 import { currentProtocolEnvironment } from "../environment";
 import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, validateEnrollmentCapture } from "../enrollment-contract";
 import { fetchEnrollmentChallenge } from "../enrollment-challenge";
-import { type CaptureState } from "../selfie-capture";
+import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
+import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
 import {
   getEnrollmentAuthorization, pollEnrollment, SignupServiceError, submitEnrollment,
   type EnrollmentAuthorization, type EnrollmentReceipt, type EnrollmentResult,
@@ -171,15 +173,20 @@ async function capturePoseGuard(
   prepareCamera: typeof preparePoseGuardCamera,
 ) {
   signal.throwIfAborted();
-  const state = await abortable(session.ready, signal);
-  if ("error" in state) throw state.error;
-  const wallet = state.wallet;
-  const { sub, blindingFactor } = await abortable(wallet.prepareCredential(11n), signal);
+  update({ ...INITIAL_CAPTURE_STATE, title: "Preparing your enrollment", hint: "" });
+  const wallet = await logPoseGuardStep("wallet_ready", async () => {
+    const state = await abortable(session.ready, signal);
+    if ("error" in state) throw state.error;
+    return state.wallet;
+  });
+  const { sub, blindingFactor } = await logPoseGuardStep("prepare_credential", () =>
+    prepareEnrollmentCredential(wallet, signal, update));
   const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
   if (!("publicKey" in custody)) throw new Error("Could not prepare a custody key pair.");
   const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
 
   // Bound permission and model startup separately from the enclave's capture window.
+  update(INITIAL_CAPTURE_STATE);
   const start = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   const cameraScope = new AbortController();
   const camera = await abortable(prepareCamera(video, AbortSignal.any([signal, cameraScope.signal]), update), start).catch(error => {
@@ -190,9 +197,11 @@ async function capturePoseGuard(
   const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   try {
     update({ phase: "checking", title: "Waiting for PoseGuard targets", hint: "Keep your face in the oval.", progress: 0, cameraReady: true });
+    const requestedAt = performance.now();
     const operation = wallet.enrollSelfieWithPoseGuard(
       JSON.stringify({ endpoint: policy.endpoint, releases: policy.releases }),
       sub, publicKey, async (prompt, callbackSignal) => {
+        logPoseGuardEvent("poseguard_prompt", { durationMs: Math.round(performance.now() - requestedAt) });
         const captureSignal = AbortSignal.any([enrollmentSignal, camera.signal, callbackSignal]);
         const captured = await collectPoseGuardImages(prompt, captureSignal, camera.readFrame, update);
         if (captureSignal.aborted) {
@@ -211,7 +220,7 @@ async function capturePoseGuard(
     });
     const result = await abortable(operation, enrollmentSignal);
     enrollmentSignal.throwIfAborted();
-    if (result.status !== "success") throw new Error("The staging TEE could not accept these PoseGuard captures. Try again.");
+    if (result.status !== "success") throw teeRejection(result);
     if (!images) throw new Error("WalletKit finished before collecting the PoseGuard captures.");
     const capture = EnrollmentCaptureSchema.parse({
       fields: result.enrollment.fields,
@@ -224,6 +233,51 @@ async function capturePoseGuard(
     camera.close();
     if (images) clearImages(images);
   }
+}
+
+async function prepareEnrollmentCredential(wallet: WalletKit, signal: AbortSignal, update: (state: CaptureState) => void) {
+  const prepare = () => {
+    signal.throwIfAborted();
+    return abortable(wallet.prepareCredential(11n), signal);
+  };
+  try {
+    return await prepare();
+  } catch (error) {
+    if (!isIndexerLeafOutOfRange(error)) throw error;
+  }
+  // An indexed account can appear in the database before the tree has its leaf.
+  update({ ...INITIAL_CAPTURE_STATE, title: "Waiting for your World ID to sync", hint: "" });
+  return logPoseGuardStep("indexer_retry", async () => {
+    await pause(1_000, signal);
+    try {
+      return await prepare();
+    } catch (error) {
+      if (!isIndexerLeafOutOfRange(error)) throw error;
+      throw new WalletOpenError("The staging indexer could not find your account in its proof tree yet. Try again in a moment.", { cause: error });
+    }
+  });
+}
+
+function isIndexerLeafOutOfRange(error: unknown): boolean {
+  const prefix = "network_error at indexer: ";
+  if (!(error instanceof Error) || error.name !== "WalletKitError" ||
+    !("code" in error) || error.code !== "NetworkError" || !error.message.startsWith(prefix)) return false;
+  const body = error.message.slice(prefix.length).split(" (NetworkError {", 1)[0];
+  return /"code"\s*:\s*"invalid_leaf_index"/.test(body) &&
+    /"message"\s*:\s*"Leaf index out of range\."/.test(body);
+}
+
+function teeRejection(result: SelfieCaptureFailure): Error {
+  if (result.reason === "challenge") {
+    const step = result.index + 2;
+    logPoseGuardEvent("poseguard_rejected", { step, reason: result.challengeReason });
+    return new Error(`The staging TEE rejected the capture at step ${step}. Try again.`);
+  }
+  logPoseGuardEvent("poseguard_rejected", { reason: result.reason });
+  if (result.reason === "quality_rejected") {
+    return new Error("The center frame did not pass the staging TEE’s quality check. Try again with your face evenly lit and fully in view.");
+  }
+  return new Error("The staging TEE could not accept these PoseGuard captures. Try again.");
 }
 
 function clearImages(images: PoseGuardImages) {
