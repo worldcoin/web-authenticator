@@ -229,6 +229,15 @@ async function capturePoseGuard(
     });
     const identity = validateEnrollmentCapture(capture);
     if (identity.sub !== sub) throw new Error("The selfie enrollment does not match this wallet.");
+    if (import.meta.env.DEV) {
+      const encoder = new TextEncoder();
+      logPoseGuardEvent("poseguard_bundle_validated", {
+        fieldCount: capture.fields.length,
+        multipartFieldBytes: Object.fromEntries(capture.fields.map(({ name, value }) => [name, encoder.encode(value).byteLength])),
+        nitroHeaderBytes: capture.attestation_header.length,
+        walletSubjectMatches: true,
+      });
+    }
     return { capture, identity, wallet, blindingFactor };
   } finally {
     camera.close();

@@ -3,8 +3,8 @@ export function logPoseGuardStep<T>(step: string, operation: () => Promise<T>): 
 }
 
 export function logPoseGuardEvent(
-	event: 'poseguard_prompt' | 'poseguard_target' | 'poseguard_rejected',
-	fields: Record<string, string | number>,
+	event: 'poseguard_prompt' | 'poseguard_target' | 'poseguard_rejected' | 'poseguard_bundle_validated',
+	fields: Record<string, string | number | boolean | Readonly<Record<string, number>>>,
 ) {
 	if (!import.meta.env.DEV) return
 	if (event === 'poseguard_rejected') console.warn(event, fields)
