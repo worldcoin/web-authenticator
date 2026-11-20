@@ -214,7 +214,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(f.calls.unlocked).toBe(1);
 
     act(() => update({ phase: "framing", title: "Turn your head left", hint: "", progress: 0.25, cameraReady: true,
-      target: { targetPitch: 0, targetYaw: 30 }, poseStep: { index: 2, total: 4 } }));
+      target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
     expect(view.getByText("Turn your head left")).toBeTruthy();
     expect(view.getByText("Step 2 of 4")).toBeTruthy();
     expect(view.getByTestId("pose-target-indicator").style.maskImage).toBe("conic-gradient(from -112.5deg, #000 0deg 45deg, transparent 45deg)");

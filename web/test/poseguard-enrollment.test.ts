@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { collectPoseGuardImages, type PoseFrame } from "../lib/poseguard/capture";
+import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
 import type { EnrollmentReceipt } from "../lib/signup-service";
@@ -16,12 +16,12 @@ const prompt: PoseGuardPrompt = {
   captureTimeoutMs: 10_000,
 };
 
-function cameraFrames() {
+function cameraFrames(pitch = -17) {
   // Include an out-of-tolerance frame before the final accepted image at each target.
   const readings = [
     [0, 0, 0], [600, 0, 0], [1200, 0, 0],
     [1300, -30, 0], [1400, 30, 0], [1700, 30, 0],
-    [1800, 0, -17], [1900, 0, 17], [2200, 0, 17],
+    [1800, 0, -pitch], [1900, 0, pitch], [2200, 0, pitch],
     [2300, 30, 0], [2400, -30, 0], [2700, -30, 0],
   ];
   const encoded: number[] = [];
@@ -42,15 +42,26 @@ function cameraFrames() {
   return { readFrame, encoded, released };
 }
 
-test("captures the accepted center and target frames in issued order", async () => {
-  const camera = cameraFrames();
+test.each([
+  { issuedPitch: 17, direction: "up", degrees: 90 },
+  { issuedPitch: -18, direction: "down", degrees: 270 },
+])("captures the accepted frames in order for a $direction prompt", async ({ issuedPitch, direction, degrees }) => {
+  const camera = cameraFrames(-issuedPitch);
+  const challenge: PoseGuardPrompt = {
+    ...prompt,
+    targets: [prompt.targets[0], { targetPitch: issuedPitch, targetYaw: 0 }, prompt.targets[2]],
+  };
   const directions: string[] = [];
-  const images = await collectPoseGuardImages(prompt, new AbortController().signal, camera.readFrame, state => {
+  const images = await collectPoseGuardImages(challenge, new AbortController().signal, camera.readFrame, state => {
     if (state.phase !== "framing" || state.poseStep?.index !== directions.length + 1) return;
     expect(state.poseStep.total).toBe(4);
+    if (state.poseStep.index === 3) {
+      expect(state.target).toEqual({ pitch: -issuedPitch, yaw: 0 });
+      expect(poseDirection(state.target!)).toEqual({ label: direction, degrees });
+    }
     directions.push(state.title);
   });
-  expect(directions).toEqual(["Look straight ahead", "Turn your head left", "Turn your head up", "Turn your head right"]);
+  expect(directions).toEqual(["Look straight ahead", "Turn your head left", `Turn your head ${direction}`, "Turn your head right"]);
   expect([images.centralPng, ...images.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
   expect(camera.encoded).toEqual([2, 5, 8, 11]);
   expect(camera.released).toHaveLength(12);

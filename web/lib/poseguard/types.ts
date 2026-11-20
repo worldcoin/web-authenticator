@@ -1,4 +1,4 @@
-export type { PoseGuardCapture, PoseGuardImages, PoseGuardPrompt, PoseGuardTarget as PoseTarget } from "@worldcoin/walletkit-web";
+export type { PoseGuardCapture, PoseGuardImages, PoseGuardPrompt } from "@worldcoin/walletkit-web";
 
 export type PoseObservation = {
   yaw: number;
@@ -8,6 +8,8 @@ export type PoseObservation = {
   top: number;
   bottom: number;
 };
+
+export type PoseTarget = Pick<PoseObservation, "pitch" | "yaw">;
 
 type ImageSize = readonly [width: number, height: number];
 
