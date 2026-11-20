@@ -7,7 +7,6 @@ import { openPoseDetector } from "./worker";
 
 const CHALLENGE_TIMEOUT_MS = 45_000;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_POSE_ESTIMATE_EDGE = 720;
 const SAMPLE_GAP_MS = 1_000;
 const DIRECTIONS = ["right", "up and right", "up", "up and left", "left", "down and left", "down", "down and right"];
 
@@ -76,11 +75,7 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
         const frame = grabFrame(video);
         const clear = () => { frame.width = frame.height = 0; };
         try {
-          const scale = Math.min(1, MAX_POSE_ESTIMATE_EDGE / Math.max(frame.width, frame.height));
-          const bitmap = await abortable(createImageBitmap(frame, {
-            resizeWidth: Math.max(1, Math.round(frame.width * scale)),
-            resizeHeight: Math.max(1, Math.round(frame.height * scale)),
-          }).then(bitmap => {
+          const bitmap = await abortable(createImageBitmap(frame).then(bitmap => {
             if (signal.aborted) { bitmap.close(); signal.throwIfAborted(); }
             return bitmap;
           }), signal);

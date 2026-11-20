@@ -8,9 +8,9 @@ export type ModelOutput = { dims: readonly number[]; data: Float32Array }
 // fast_image_resize uses fixed-kernel bilinear interpolation, quantized weights,
 // and rounds the vertical u8 pass before the horizontal pass. Canvas resizing
 // is browser-dependent and does not reproduce this operation.
-function axisWeights(size: number) {
-	const weights = Array.from({ length: INPUT_SIZE }, (_, i) => {
-		const center = ((i + 0.5) * size) / INPUT_SIZE - 0.5
+export function resizeAxisWeights(size: number, outputSize: number) {
+	const weights = Array.from({ length: outputSize }, (_, i) => {
+		const center = ((i + 0.5) * size) / outputSize - 0.5
 		const left = Math.max(0, Math.min(size - 1, Math.floor(center)))
 		const right = Math.max(0, Math.min(size - 1, Math.floor(center) + 1))
 		const fraction = left === right ? 0 : center - Math.floor(center)
@@ -34,8 +34,8 @@ export function prepareRgbnet(rgba: Uint8ClampedArray, width: number, height: nu
 		rgba.length !== width * height * 4
 	)
 		throw new Error('Invalid RGBNet frame dimensions or RGBA buffer')
-	const xs = axisWeights(width),
-		ys = axisWeights(height)
+	const xs = resizeAxisWeights(width, INPUT_SIZE),
+		ys = resizeAxisWeights(height, INPUT_SIZE)
 	const plane = INPUT_SIZE * INPUT_SIZE
 	const output = new Float32Array(3 * plane)
 	const means = [104, 117, 123]

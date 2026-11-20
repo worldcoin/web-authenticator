@@ -1,7 +1,5 @@
 export type ProtocolEnvironment = "staging" | "production";
 
-export const POSE_GUARD_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-
 /** A reviewed `worldcoin/tee-apps` selfie-enrollment client release policy. */
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
@@ -83,7 +81,6 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const challengeUrl = environment === "staging" ? config.selfieEnrollment?.ownershipChallengeUrl : undefined;
   return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
     ...(challengeUrl ? [new URL(challengeUrl).href] : []),
-    ...(environment === "staging" && config.selfieEnrollment ? [POSE_GUARD_MODEL_URL] : []),
   ];
 }
 

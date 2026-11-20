@@ -9,7 +9,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "1.0.1",
     "@tanstack/react-router": "1.170.46",
     "@worldcoin/idkit-core": "4.6.0",
     "@worldcoin/walletkit-web": "0.32.0",
