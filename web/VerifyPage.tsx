@@ -60,13 +60,13 @@ export function VerifyPage({ services }: { services: Services }) {
   const fromDemo = attempt !== undefined && attempt.bridgeId === bridgeId;
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
-    localPreview: new URL(attempt.returnUrl).protocol === "http:",
+    captureOnly: new URL(attempt.returnUrl).protocol === "http:",
     complete: (source: Parameters<typeof demo.complete>[0]) => {
       demo.complete(source);
       void navigate({ to: DEMO_PATH, replace: true });
     },
-    previewComplete: () => {
-      demo.previewComplete();
+    captureComplete: () => {
+      demo.captureComplete();
       void navigate({ to: DEMO_PATH, replace: true });
     },
     back: () => { demo.cancel(); void navigate({ to: DEMO_PATH, replace: true }); },

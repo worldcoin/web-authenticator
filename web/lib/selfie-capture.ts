@@ -13,6 +13,7 @@ export type CaptureState = {
   progress: number;
   cameraReady: boolean;
   target?: PoseTarget | null;
+  poseStep?: { index: number; total: number };
 };
 
 export type CaptureResult = {

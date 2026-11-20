@@ -44,12 +44,13 @@ function cameraFrames() {
 
 test("captures the accepted center and target frames in issued order", async () => {
   const camera = cameraFrames();
-  const prompts: number[] = [];
+  const directions: string[] = [];
   const images = await collectPoseGuardImages(prompt, new AbortController().signal, camera.readFrame, state => {
-    const yaw = state.target?.targetYaw ?? 0;
-    if (state.phase === "framing" && (prompts.length === 0 || prompts.at(-1) !== yaw)) prompts.push(yaw);
+    if (state.phase !== "framing" || state.poseStep?.index !== directions.length + 1) return;
+    expect(state.poseStep.total).toBe(4);
+    directions.push(state.title);
   });
-  expect(prompts).toEqual([0, 30, 0, -30]);
+  expect(directions).toEqual(["Look straight ahead", "Turn your head left", "Turn your head up", "Turn your head right"]);
   expect([images.centralPng, ...images.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
   expect(camera.encoded).toEqual([2, 5, 8, 11]);
   expect(camera.released).toHaveLength(12);

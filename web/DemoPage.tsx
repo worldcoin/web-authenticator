@@ -6,7 +6,7 @@ import { currentProtocolEnvironment } from "./lib/environment";
 import { startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
 
 type DemoState =
-  | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "previewed" }
+  | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" }
   | { phase: "verified"; source: DemoProofSource }
   | { phase: "error"; message: string };
 
@@ -22,7 +22,7 @@ export const DemoContext = createContext<{
   create: () => Promise<void>;
   open: () => string | undefined;
   complete: (source: DemoProofSource) => void;
-  previewComplete: () => void;
+  captureComplete: () => void;
   cancel: () => void;
 } | null>(null);
 
@@ -96,12 +96,12 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const previewComplete = () => {
+  const captureComplete = () => {
     stop();
-    setState({ phase: "previewed" });
+    setState({ phase: "captured" });
   };
 
-  return <DemoContext value={{ state, attempt, create, open, complete, previewComplete, cancel }}>{children}</DemoContext>;
+  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>{children}</DemoContext>;
 }
 
 export function DemoPage() {
@@ -186,8 +186,8 @@ function demoStatus(state: DemoState): { title: string; description: string } {
       ? { title: "New credential verified", description: "You completed PoseGuard, saved the issued Selfie Check credential, and sent a proof the relying party verified." }
       : { title: "Saved credential verified", description: "The relying party verified a proof from the Selfie Check credential already in your wallet." };
   }
-  if (state.phase === "previewed") {
-    return { title: "Local selfie captured", description: "This run completed the camera preview. Credential issuance and proof verification are part of the staging enrollment flow." };
+  if (state.phase === "captured") {
+    return { title: "PoseGuard captures accepted", description: "The staging TEE accepted your center image and all three target images." };
   }
   if (state.phase === "verifying") return { title: "Verifying your proof", description: "Waiting for the staging relying party." };
   if (state.phase === "ready") return { title: "Selfie Check request created", description: "Review the request below, then open Web Authenticator." };

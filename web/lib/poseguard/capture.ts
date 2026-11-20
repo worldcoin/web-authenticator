@@ -106,13 +106,14 @@ export async function collectPoseGuardImages(
   }
   const active = AbortSignal.any([signal, AbortSignal.timeout(Math.min(CHALLENGE_TIMEOUT_MS, Math.floor(prompt.captureTimeoutMs)))]);
   const accepted: Uint8Array[] = [];
+  const steps = [null, ...prompt.targets];
   try {
-    for (const target of [null, ...prompt.targets]) {
+    for (const target of steps) {
       active.throwIfAborted();
       const title = target ? `Turn your head ${poseDirection(target).label}` : "Look straight ahead";
-      const phase = { title, target, cameraReady: true };
       const completed = accepted.length;
-      update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / 4 });
+      const phase = { title, target, cameraReady: true, poseStep: { index: completed + 1, total: steps.length } };
+      update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
       let alignedSince: number | undefined;
       let lastTimestamp = -Infinity;
       // Paint each new target before looking for a matching frame.
@@ -126,7 +127,7 @@ export async function collectPoseGuardImages(
           if (matchesPose(frame.pose, target)) {
             alignedSince ??= frame.timestamp;
             const progress = Math.min(1, (frame.timestamp - alignedSince) / (target ? 300 : CAPTURE_HOLD_DURATION_MS_V1));
-            update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / 4 });
+            update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
             if (progress === 1) {
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
@@ -134,7 +135,7 @@ export async function collectPoseGuardImages(
             }
           } else {
             alignedSince = undefined;
-            update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / 4 });
+            update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
           }
         } finally {
           frame.release();

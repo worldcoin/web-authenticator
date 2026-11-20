@@ -8,6 +8,7 @@ import {
   getEnrollmentAuthorization, pollEnrollment, SignupServiceError, submitEnrollment,
   type EnrollmentAuthorization, type EnrollmentReceipt, type EnrollmentResult,
 } from "../signup-service";
+import { WalletOpenError } from "../wallet-errors";
 import type { RequestWalletSession } from "../wallet-session";
 import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
@@ -28,7 +29,7 @@ type PoseGuardSignup = {
   }
 );
 
-export type PoseGuardOutcome = EnrollmentResult["state"] | "pending";
+export type PoseGuardOutcome = EnrollmentResult["state"] | "pending" | "captured";
 
 export type RunPoseGuard = (
   video: HTMLVideoElement,
@@ -54,10 +55,21 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   };
 }
 
-export function configureDemoEnrollment(session: RequestWalletSession, signal: AbortSignal): RunPoseGuard | undefined {
+export function configureDemoEnrollment(session: RequestWalletSession, signal: AbortSignal): RunPoseGuard {
   const { appOrigin, selfieEnrollment: policy, signupServiceOrigin } = ENVIRONMENTS.staging;
-  const challengeUrl = policy?.ownershipChallengeUrl;
-  if (currentProtocolEnvironment() !== "staging" || window.location.origin !== appOrigin || !policy || !challengeUrl) return;
+  if (currentProtocolEnvironment() !== "staging" || !policy) {
+    throw new WalletOpenError("PoseGuard requires a configured staging TEE release.");
+  }
+  if (window.location.protocol === "http:") {
+    return async (video, viewSignal, update) => {
+      await capturePoseGuard(session, policy, video, AbortSignal.any([signal, viewSignal]), update, preparePoseGuardCamera);
+      return "captured";
+    };
+  }
+  const challengeUrl = policy.ownershipChallengeUrl;
+  if (window.location.origin !== appOrigin || !challengeUrl) {
+    throw new WalletOpenError("Credential issuance requires the staging ownership challenge endpoint.");
+  }
 
   return createPoseGuardEnrollment(session, {
     testMode: false,
@@ -100,73 +112,26 @@ export function createPoseGuardEnrollment(
       signal.throwIfAborted();
       if (saved) return "completed";
       if (!receipt) {
-        const state = await abortable(session.ready, signal);
-        if ("error" in state) throw state.error;
-        const wallet = state.wallet;
-        const { sub, blindingFactor } = await abortable(wallet.prepareCredential(11n), signal);
-        if (!isCanonicalSubject(sub)) throw new Error("WalletKit returned an invalid enrollment subject.");
-        const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
-        if (!("publicKey" in custody)) throw new Error("Could not prepare a custody key pair.");
-        const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
-        const configured = signup.policy;
-        const start = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
-        // The startup deadline bounds permission/model load. A separate capture deadline begins with the prompt.
-        const cameraScope = new AbortController();
-        const camera = await abortable(prepareCamera(video, AbortSignal.any([signal, cameraScope.signal]), update), start).catch(error => {
-          cameraScope.abort(error);
-          throw error;
-        });
-        let images: PoseGuardImages | undefined;
-        const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
+        const { capture, identity, wallet, blindingFactor } =
+          await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera);
+        update(checking("Submitting your selfie check"));
+        const authorization = signup.testMode
+          ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
+          : await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
         try {
-          const result = await abortable(wallet.enrollSelfieWithPoseGuard(
-            JSON.stringify({ endpoint: configured.endpoint, releases: configured.releases }),
-            sub, publicKey, async (prompt, callbackSignal) => {
-              const captureSignal = AbortSignal.any([enrollmentSignal, camera.signal, callbackSignal]);
-              images = await collectPoseGuardImages(prompt, captureSignal, camera.readFrame, update);
-              update(checking("Checking your selfie"));
-              camera.close();
-              return images;
-            }, enrollmentSignal,
-          ), enrollmentSignal);
-          if (result.status !== "success") throw new Error("PoseGuard could not accept these captures. Try again.");
-          const bundle = result.enrollment;
-          try {
-            enrollmentSignal.throwIfAborted();
-            const capture = EnrollmentCaptureSchema.parse({
-              fields: bundle.fields,
-              attestation_header: signup.testMode ? TEST_ATTESTATION_HEADER : bundle.attestationHeader,
-            });
-            const identity = validateEnrollmentCapture(capture);
-            if (identity.sub !== sub) throw new Error("The selfie enrollment does not match this wallet.");
-            update(checking("Submitting your selfie check"));
-            const authorization = signup.testMode
-              ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
-              : await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
-            try {
-              signal.throwIfAborted();
-              // Keep the capture ID even if the server accepted the PUT and the response was lost.
-              receipt = identity;
-              if (!signup.testMode && signup.saveCredential) owner = { wallet, factor: blindingFactor };
-              receipt = await submitEnrollment(capture, authorization, signupOptions);
-            } catch (error) {
-              if (!signal.aborted && (error instanceof TypeError ||
-                (error instanceof SignupServiceError && error.status !== undefined &&
-                  error.status >= 400 && error.status < 500 && error.status !== 408))) receipt = undefined;
-              throw error;
-            } finally {
-              authorization.proofCbor.fill(0);
-            }
-          } finally {
-            // The signed credential is saved separately from the encrypted custody package.
-            bundle.encryptedCustody.fill(0);
-          }
+          signal.throwIfAborted();
+          // Keep the capture ID even if the server accepted the PUT and the response was lost.
+          receipt = identity;
+          if (!signup.testMode && signup.saveCredential) owner = { wallet, factor: blindingFactor };
+          const evidence = signup.testMode ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
+          receipt = await submitEnrollment(evidence, authorization, signupOptions);
+        } catch (error) {
+          if (!signal.aborted && (error instanceof TypeError ||
+            (error instanceof SignupServiceError && error.status !== undefined &&
+              error.status >= 400 && error.status < 500 && error.status !== 408))) receipt = undefined;
+          throw error;
         } finally {
-          camera.close();
-          if (images) {
-            images.centralPng.fill(0);
-            for (const image of images.captures) image.fill(0);
-          }
+          authorization.proofCbor.fill(0);
         }
       }
 
@@ -195,6 +160,76 @@ export function createPoseGuardEnrollment(
       inFlight = false;
     }
   };
+}
+
+async function capturePoseGuard(
+  session: RequestWalletSession,
+  policy: SelfieEnrollmentPolicy,
+  video: HTMLVideoElement,
+  signal: AbortSignal,
+  update: (state: CaptureState) => void,
+  prepareCamera: typeof preparePoseGuardCamera,
+) {
+  signal.throwIfAborted();
+  const state = await abortable(session.ready, signal);
+  if ("error" in state) throw state.error;
+  const wallet = state.wallet;
+  const { sub, blindingFactor } = await abortable(wallet.prepareCredential(11n), signal);
+  if (!isCanonicalSubject(sub)) throw new Error("WalletKit returned an invalid enrollment subject.");
+  const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
+  if (!("publicKey" in custody)) throw new Error("Could not prepare a custody key pair.");
+  const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
+
+  // Bound permission and model startup separately from the enclave's capture window.
+  const start = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+  const cameraScope = new AbortController();
+  const camera = await abortable(prepareCamera(video, AbortSignal.any([signal, cameraScope.signal]), update), start).catch(error => {
+    cameraScope.abort(error);
+    throw error;
+  });
+  let images: PoseGuardImages | undefined;
+  const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
+  try {
+    update({ phase: "checking", title: "Waiting for PoseGuard targets", hint: "Keep your face in the oval.", progress: 0, cameraReady: true });
+    const operation = wallet.enrollSelfieWithPoseGuard(
+      JSON.stringify({ endpoint: policy.endpoint, releases: policy.releases }),
+      sub, publicKey, async (prompt, callbackSignal) => {
+        const captureSignal = AbortSignal.any([enrollmentSignal, camera.signal, callbackSignal]);
+        const captured = await collectPoseGuardImages(prompt, captureSignal, camera.readFrame, update);
+        if (captureSignal.aborted) {
+          clearImages(captured);
+          captureSignal.throwIfAborted();
+        }
+        images = captured;
+        update(checking("Checking your PoseGuard captures"));
+        camera.close();
+        return images;
+      }, enrollmentSignal,
+    ).then(result => {
+      // This flow saves the signed credential separately from the encrypted custody package.
+      if (result.status === "success") result.enrollment.encryptedCustody.fill(0);
+      return result;
+    });
+    const result = await abortable(operation, enrollmentSignal);
+    enrollmentSignal.throwIfAborted();
+    if (result.status !== "success") throw new Error("The staging TEE could not accept these PoseGuard captures. Try again.");
+    if (!images) throw new Error("WalletKit finished before collecting the PoseGuard captures.");
+    const capture = EnrollmentCaptureSchema.parse({
+      fields: result.enrollment.fields,
+      attestation_header: result.enrollment.attestationHeader,
+    });
+    const identity = validateEnrollmentCapture(capture);
+    if (identity.sub !== sub) throw new Error("The selfie enrollment does not match this wallet.");
+    return { capture, identity, wallet, blindingFactor };
+  } finally {
+    camera.close();
+    if (images) clearImages(images);
+  }
+}
+
+function clearImages(images: PoseGuardImages) {
+  images.centralPng.fill(0);
+  for (const image of images.captures) image.fill(0);
 }
 
 function checking(title: string): CaptureState {

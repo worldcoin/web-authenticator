@@ -31,9 +31,9 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   expired: boolean;
   onDispose: () => void;
   demo?: {
-    localPreview: boolean;
+    captureOnly: boolean;
     complete: (source: DemoProofSource) => void;
-    previewComplete: () => void;
+    captureComplete: () => void;
     back: () => void;
   };
   onTransitionChange: (active: boolean) => void;
@@ -150,25 +150,27 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if (demo) {
         const ready = await abortable(current.ready, deadline);
         if ("error" in ready) throw ready.error;
-        if (demo.localPreview) {
-          setFlow({ stage: "capture" });
-          return;
-        }
-        const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
-        checkExpiry(incoming.proof);
-        if (credentials.satisfied) {
-          setOpenProgress("Preparing your Selfie Check proof…");
-          await completeDemo(incoming, ready.wallet, deadline, "saved");
-          return;
-        }
-        if (!credentials.canEnrollSelfie) {
-          throw new WalletOpenError("This wallet cannot satisfy the demo's Selfie Check request.");
+        if (!demo.captureOnly) {
+          const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
+          checkExpiry(incoming.proof);
+          if (credentials.satisfied) {
+            setOpenProgress("Preparing your Selfie Check proof…");
+            await completeDemo(incoming, ready.wallet, deadline, "saved");
+            return;
+          }
+          if (!credentials.canEnrollSelfie) {
+            throw new WalletOpenError("This wallet cannot satisfy the demo's Selfie Check request.");
+          }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
-        if (!enroll) throw new WalletOpenError("Selfie Check enrollment is not configured for this deployment.");
         setFlow({ stage: "capture", enroll: async (video, signal, update) => {
           const result = await enroll(video, signal, update);
-          if (result === "completed") {
+          if (result === "captured") {
+            checkExpiry(incoming.proof);
+            stop();
+            onDispose();
+            demo.captureComplete();
+          } else if (result === "completed") {
             update({ phase: "checking", title: "Preparing your Selfie Check proof", hint: "", progress: 1, cameraReady: false });
             await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
           }
@@ -221,11 +223,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if ("error" in result) throw result.error;
       if (incoming) checkExpiry(incoming.proof);
       stop();
-      if (demo?.localPreview) {
-        onDispose();
-        demo.previewComplete();
-        return;
-      }
       // Real attested enrollment and proof delivery are connected separately.
       setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
       onDispose();
@@ -288,7 +285,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
-      selfieDescription={demo?.localPreview ? "Create or unlock your authenticator, then try a local camera check."
+      selfieDescription={demo?.captureOnly ? "Create or unlock your authenticator, then follow the PoseGuard directions."
         : demo ? "Create or unlock your authenticator to continue." : undefined}
       onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}

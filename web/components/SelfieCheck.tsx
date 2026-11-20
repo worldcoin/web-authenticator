@@ -1,9 +1,9 @@
 import { use, useEffect, useRef, useState } from "react";
-import { poseDirection } from "../lib/poseguard/capture";
 import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
+import { PoseTargetIndicator } from "./PoseTargetIndicator";
 
 // 11 units inside the ring viewBox, scaling with the aperture on narrow screens.
 const APERTURE_INSET = "absolute inset-x-[calc(11/345.005*100%)] inset-y-[calc(11/481.637*100%)]";
@@ -85,6 +85,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         if (active.signal.aborted) return;
         enrollmentFinished.current = outcome !== "pending";
         const title = {
+          captured: "PoseGuard captures accepted",
           completed: "Staging enrollment completed",
           duplicate: "Face already enrolled",
           failed: "Staging enrollment failed",
@@ -129,7 +130,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
 
   const complete = state.phase === "complete";
   const transitioning = complete && !!onComplete;
-  const targetDegrees = state.target ? poseDirection(state.target).degrees : undefined;
   const showVideo = !(complete && !transitioning) && !(transitioning && !state.cameraReady);
   const showPlaceholder = state.phase === "paused" || state.phase === "error" || (!state.cameraReady && !complete);
   return <section className="group/selfie fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col overflow-y-auto bg-white px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
@@ -138,7 +138,11 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center"><h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>{(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}</div>
+      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
+        {state.poseStep && <p className="mb-1 text-xs text-foreground-secondary">Step {state.poseStep.index} of {state.poseStep.total}</p>}
+        <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
+        {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
+      </div>
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
@@ -148,9 +152,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         </div>
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
         <CaptureProgressRing progress={state.progress} />
-        {targetDegrees !== undefined && <span aria-hidden="true" data-testid="pose-target-indicator"
-          className="pointer-events-none absolute inset-0 rounded-[50%] border-8 border-accent"
-          style={{ maskImage: `conic-gradient(from ${67.5 - targetDegrees}deg, #000 0deg 45deg, transparent 45deg)` }} />}
+        {state.target && <PoseTargetIndicator target={state.target} />}
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
         {(!enroll || !complete) && <button className={RETRY} type="button" onClick={restart}>
