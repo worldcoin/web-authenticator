@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
-import { signedRequest } from "../../tests/integration/fixtures/request";
+import { bridgeId, signedRequest } from "../../tests/integration/fixtures/request";
+import { DEMO_ACTION, DEMO_PATH } from "../../config/demo";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
@@ -10,6 +11,7 @@ import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
+import * as demo from "../lib/demo";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -168,6 +170,48 @@ test("public Selfie capture reuses the unlocked session without another save pro
     expect(f.calls.deliver).toHaveLength(0);
     expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
   } finally { captureMock.mockRestore(); }
+});
+
+test("the local demo shows its request, opens the wallet, and returns a capture result without verification", async () => {
+  visit(DEMO_PATH);
+  const f = await fixture(11, true);
+  const appId = `app_${"0".repeat(32)}` as const;
+  const returnUrl = new URL(DEMO_PATH, window.location.origin).href;
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: DEMO_ACTION });
+  const query = `i=${bridgeId}&k=test`;
+  const unexpectedPoll = () => { throw new Error("The local demo must not poll for a proof."); };
+  const create = spyOn(demo, "startDemo").mockResolvedValue({
+    bridgeId, query, returnUrl,
+    config: { app_id: appId, rp_context: f.incoming.proof },
+    request: {
+      connectorURI: new URL(`/verify?${query}`, returnUrl).href,
+      requestId: bridgeId,
+      pollOnce: unexpectedPoll,
+      pollUntilCompletion: unexpectedPoll,
+      getDebugReport: unexpectedPoll,
+    },
+  });
+  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
+    image: new Blob(["test"], { type: "image/jpeg" }),
+    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Create Selfie Check request" }));
+    expect(await view.findByText(bridgeId)).toBeTruthy();
+    expect(f.calls.unlocked).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Open authenticator" }));
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    expect(await view.findByRole("heading", { name: "Local selfie captured" })).toBeTruthy();
+    expect(f.calls.unlocked).toBe(1);
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(f.calls.terminated).toBe(1);
+    expect(f.calls.deliver).toHaveLength(0);
+    expect(view.queryByRole("heading", { name: /verified/i })).toBeNull();
+  } finally {
+    create.mockRestore();
+    captureMock.mockRestore();
+  }
 });
 
 test("public non-Selfie requests stop before capture or wallet access", async () => {

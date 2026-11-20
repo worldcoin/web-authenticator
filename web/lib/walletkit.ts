@@ -1,4 +1,4 @@
-import type { PoseGuardCapture, PoseGuardResult } from "./poseguard/types";
+import type { PoseGuardCapture } from "./poseguard/types";
 import {
 	type Authenticator,
 	type CredentialStore,
@@ -111,20 +111,7 @@ export class WalletKit {
 	}
 
 	enrollSelfieWithPoseGuard(config: string, sub: string, key: Uint8Array, capture: PoseGuardCapture, signal: AbortSignal) {
-		// The published package gains this method when WalletKit #687 ships.
-		const client = this.client as PublishedWalletKit & {
-			enrollSelfieWithPoseGuard?: (
-				config: string,
-				sub: string,
-				key: Uint8Array,
-				capture: PoseGuardCapture,
-				options: { signal: AbortSignal },
-			) => Promise<PoseGuardResult>;
-		};
-		if (typeof client.enrollSelfieWithPoseGuard !== "function") {
-			throw new Error("This version of WalletKit cannot start PoseGuard enrollment.");
-		}
-		return client.enrollSelfieWithPoseGuard(config, sub, key, capture, { signal });
+		return this.client.enrollSelfieWithPoseGuard(config, sub, key, capture, { signal });
 	}
 
 	async proveCredentialSub(nonce: string, context: string, factor: string, sub: string, now = nowSeconds()) {

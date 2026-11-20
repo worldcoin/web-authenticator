@@ -3,6 +3,8 @@ import { DEMO_ACTION, DEMO_PATH, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, isDemoRequ
 import { parseConnector } from "./connector";
 import type { IncomingRequest } from "./incoming-request";
 
+export type DemoProofSource = "issued" | "saved";
+
 export type DemoAttempt = {
   request: IDKitRequest;
   config: DemoRequest;
@@ -42,7 +44,8 @@ export function isDemoHandoff(attempt: DemoHandoff, incoming: IncomingRequest): 
   const context = attempt.config.rp_context;
   return incoming.bridgeRequestId === attempt.bridgeId && incoming.appId === attempt.config.app_id &&
     incoming.proof.rp_id === context.rp_id && incoming.proof.nonce === context.nonce &&
-    incoming.actionLabel === DEMO_ACTION && incoming.returnUrl === attempt.returnUrl;
+    incoming.actionLabel === DEMO_ACTION && incoming.returnUrl === attempt.returnUrl &&
+    incoming.proof.proof_requests.length === 1 && incoming.proof.proof_requests[0].issuer_schema_id === 11;
 }
 
 export async function verifyDemo(attempt: DemoAttempt, signal: AbortSignal): Promise<void> {

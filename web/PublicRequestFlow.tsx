@@ -7,6 +7,7 @@ import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
 import { WalletOpenError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import type { WalletKit } from "./lib/walletkit";
+import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
 import { configureDemoEnrollment, configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
@@ -29,7 +30,12 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   failed: boolean;
   expired: boolean;
   onDispose: () => void;
-  demo?: { complete: () => void; back: () => void };
+  demo?: {
+    localPreview: boolean;
+    complete: (source: DemoProofSource) => void;
+    previewComplete: () => void;
+    back: () => void;
+  };
   onTransitionChange: (active: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
@@ -105,7 +111,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
-  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal) => {
+  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource) => {
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
     checkExpiry(request.proof);
     let proof: string;
@@ -119,7 +125,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     deadline.throwIfAborted();
     stop();
     onDispose();
-    demo?.complete();
+    demo?.complete(source);
   }, [demo, onDispose, stop]);
 
   const start = useCallback(async () => {
@@ -144,11 +150,15 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if (demo) {
         const ready = await abortable(current.ready, deadline);
         if ("error" in ready) throw ready.error;
+        if (demo.localPreview) {
+          setFlow({ stage: "capture" });
+          return;
+        }
         const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
         checkExpiry(incoming.proof);
         if (credentials.satisfied) {
           setOpenProgress("Preparing your Selfie Check proof…");
-          await completeDemo(incoming, ready.wallet, deadline);
+          await completeDemo(incoming, ready.wallet, deadline, "saved");
           return;
         }
         if (!credentials.canEnrollSelfie) {
@@ -160,7 +170,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           const result = await enroll(video, signal, update);
           if (result === "completed") {
             update({ phase: "checking", title: "Preparing your Selfie Check proof", hint: "", progress: 1, cameraReady: false });
-            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]));
+            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
           }
           return result;
         } });
@@ -211,6 +221,11 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if ("error" in result) throw result.error;
       if (incoming) checkExpiry(incoming.proof);
       stop();
+      if (demo?.localPreview) {
+        onDispose();
+        demo.previewComplete();
+        return;
+      }
       // Real attested enrollment and proof delivery are connected separately.
       setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
       onDispose();
@@ -273,7 +288,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
-      selfieDescription={demo ? "Create or unlock your authenticator to continue." : undefined}
+      selfieDescription={demo?.localPreview ? "Create or unlock your authenticator, then try a local camera check."
+        : demo ? "Create or unlock your authenticator to continue." : undefined}
       onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
       rp={demo && incoming ? "Web Authenticator" : incoming?.label}

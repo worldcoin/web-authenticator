@@ -51,7 +51,7 @@
         "@mediapipe/tasks-vision": "1.0.1",
         "@tanstack/react-router": "1.170.46",
         "@worldcoin/idkit-core": "4.6.0",
-        "@worldcoin/walletkit-web": "0.31.0",
+        "@worldcoin/walletkit-web": "0.32.0",
         "onnxruntime-web": "1.30.0",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -449,7 +449,7 @@
 
     "@worldcoin/idkit-server": ["@worldcoin/idkit-server@1.2.0", "", { "dependencies": { "@noble/hashes": "^1.7.2", "@noble/secp256k1": "^2.2.3" } }, "sha512-CvaiX5idPbPsETBkbbD1cwueM2WJn2CNQ3vMZbFf7LKbJP+IKmvbxW3pubG5OThRKuciqEAHocxnuGLRYI9WuQ=="],
 
-    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@0.31.0", "", {}, "sha512-9IB7g9m5ABPXR/rMmHPwjDoMUtDKqwwmap4Er8kxDLVMYe2rVtuiKJifNNL4z96uISfhMFtP1CuWA0NReWnMUQ=="],
+    "@worldcoin/walletkit-web": ["@worldcoin/walletkit-web@0.32.0", "", {}, "sha512-VlVWT7BrhGyTs/qcNA8K1TaPFa5y8cIgkW5IGCrpTjHPk3nzSqbvgjR0hI+faWPNMr/J/AXHN/7+BXF3pQX68g=="],
 
     "abitype": ["abitype@1.2.3", "", { "peerDependencies": { "typescript": ">=5.0.4", "zod": "^3.22.0 || ^4.0.0" }, "optionalPeers": ["typescript", "zod"] }, "sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg=="],
 

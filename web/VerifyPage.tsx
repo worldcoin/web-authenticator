@@ -60,7 +60,15 @@ export function VerifyPage({ services }: { services: Services }) {
   const fromDemo = attempt !== undefined && attempt.bridgeId === bridgeId;
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
-    complete: () => void navigate({ to: DEMO_PATH, replace: true }),
+    localPreview: new URL(attempt.returnUrl).protocol === "http:",
+    complete: (source: Parameters<typeof demo.complete>[0]) => {
+      demo.complete(source);
+      void navigate({ to: DEMO_PATH, replace: true });
+    },
+    previewComplete: () => {
+      demo.previewComplete();
+      void navigate({ to: DEMO_PATH, replace: true });
+    },
     back: () => { demo.cancel(); void navigate({ to: DEMO_PATH, replace: true }); },
   } : undefined;
   return <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed || mismatch} expired={loadExpired || expired}
