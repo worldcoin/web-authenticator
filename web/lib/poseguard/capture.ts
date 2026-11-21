@@ -1,8 +1,9 @@
 import { abortable, pause } from "../async";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../hold-steady-progress";
+import { isFaceTooSmall } from "../rgbnet";
 import { grabFrame, type CaptureState } from "../selfie-capture";
-import type { PoseDiagnostics, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
+import type { ImageSize, PoseDiagnostics, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
 import { openPoseDetector } from "./worker";
 
 const CHALLENGE_TIMEOUT_MS = 45_000;
@@ -14,7 +15,7 @@ export interface PoseFrame {
   timestamp: number;
   pose: PoseObservation | null;
   stale?: boolean;
-  dimensions?: Pick<PoseDiagnostics, "stream" | "png">;
+  dimensions: { stream?: ImageSize; png: ImageSize };
   png(signal: AbortSignal): Promise<Uint8Array>;
   release(): void;
 }
@@ -85,10 +86,10 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
             timestamp,
             pose: stale ? null : observed,
             stale,
-            dimensions: streamSize ? {
+            dimensions: {
               stream: streamSize,
               png: [frame.width, frame.height],
-            } : undefined,
+            },
             png: signal => encodePng(frame, signal),
             release: clear,
           };
@@ -146,7 +147,7 @@ export async function collectPoseGuardImages(
           active.throwIfAborted();
           if (frame.timestamp <= lastTimestamp || frame.timestamp - lastTimestamp > SAMPLE_GAP_MS) alignedSince = undefined;
           lastTimestamp = frame.timestamp;
-          const gate = frame.stale ? "stale" : poseGate(frame.pose, target);
+          const gate = frame.stale ? "stale" : poseGate(frame.pose, target, frame.dimensions.png);
           const aligned = gate === "aligned";
           alignedSince = aligned ? (alignedSince ?? frame.timestamp) : undefined;
           const heldMs = alignedSince === undefined ? 0 : frame.timestamp - alignedSince;
@@ -170,11 +171,12 @@ export async function collectPoseGuardImages(
                 status: "captured", step: phase.poseStep.index,
                 durationMs: Math.round(performance.now() - shownAt),
                 heldMs: Math.round(heldMs),
-                ...(frame.dimensions?.png ? { png: frame.dimensions.png.join("×") } : {}),
+                ...(import.meta.env.DEV ? { png: frame.dimensions.png.join("×") } : {}),
               });
             }
           } else {
-            update({ ...phase, poseDiagnostics, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
+            const hint = gate === "too_small" ? "Move closer to the camera." : "Keep your face in the oval.";
+            update({ ...phase, poseDiagnostics, phase: "framing", hint, progress: completed / steps.length });
           }
         } finally {
           frame.release();
@@ -189,10 +191,11 @@ export async function collectPoseGuardImages(
   }
 }
 
-function poseGate(pose: PoseObservation | null, target: PoseTarget | null): PoseGate {
+function poseGate(pose: PoseObservation | null, target: PoseTarget | null, [width, height]: ImageSize): PoseGate {
   if (!pose) return "no_estimate";
   const { left, right, top, bottom, pitch, yaw } = pose;
-  if (left < 0.02 || right > 0.98 || top < 0.02 || bottom > 0.98 || right - left < 0.34 || bottom - top < 0.25) return "framing";
+  if (left < 0.02 || right > 0.98 || top < 0.02 || bottom > 0.98) return "framing";
+  if (isFaceTooSmall(right - left, bottom - top, width, height)) return "too_small";
   const yawMatches = Math.abs(yaw - (target?.yaw ?? 0)) <= (target ? 8 : 6);
   const pitchMatches = Math.abs(pitch - (target?.pitch ?? 0)) <= (target ? 8 : 10);
   if (!pitchMatches) return yawMatches ? "pitch" : "pitch_and_yaw";

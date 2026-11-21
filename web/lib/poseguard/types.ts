@@ -11,9 +11,9 @@ export type PoseObservation = {
 
 export type PoseTarget = Pick<PoseObservation, "pitch" | "yaw">;
 
-type ImageSize = readonly [width: number, height: number];
+export type ImageSize = readonly [width: number, height: number];
 
-export type PoseGate = "no_estimate" | "stale" | "framing" | "pitch" | "yaw" | "pitch_and_yaw" | "aligned";
+export type PoseGate = "no_estimate" | "stale" | "framing" | "too_small" | "pitch" | "yaw" | "pitch_and_yaw" | "aligned";
 
 export type PoseDiagnostics = {
   stream?: ImageSize;

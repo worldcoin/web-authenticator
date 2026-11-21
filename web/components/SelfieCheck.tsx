@@ -179,7 +179,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
 const GATE_LABELS: Record<PoseGate, string> = {
   no_estimate: "No usable pose estimate",
   stale: "Waiting for a fresh frame",
-  framing: "Face too small or near the frame edge",
+  framing: "Face near the frame edge",
+  too_small: "Face too small in the capture",
   pitch: "Pitch outside target range",
   yaw: "Yaw outside target range",
   pitch_and_yaw: "Pitch and yaw outside target range",

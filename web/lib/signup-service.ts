@@ -11,6 +11,7 @@ const MAX_RESPONSE_BYTES = 1024 * 1024
 const MAX_PROOF_BYTES = 768 * 1024
 const REQUEST_TIMEOUT_MS = 10_000
 const POLLING_TIMEOUT_MS = 120_000
+const UNCONFIRMED_SUBMISSION = 'Enrollment submission could not be confirmed. Keep this capture and check its status.'
 
 export interface SignupServiceOptions {
 	/** A trusted configuration value, never a URL supplied by an enrollment response. */
@@ -73,24 +74,26 @@ export async function getEnrollmentAuthorization(
 	return { challengeId: value.challengeId, proofCbor }
 }
 
-/** Each call submits once. A retry needs a fresh challenge/proof, even for the same capture. */
+/** Submits once. A verified retry requires a fresh ownership proof. */
 export async function submitEnrollment(
 	capture: EnrollmentCapture,
-	authorization: EnrollmentAuthorization,
+	authorization: EnrollmentAuthorization | 'staging-demo',
 	options: SignupServiceOptions,
 ): Promise<EnrollmentReceipt> {
 	const parsedCapture = EnrollmentCaptureSchema.safeParse(capture)
 	if (!parsedCapture.success) throw new TypeError('Invalid TEE enrollment bundle')
 	const bundle = parsedCapture.data
 	const identity = validateEnrollmentCapture(bundle)
-	if (!isCanonicalUuid(authorization.challengeId) || !(authorization.proofCbor instanceof Uint8Array) || authorization.proofCbor.byteLength === 0 || authorization.proofCbor.byteLength > MAX_PROOF_BYTES) {
-		throw new TypeError('Enrollment authorization requires a challenge UUID and a bounded, nonempty CBOR proof.')
-	}
 	const url = endpoint(options.endpoint)
 	const body = new FormData()
 	for (const field of bundle.fields) body.append(field.name, field.value)
-	body.append('world_id_challenge_id', authorization.challengeId)
-	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
+	if (authorization !== 'staging-demo') {
+		if (!isCanonicalUuid(authorization.challengeId) || !(authorization.proofCbor instanceof Uint8Array) || authorization.proofCbor.byteLength === 0 || authorization.proofCbor.byteLength > MAX_PROOF_BYTES) {
+			throw new TypeError('Enrollment authorization requires a challenge UUID and a bounded, nonempty CBOR proof.')
+		}
+		body.append('world_id_challenge_id', authorization.challengeId)
+		body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
+	}
 	try {
 		const parsed = SubmissionAcceptanceSchema.safeParse(await requestJson(url, {
 			method: 'PUT', headers: { 'X-Nitro-Attestation': bundle.attestation_header }, body,
@@ -101,7 +104,7 @@ export async function submitEnrollment(
 		if (options.signal.aborted) throw options.signal.reason
 		if (cause instanceof SignupServiceError && cause.code === 'invalid_response' && (cause.status === undefined || cause.status === 202)) {
 			throw new SignupServiceError(
-				'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+				UNCONFIRMED_SUBMISSION,
 				cause.code, true, cause.status ?? 202, { cause },
 			)
 		}
@@ -190,7 +193,7 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 			throw new SignupServiceError(`Signup service returned an invalid enrollment response (HTTP ${responseStatus}).`, cause.code, retryableStatus, responseStatus)
 		}
 		const messages = {
-			PUT: 'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+			PUT: UNCONFIRMED_SUBMISSION,
 			POST: 'Could not get enrollment authorization.',
 			GET: 'Enrollment status could not be checked. Resume polling with this receipt.',
 		}

@@ -17,15 +17,15 @@ import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
 
 const TEST_CHALLENGE_ID = "00000000-0000-4000-8000-000000000001";
-const TEST_ATTESTATION_HEADER = btoa("poseguard test attestation");
+const FIXTURE_ATTESTATION_HEADER = btoa("poseguard test attestation");
 
 type PoseGuardSignup = {
   policy: SelfieEnrollmentPolicy;
   endpoint: string;
 } & (
-  | { testMode: true }
+  | { mode: "fixture" | "staging-demo" }
   | {
-    testMode: false;
+    mode: "verified";
     saveCredential?: true;
     authorize: (identity: EnrollmentReceipt, signal: AbortSignal, wallet: WalletKit, factor: string) => Promise<EnrollmentAuthorization>;
   }
@@ -46,13 +46,13 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
 
   const endpoint = new URL("/api/v2/identity", signupServiceOrigin).href;
   if (parsePoseGuardTestMode(import.meta.env.VITE_POSEGUARD_TEST_MODE, environment)) {
-    return { policy, endpoint, testMode: true };
+    return { policy, endpoint, mode: "fixture" };
   }
 
   const path = policy.authorizationPath;
   if (!path) return;
   return {
-    policy, endpoint, testMode: false,
+    policy, endpoint, mode: "verified",
     authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
   };
 }
@@ -68,16 +68,21 @@ export function configureDemoEnrollment(session: RequestWalletSession, signal: A
       return "captured";
     };
   }
+  if (window.location.origin !== appOrigin) {
+    throw new WalletOpenError("Open the demo at the staging authenticator origin to issue a credential.");
+  }
+  const endpoint = new URL("/api/v2/identity", signupServiceOrigin).href;
   const challengeUrl = policy.ownershipChallengeUrl;
-  if (window.location.origin !== appOrigin || !challengeUrl) {
-    throw new WalletOpenError("Credential issuance requires the staging ownership challenge endpoint.");
+  if (!challengeUrl) {
+    // The staging v2 route accepts the TEE bundle on its own.
+    return createPoseGuardEnrollment(session, { mode: "staging-demo", policy, endpoint }, signal);
   }
 
   return createPoseGuardEnrollment(session, {
-    testMode: false,
+    mode: "verified",
     saveCredential: true,
     policy,
-    endpoint: new URL("/api/v2/identity", signupServiceOrigin).href,
+    endpoint,
     async authorize(identity, signal, wallet, factor) {
       const challenge = await fetchEnrollmentChallenge({ endpoint: challengeUrl, signal });
       const remaining = Math.min(120_000, Date.parse(challenge.expires_at) - Date.now());
@@ -116,17 +121,22 @@ export function createPoseGuardEnrollment(
       if (!receipt) {
         const { capture, identity, wallet, blindingFactor } =
           await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera);
-        update(checking("Getting enrollment authorization"));
-        const authorization = signup.testMode
-          ? { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) }
-          : await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
+        let authorization: EnrollmentAuthorization | "staging-demo" = "staging-demo";
+        if (signup.mode === "verified") {
+          update(checking("Getting enrollment authorization"));
+          authorization = await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
+        } else if (signup.mode === "fixture") {
+          authorization = { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) };
+        }
         try {
           signal.throwIfAborted();
           update(checking("Submitting to signup-service"));
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
-          if (!signup.testMode && signup.saveCredential) owner = { wallet, factor: blindingFactor };
-          const evidence = signup.testMode ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
+          if (signup.mode === "staging-demo" || (signup.mode === "verified" && signup.saveCredential)) {
+            owner = { wallet, factor: blindingFactor };
+          }
+          const evidence = signup.mode === "fixture" ? { ...capture, attestation_header: FIXTURE_ATTESTATION_HEADER } : capture;
           receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
@@ -134,7 +144,7 @@ export function createPoseGuardEnrollment(
               error.status >= 400 && error.status < 500 && error.status !== 408))) receipt = undefined;
           throw error;
         } finally {
-          authorization.proofCbor.fill(0);
+          if (authorization !== "staging-demo") authorization.proofCbor.fill(0);
         }
       }
 

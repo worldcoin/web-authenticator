@@ -174,12 +174,17 @@ export function faceGuidance(faces: FaceDetection[], width: number, height: numb
 	const [x1, y1, x2, y2] = faces[0].box
 	const left = (x1 * width - sx) / sw, right = (x2 * width - sx) / sw
 	const top = (y1 * height - sy) / sh, bottom = (y2 * height - sy) / sh
-	const { minRelativeSize, maxRelativeSize, minResolutionPx, edgeMargin } = ENGINE_FRAMING_V1
+	const { maxRelativeSize, edgeMargin } = ENGINE_FRAMING_V1
 	const relativeWidth = right - left, relativeHeight = bottom - top
 	// Size before edges: an oversized face also crosses the margin, and "farther" is the actionable cue.
-	if (Math.min(relativeWidth, relativeHeight) <= minRelativeSize) return 'Move closer'
-	if (relativeWidth * sw <= minResolutionPx || relativeHeight * sh <= minResolutionPx) return 'Move closer'
+	if (isFaceTooSmall(relativeWidth, relativeHeight, sw, sh)) return 'Move closer'
 	if (Math.max(relativeWidth, relativeHeight) >= maxRelativeSize) return 'Move farther away'
 	if (left < edgeMargin || top < edgeMargin || right > 1 - edgeMargin || bottom > 1 - edgeMargin) return 'Center your face'
 	return 'Face positioned'
+}
+
+export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {
+	const { minRelativeSize, minResolutionPx } = ENGINE_FRAMING_V1
+	return Math.min(relativeWidth, relativeHeight) <= minRelativeSize ||
+		Math.min(relativeWidth * imageWidth, relativeHeight * imageHeight) <= minResolutionPx
 }

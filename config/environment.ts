@@ -52,7 +52,14 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
       "https://indexer.us.id-infra.worldcoin.dev",
       ...oprfNodes("staging.world.oprf.taceo.network"),
     ]),
-    selfieEnrollment: null,
+    selfieEnrollment: {
+      endpoint: "wss://selfie-enrollment-stage.worldcoin.dev/v1/embeddings",
+      releases: [{
+        pcr0: "9eb2deac20165ce48d08e196bc362b8c6db69cae17be58855a05cf27193d739d36a77eb285eeab017d400b61597e808d",
+        pcr1: "f70809d1f2a77517b2539960493b9e8d4bb6e2eb7bbd512f0d7ceca101f1b2d54ccdd4d4ea5ab21b872f2face6c1c16b",
+        pcr2: "8d16d33334c16c603540085e85d5e14c079cc5488bc7c80876762cf2f231c375a1ac641a1e5ab8f22fe964fd73386a67",
+      }],
+    },
   }),
   production: Object.freeze({
     appOrigin: "https://web.world.org",

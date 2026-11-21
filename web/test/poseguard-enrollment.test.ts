@@ -34,7 +34,8 @@ function cameraFrames(pitch = -17) {
     const [timestamp, yaw, pitch] = candidate;
     return {
       timestamp,
-      pose: { yaw, pitch, left: 0.25, right: 0.75, top: 0.2, bottom: 0.8 },
+      pose: { yaw, pitch, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8 },
+      dimensions: { png: [758, 1080] },
       async png() { encoded.push(marker); return Uint8Array.of(marker); },
       release() { released.push(marker); },
     };
@@ -68,10 +69,33 @@ test.each([
 });
 
 test.each([
-  { mode: "verified", testMode: false, saveCredential: false },
-  { mode: "test", testMode: true, saveCredential: false },
-  { mode: "verified demo", testMode: false, saveCredential: true },
-])("submits $mode evidence once and resumes from the matching receipt", async ({ testMode, saveCredential }) => {
+  { label: "center face is too small in the crop", timestamp: 1200, relativeWidth: 0.5, png: [758, 1080], step: 1, encoded: [] },
+  { label: "target face is below the pixel floor", timestamp: 1700, relativeWidth: 0.6, png: [180, 255], step: 2, encoded: [2] },
+] as const)("asks the user to move closer when the $label", async ({ timestamp, relativeWidth, png, step, encoded }) => {
+  const camera = cameraFrames();
+  const controller = new AbortController();
+  const stop = new Error("Received distance guidance");
+  await expect(collectPoseGuardImages(prompt, controller.signal, async () => {
+    const frame = await camera.readFrame();
+    if (frame.timestamp !== timestamp || !frame.pose) return frame;
+    const left = (1 - relativeWidth) / 2;
+    return { ...frame, pose: { ...frame.pose, left, right: 1 - left }, dimensions: { png } };
+  }, state => {
+    if (state.hint !== "Move closer to the camera.") return;
+    expect(state.phase).toBe("framing");
+    expect(state.poseStep?.index).toBe(step);
+    expect(state.progress).toBe((step - 1) / 4);
+    controller.abort(stop);
+  })).rejects.toBe(stop);
+  expect(camera.encoded).toEqual([...encoded]);
+});
+
+test.each([
+  { label: "verified", mode: "verified", saveCredential: false },
+  { label: "fixture", mode: "fixture", saveCredential: false },
+  { label: "verified demo", mode: "verified", saveCredential: true },
+  { label: "staging demo", mode: "staging-demo", saveCredential: true },
+] as const)("submits $label evidence once and resumes from the matching receipt", async ({ mode, saveCredential }) => {
   const capture = enrollmentCapture();
   const camera = cameraFrames();
   const request = new AbortController();
@@ -136,28 +160,35 @@ test.each([
       expect(identity).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
       return { challengeId: CHALLENGE_ID, proofCbor: proof };
     };
+    const signup = mode === "verified" ? { mode, authorize, saveCredential: saveCredential ? true as const : undefined } : { mode };
     const run = createPoseGuardEnrollment(session, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
-      ...(testMode ? { testMode } : { testMode, authorize, saveCredential: saveCredential ? true : undefined }),
+      ...signup,
     }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
     await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
     await expect(run(video, signal, () => {})).resolves.toBe("completed");
-    expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: testMode ? 0 : 1 });
+    expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: mode === "verified" ? 1 : 0 });
     expect(stored).toBe(saveCredential ? 1 : 0);
     if (saveCredential) await expect(run(video, signal, () => {})).resolves.toBe("completed");
     expect(puts).toBe(1);
     expect(polls).toBe(2);
     expect(stored).toBe(saveCredential ? 1 : 0);
     expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
-    expect(submitted.header).toBe(testMode ? btoa("poseguard test attestation") : capture.attestation_header);
+    expect(submitted.header).toBe(mode === "fixture" ? btoa("poseguard test attestation") : capture.attestation_header);
     for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);
-    expect(submitted.body?.get("world_id_challenge_id")).toBe(testMode ? "00000000-0000-4000-8000-000000000001" : CHALLENGE_ID);
+    const sentChallenge = submitted.body?.get("world_id_challenge_id");
     const sentProof = submitted.body?.get("world_id_ownership_proof");
-    expect(sentProof).toBeInstanceOf(File);
-    expect(new Uint8Array(await (sentProof as File).arrayBuffer())).toEqual(testMode ? Uint8Array.of(0xa0) : Uint8Array.of(0xa1, 0x01, 0x02));
+    if (mode === "staging-demo") {
+      expect(sentChallenge).toBeNull();
+      expect(sentProof).toBeNull();
+    } else {
+      expect(sentChallenge).toBe(mode === "verified" ? CHALLENGE_ID : "00000000-0000-4000-8000-000000000001");
+      expect(sentProof).toBeInstanceOf(File);
+      expect(new Uint8Array(await (sentProof as File).arrayBuffer())).toEqual(mode === "verified" ? Uint8Array.of(0xa1, 0x01, 0x02) : Uint8Array.of(0xa0));
+    }
     expect(bundle.encryptedCustody).toEqual(new Uint8Array(2));
   } finally {
     await server.stop(true);
@@ -182,7 +213,7 @@ test.each([
   const run = createPoseGuardEnrollment(session, {
     policy: { endpoint: "wss://tee.test", releases: [] },
     endpoint: "https://signup.test/api/v2/identity",
-    testMode: true,
+    mode: "fixture",
   }, signal, async () => { throw new Error("Camera must wait for enrollment preparation."); });
 
   await expect(run({} as HTMLVideoElement, signal, state => updates.push(state.title))).rejects.toThrow(hint);
@@ -204,7 +235,7 @@ test("reports a center quality rejection before authorizing submission", async (
   const run = createPoseGuardEnrollment(session, {
     policy: { endpoint: "wss://tee.test", releases: [] },
     endpoint: "https://signup.test/api/v2/identity",
-    testMode: false,
+    mode: "verified",
     async authorize() { throw new Error("The rejected batch cannot be submitted."); },
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
 
