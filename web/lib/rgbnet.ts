@@ -8,9 +8,9 @@ export type ModelOutput = { dims: readonly number[]; data: Float32Array }
 // fast_image_resize uses fixed-kernel bilinear interpolation, quantized weights,
 // and rounds the vertical u8 pass before the horizontal pass. Canvas resizing
 // is browser-dependent and does not reproduce this operation.
-function axisWeights(size: number) {
-	const weights = Array.from({ length: INPUT_SIZE }, (_, i) => {
-		const center = ((i + 0.5) * size) / INPUT_SIZE - 0.5
+export function resizeAxisWeights(size: number, outputSize: number) {
+	const weights = Array.from({ length: outputSize }, (_, i) => {
+		const center = ((i + 0.5) * size) / outputSize - 0.5
 		const left = Math.max(0, Math.min(size - 1, Math.floor(center)))
 		const right = Math.max(0, Math.min(size - 1, Math.floor(center) + 1))
 		const fraction = left === right ? 0 : center - Math.floor(center)
@@ -34,8 +34,8 @@ export function prepareRgbnet(rgba: Uint8ClampedArray, width: number, height: nu
 		rgba.length !== width * height * 4
 	)
 		throw new Error('Invalid RGBNet frame dimensions or RGBA buffer')
-	const xs = axisWeights(width),
-		ys = axisWeights(height)
+	const xs = resizeAxisWeights(width, INPUT_SIZE),
+		ys = resizeAxisWeights(height, INPUT_SIZE)
 	const plane = INPUT_SIZE * INPUT_SIZE
 	const output = new Float32Array(3 * plane)
 	const means = [104, 117, 123]
@@ -174,12 +174,17 @@ export function faceGuidance(faces: FaceDetection[], width: number, height: numb
 	const [x1, y1, x2, y2] = faces[0].box
 	const left = (x1 * width - sx) / sw, right = (x2 * width - sx) / sw
 	const top = (y1 * height - sy) / sh, bottom = (y2 * height - sy) / sh
-	const { minRelativeSize, maxRelativeSize, minResolutionPx, edgeMargin } = ENGINE_FRAMING_V1
+	const { maxRelativeSize, edgeMargin } = ENGINE_FRAMING_V1
 	const relativeWidth = right - left, relativeHeight = bottom - top
 	// Size before edges: an oversized face also crosses the margin, and "farther" is the actionable cue.
-	if (Math.min(relativeWidth, relativeHeight) <= minRelativeSize) return 'Move closer'
-	if (relativeWidth * sw <= minResolutionPx || relativeHeight * sh <= minResolutionPx) return 'Move closer'
+	if (isFaceTooSmall(relativeWidth, relativeHeight, sw, sh)) return 'Move closer'
 	if (Math.max(relativeWidth, relativeHeight) >= maxRelativeSize) return 'Move farther away'
 	if (left < edgeMargin || top < edgeMargin || right > 1 - edgeMargin || bottom > 1 - edgeMargin) return 'Center your face'
 	return 'Face positioned'
+}
+
+export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {
+	const { minRelativeSize, minResolutionPx } = ENGINE_FRAMING_V1
+	return Math.min(relativeWidth, relativeHeight) <= minRelativeSize ||
+		Math.min(relativeWidth * imageWidth, relativeHeight * imageHeight) <= minResolutionPx
 }

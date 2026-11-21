@@ -4,6 +4,10 @@ export type ProtocolEnvironment = "staging" | "production";
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
   readonly endpoint: string;
+  /** Same-origin ownership proof provider for verified submission. */
+  readonly authorizationPath?: `/${string}`;
+  /** Browser-accessible PVS enrollment challenge endpoint for verified enrollment. */
+  readonly ownershipChallengeUrl?: string;
   /** Accepted Nitro measurements; more than one entry only while a release rolls out. */
   readonly releases: readonly Readonly<{ pcr0: string; pcr1: string; pcr2: string }>[];
 }
@@ -48,7 +52,14 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
       "https://indexer.us.id-infra.worldcoin.dev",
       ...oprfNodes("staging.world.oprf.taceo.network"),
     ]),
-    selfieEnrollment: null,
+    selfieEnrollment: {
+      endpoint: "wss://selfie-enrollment-stage.worldcoin.dev/v1/embeddings",
+      releases: [{
+        pcr0: "9eb2deac20165ce48d08e196bc362b8c6db69cae17be58855a05cf27193d739d36a77eb285eeab017d400b61597e808d",
+        pcr1: "f70809d1f2a77517b2539960493b9e8d4bb6e2eb7bbd512f0d7ceca101f1b2d54ccdd4d4ea5ab21b872f2face6c1c16b",
+        pcr2: "8d16d33334c16c603540085e85d5e14c079cc5488bc7c80876762cf2f231c375a1ac641a1e5ab8f22fe964fd73386a67",
+      }],
+    },
   }),
   production: Object.freeze({
     appOrigin: "https://web.world.org",
@@ -74,12 +85,22 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee];
+  const challengeUrl = environment === "staging" ? config.selfieEnrollment?.ownershipChallengeUrl : undefined;
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
+    ...(challengeUrl ? [new URL(challengeUrl).href] : []),
+  ];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {
   if (value === "staging" || value === "production") return value;
   throw new Error("APP_ENV must be staging or production.");
+}
+
+export function parsePoseGuardTestMode(value: unknown, environment: ProtocolEnvironment): boolean {
+  if (value === undefined || value === "false") return false;
+  if (value !== "true") throw new Error("VITE_POSEGUARD_TEST_MODE must be true or false.");
+  if (environment !== "staging") throw new Error("PoseGuard test mode requires a staging build.");
+  return true;
 }
 
 /** Validate where the configured build is served; the hostname never selects its network. */

@@ -1,3 +1,4 @@
+import type { PoseDiagnostics, PoseTarget } from "./poseguard/types";
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
 import { faceGuidance, previewCrop } from "./rgbnet";
@@ -6,11 +7,14 @@ import { faceGuidance, previewCrop } from "./rgbnet";
 export const CAPTURE_TIMEOUT_MS = 30_000;
 
 export type CaptureState = {
-  phase: "starting" | "framing" | "holding" | "capturing" | "complete" | "paused" | "error";
+  phase: "starting" | "framing" | "holding" | "capturing" | "checking" | "pending" | "complete" | "paused" | "error";
   title: string;
   hint: string;
   progress: number;
   cameraReady: boolean;
+  target?: PoseTarget | null;
+  poseStep?: { index: number; total: number };
+  poseDiagnostics?: PoseDiagnostics;
 };
 
 export type CaptureResult = {

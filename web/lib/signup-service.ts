@@ -2,10 +2,16 @@ import { abortable, pause } from './async'
 import { type EnrollmentCapture, EnrollmentCaptureSchema, isCanonicalUuid, validateEnrollmentCapture } from './enrollment-contract'
 import { EnrollmentReceiptSchema, IdentityStatusSchema, type IdentityStatusResponse, SignupServiceErrorSchema, SubmissionAcceptanceSchema } from './signup-service-contract'
 
+export interface EnrollmentAuthorization {
+	challengeId: string
+	proofCbor: Uint8Array
+}
+
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const MAX_PROOF_BYTES = 768 * 1024
 const REQUEST_TIMEOUT_MS = 10_000
 const POLLING_TIMEOUT_MS = 120_000
+const UNCONFIRMED_SUBMISSION = 'Enrollment submission could not be confirmed. Keep this capture and check its status.'
 
 export interface SignupServiceOptions {
 	/** A trusted configuration value, never a URL supplied by an enrollment response. */
@@ -42,24 +48,52 @@ export class SignupServiceError extends Error {
 	}
 }
 
-/** Each call submits once. A retry needs a fresh challenge/proof, even for the same capture. */
+/** Fetches ownership proof for the specific capture from trusted deployment configuration. */
+export async function getEnrollmentAuthorization(
+	path: string,
+	identity: EnrollmentReceipt,
+	signal: AbortSignal,
+): Promise<EnrollmentAuthorization> {
+	validateReceipt(identity)
+	const url = new URL(path, window.location.origin)
+	if (!path.startsWith('/') || url.origin !== window.location.origin || url.search || url.hash || url.username || url.password) {
+		throw new TypeError('Invalid enrollment authorization path.')
+	}
+	const value = await requestJson(url, {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(identity),
+	}, 200, { endpoint: url.href, signal })
+	if (!value || typeof value !== 'object' || !('challengeId' in value) || !isCanonicalUuid(value.challengeId) ||
+		!('proofCbor' in value) || typeof value.proofCbor !== 'string' || value.proofCbor.length > Math.ceil(MAX_PROOF_BYTES / 3) * 4) {
+		return invalidResponse()
+	}
+	const proofCbor = decodeBase64Bytes(value.proofCbor)
+	if (!proofCbor.length || proofCbor.length > MAX_PROOF_BYTES) return invalidResponse()
+	return { challengeId: value.challengeId, proofCbor }
+}
+
+/** Submits once. A verified retry requires a fresh ownership proof. */
 export async function submitEnrollment(
 	capture: EnrollmentCapture,
-	authorization: { challengeId: string; proofCbor: Uint8Array },
+	authorization: EnrollmentAuthorization | 'staging-demo',
 	options: SignupServiceOptions,
 ): Promise<EnrollmentReceipt> {
 	const parsedCapture = EnrollmentCaptureSchema.safeParse(capture)
 	if (!parsedCapture.success) throw new TypeError('Invalid TEE enrollment bundle')
 	const bundle = parsedCapture.data
 	const identity = validateEnrollmentCapture(bundle)
-	if (!isCanonicalUuid(authorization.challengeId) || !(authorization.proofCbor instanceof Uint8Array) || authorization.proofCbor.byteLength === 0 || authorization.proofCbor.byteLength > MAX_PROOF_BYTES) {
-		throw new TypeError('Enrollment authorization requires a challenge UUID and a bounded, nonempty CBOR proof.')
-	}
 	const url = endpoint(options.endpoint)
 	const body = new FormData()
 	for (const field of bundle.fields) body.append(field.name, field.value)
-	body.append('world_id_challenge_id', authorization.challengeId)
-	body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
+	if (authorization !== 'staging-demo') {
+		if (!isCanonicalUuid(authorization.challengeId) || !(authorization.proofCbor instanceof Uint8Array) || authorization.proofCbor.byteLength === 0 || authorization.proofCbor.byteLength > MAX_PROOF_BYTES) {
+			throw new TypeError('Enrollment authorization requires a challenge UUID and a bounded, nonempty CBOR proof.')
+		}
+		body.append('world_id_challenge_id', authorization.challengeId)
+		body.append('world_id_ownership_proof', new Blob([authorization.proofCbor.slice()], { type: 'application/cbor' }), 'ownership-proof.cbor')
+	}
 	try {
 		const parsed = SubmissionAcceptanceSchema.safeParse(await requestJson(url, {
 			method: 'PUT', headers: { 'X-Nitro-Attestation': bundle.attestation_header }, body,
@@ -70,7 +104,7 @@ export async function submitEnrollment(
 		if (options.signal.aborted) throw options.signal.reason
 		if (cause instanceof SignupServiceError && cause.code === 'invalid_response' && (cause.status === undefined || cause.status === 202)) {
 			throw new SignupServiceError(
-				'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+				UNCONFIRMED_SUBMISSION,
 				cause.code, true, cause.status ?? 202, { cause },
 			)
 		}
@@ -114,7 +148,7 @@ export async function getEnrollmentStatus(receipt: EnrollmentReceipt, options: S
 			return { ...identity, state: 'pending', status: enrollment.status }
 		case 'ENROLLMENT_UNIQUE_SUCCESSFUL':
 			if (typeof enrollment.credential !== 'string') return invalidResponse()
-			return { ...identity, state: 'completed', credential: credentialBytes(enrollment.credential) }
+			return { ...identity, state: 'completed', credential: decodeBase64Bytes(enrollment.credential) }
 		case 'ENROLLMENT_NOT_UNIQUE': return { ...identity, state: 'duplicate' }
 		case 'ENROLLMENT_FAILED': return { ...identity, state: 'failed' }
 	}
@@ -137,7 +171,7 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 	signal.throwIfAborted()
 	let responseStatus: number | undefined
 	try {
-		const response = await abortable(fetch(url, { ...init, signal, credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }), signal)
+		const response = await abortable(fetch(url, { ...init, signal, credentials: init.credentials ?? 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }), signal)
 		responseStatus = response.status
 		const value = await readJson(response, signal, response.status !== expectedStatus)
 		if (response.status !== expectedStatus) {
@@ -158,11 +192,14 @@ async function requestJson(url: URL, init: RequestInit, expectedStatus: number, 
 			if (cause.status !== undefined || responseStatus === undefined) throw cause
 			throw new SignupServiceError(`Signup service returned an invalid enrollment response (HTTP ${responseStatus}).`, cause.code, retryableStatus, responseStatus)
 		}
-		const submission = init.method === 'PUT'
+		const messages = {
+			PUT: UNCONFIRMED_SUBMISSION,
+			POST: 'Could not get enrollment authorization.',
+			GET: 'Enrollment status could not be checked. Resume polling with this receipt.',
+		}
+		const operation = init.method === 'PUT' || init.method === 'POST' ? init.method : 'GET'
 		throw new SignupServiceError(
-			submission
-				? 'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.'
-				: 'Enrollment status could not be checked. Resume polling with this receipt.',
+			messages[operation],
 			timeout.aborted ? 'request_timeout' : 'request_failed', responseStatus === undefined || responseStatus === expectedStatus || retryableStatus, responseStatus, { cause },
 		)
 	}
@@ -203,7 +240,7 @@ async function readJson(response: Response, signal: AbortSignal, allowEmpty = fa
 	}
 }
 
-function credentialBytes(value: string): Uint8Array {
+function decodeBase64Bytes(value: string): Uint8Array {
 	if (!(/^[A-Za-z0-9+/]+={0,2}$/.test(value) || /^[A-Za-z0-9_-]+={0,2}$/.test(value))) return invalidResponse()
 	const standard = value.replace(/-/g, '+').replace(/_/g, '/')
 	try {

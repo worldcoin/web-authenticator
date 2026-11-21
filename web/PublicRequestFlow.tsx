@@ -2,15 +2,18 @@ import { lazy, Suspense, use, useCallback, useEffect, useLayoutEffect, useRef, u
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
 import { ConsentContinuationContext } from "./AppShell";
-import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
+import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
-import { walletOpenErrorMessage } from "./lib/wallet-errors";
+import { WalletOpenError, walletOpenErrorMessage } from "./lib/wallet-errors";
+import type { WalletKit } from "./lib/walletkit";
+import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
+import { configureDemoEnrollment, configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -21,12 +24,18 @@ const COMPLETION_STEPS = {
 const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
 /** App requests hold a temporary capture; saved authenticator access lives on its own route. */
-export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onTransitionChange }: {
+export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onTransitionChange, demo }: {
   incoming: IncomingRequest | null;
   loading: boolean;
   failed: boolean;
   expired: boolean;
   onDispose: () => void;
+  demo?: {
+    captureOnly: boolean;
+    complete: (source: DemoProofSource) => void;
+    captureComplete: () => void;
+    back: () => void;
+  };
   onTransitionChange: (active: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
@@ -102,6 +111,23 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
+  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource) => {
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
+    checkExpiry(request.proof);
+    let proof: string;
+    try {
+      proof = await abortable(wallet.generateProof(JSON.stringify(request.proof)), deadline);
+      await request.deliver(proof, deadline);
+    } catch {
+      deadline.throwIfAborted();
+      throw new WalletOpenError("Could not send the proof. Try again.");
+    }
+    deadline.throwIfAborted();
+    stop();
+    onDispose();
+    demo?.complete(source);
+  }, [demo, onDispose, stop]);
+
   const start = useCallback(async () => {
     if (loading) { pendingStart.current = true; return; }
     pendingStart.current = false;
@@ -121,7 +147,39 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }), deadline);
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
-      setFlow({ stage: "capture" });
+      if (demo) {
+        const ready = await abortable(current.ready, deadline);
+        if ("error" in ready) throw ready.error;
+        if (!demo.captureOnly) {
+          const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
+          checkExpiry(incoming.proof);
+          if (credentials.satisfied) {
+            setOpenProgress("Preparing proof…");
+            await completeDemo(incoming, ready.wallet, deadline, "saved");
+            return;
+          }
+          if (!credentials.canEnrollSelfie) {
+            throw new WalletOpenError("This authenticator can’t complete this Selfie Check.");
+          }
+        }
+        const enroll = configureDemoEnrollment(current, controller.signal);
+        setFlow({ stage: "capture", enroll: async (video, signal, update) => {
+          const result = await enroll(video, signal, update);
+          if (result === "captured") {
+            checkExpiry(incoming.proof);
+            stop();
+            onDispose();
+            demo.captureComplete();
+          } else if (result === "completed") {
+            update({ phase: "checking", title: "Preparing proof…", hint: "", progress: 1, cameraReady: false });
+            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
+          }
+          return result;
+        } });
+        return;
+      }
+      const signup = configuredPoseGuardSignup();
+      setFlow({ stage: "capture", enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
         stop();
@@ -139,7 +197,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         }
       }
     } finally { setOpening(false); }
-  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop]);
+  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, demo, completeDemo]);
 
   useEffect(() => {
     if (!continuationRef) return;
@@ -200,13 +258,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   </div>;
 
   if (flow.stage === "setup-error") return <div className={requestFrame}>
-    <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onRetry={() => {
+    <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onReturn={demo?.back} onRetry={() => {
       completing.current = false; setOpenError(undefined); setFlow({ stage: "intro" });
     }} />
   </div>;
 
   if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
-    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} returnUrl={flow.returnUrl} detail={cancelError} />
+    <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} returnUrl={flow.returnUrl} detail={cancelError} onReturn={demo?.back} />
   </div>;
 
   if (flow.stage === "confirmation" || flow.stage === "confirmation-exit") return <div className={`${requestFrame} ${sequence}`} data-stage={flow.stage} data-paused={paused}>
@@ -215,20 +273,21 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
   // Expiry unmounts an unfinished capture. Accepted completion has already disposed the request.
   if ((flow.stage === "capture" || flow.stage === "preparing") && expired) return <div className={requestFrame}>
-    <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} />
+    <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} onReturn={demo?.back} />
   </div>;
 
   if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={() => void complete()} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
+      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={flow.enroll ? undefined : () => void complete()} enroll={flow.enroll} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
     </Suspense>
   </div>;
 
   return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
+      onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
-      rp={incoming?.label}
+      rp={demo && incoming ? "Web Authenticator" : incoming?.label}
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
       busy={false}
