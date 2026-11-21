@@ -92,10 +92,10 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
         enrollmentFinished.current = outcome !== "pending";
         const title = {
           captured: "PoseGuard captures accepted",
-          completed: "Staging enrollment completed",
+          completed: "Enrollment complete",
           duplicate: "Face already enrolled",
-          failed: "Staging enrollment failed",
-          pending: "Enrollment is still pending",
+          failed: "Enrollment failed",
+          pending: "Enrollment pending",
         }[outcome];
         setState({ phase: outcome === "pending" ? "pending" : "complete", title, hint: "", progress: outcome === "failed" || outcome === "duplicate" ? 0 : 1, cameraReady: false });
       }).catch(error => {
@@ -163,7 +163,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, diagnostic
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
         {(!enroll || !complete) && <button className={RETRY} type="button" onClick={restart}>
-          {state.phase === "pending" ? "Resume status check" : complete ? "Retake selfie" : "Try again"}
+          {state.phase === "pending" ? "Check status" : complete ? "Retake selfie" : "Try again"}
         </button>}
         {complete && <button className={RETRY} type="button" onClick={close}>{backLabel}</button>}
       </div>}

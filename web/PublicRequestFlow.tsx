@@ -120,7 +120,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       await request.deliver(proof, deadline);
     } catch {
       deadline.throwIfAborted();
-      throw new WalletOpenError("Could not send the Selfie Check proof. Try again.");
+      throw new WalletOpenError("Could not send the proof. Try again.");
     }
     deadline.throwIfAborted();
     stop();
@@ -154,12 +154,12 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
           checkExpiry(incoming.proof);
           if (credentials.satisfied) {
-            setOpenProgress("Preparing your Selfie Check proof…");
+            setOpenProgress("Preparing proof…");
             await completeDemo(incoming, ready.wallet, deadline, "saved");
             return;
           }
           if (!credentials.canEnrollSelfie) {
-            throw new WalletOpenError("This wallet cannot satisfy the demo's Selfie Check request.");
+            throw new WalletOpenError("This authenticator can’t complete this Selfie Check.");
           }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
@@ -171,7 +171,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
             onDispose();
             demo.captureComplete();
           } else if (result === "completed") {
-            update({ phase: "checking", title: "Preparing your Selfie Check proof", hint: "", progress: 1, cameraReady: false });
+            update({ phase: "checking", title: "Preparing proof…", hint: "", progress: 1, cameraReady: false });
             await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
           }
           return result;
@@ -285,8 +285,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
-      selfieDescription={demo?.captureOnly ? "Create or unlock your authenticator, then follow the PoseGuard directions."
-        : demo ? "Create or unlock your authenticator to continue." : undefined}
       onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
       rp={demo && incoming ? "Web Authenticator" : incoming?.label}

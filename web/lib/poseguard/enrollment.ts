@@ -86,7 +86,7 @@ export function configureDemoEnrollment(session: RequestWalletSession, signal: A
     async authorize(identity, signal, wallet, factor) {
       const challenge = await fetchEnrollmentChallenge({ endpoint: challengeUrl, signal });
       const remaining = Math.min(120_000, Date.parse(challenge.expires_at) - Date.now());
-      if (remaining <= 0) throw new Error("The ownership challenge expired. Start a new check.");
+      if (remaining <= 0) throw new Error("Ownership challenge expired. Start a new check.");
       const deadline = AbortSignal.any([signal, AbortSignal.timeout(remaining)]);
       const proofCbor = await abortable(wallet.proveCredentialSub(challenge.nonce, ENROLLMENT_CONTEXT, factor, identity.sub), deadline);
       try {
@@ -148,13 +148,13 @@ export function createPoseGuardEnrollment(
         }
       }
 
-      update(checking("Checking signup-service enrollment status"));
+      update(checking("Checking enrollment status"));
       try {
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state === "completed") {
           try {
             if (owner) {
-              update(checking("Saving your Selfie Check credential"));
+              update(checking("Saving credential"));
               const deadline = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
               await abortable(owner.wallet.storeCredential(result.credential, owner.factor, undefined, 11n), deadline);
               saved = true;
@@ -184,7 +184,7 @@ async function capturePoseGuard(
   prepareCamera: typeof preparePoseGuardCamera,
 ) {
   signal.throwIfAborted();
-  update({ ...INITIAL_CAPTURE_STATE, title: "Preparing your enrollment", hint: "" });
+  update({ ...INITIAL_CAPTURE_STATE, title: "Preparing enrollment", hint: "" });
   const wallet = await logPoseGuardStep("wallet_ready", async () => {
     const state = await abortable(session.ready, signal);
     if ("error" in state) throw state.error;
@@ -273,7 +273,7 @@ async function prepareEnrollmentCredential(wallet: WalletKit, signal: AbortSigna
       return await prepare();
     } catch (error) {
       if (!isIndexerLeafOutOfRange(error)) throw error;
-      throw new WalletOpenError("The staging indexer could not find your account in its proof tree yet. Try again in a moment.", { cause: error });
+      throw new WalletOpenError("World ID is syncing. Try again in a moment.", { cause: error });
     }
   });
 }
@@ -291,13 +291,13 @@ function teeRejection(result: SelfieCaptureFailure): Error {
   if (result.reason === "challenge") {
     const step = result.index + 2;
     logPoseGuardEvent("poseguard_rejected", { step, reason: result.challengeReason });
-    return new Error(`The staging TEE rejected the capture at step ${step}. Try again.`);
+    return new Error(`Capture rejected at step ${step}. Try again.`);
   }
   logPoseGuardEvent("poseguard_rejected", { reason: result.reason });
   if (result.reason === "quality_rejected") {
-    return new Error("The center frame did not pass the staging TEE’s quality check. Try again with your face evenly lit and fully in view.");
+    return new Error("Center frame failed the quality check. Keep your face in view and try again.");
   }
-  return new Error("The staging TEE could not accept these PoseGuard captures. Try again.");
+  return new Error("PoseGuard rejected the captures. Try again.");
 }
 
 function clearImages(images: PoseGuardImages) {

@@ -196,7 +196,7 @@ test.each([
 });
 
 test.each([
-  { message: "Leaf index out of range.", attempts: 2, hint: "The staging indexer could not find your account in its proof tree yet." },
+  { message: "Leaf index out of range.", attempts: 2, hint: "World ID is syncing." },
   { message: "Leaf index cannot be 0.", attempts: 1, hint: "Leaf index cannot be 0." },
 ])("bounds enrollment preparation retries for $message", async ({ message, attempts, hint }) => {
   const body = JSON.stringify({ code: "invalid_leaf_index", message });
@@ -239,5 +239,5 @@ test("reports a center quality rejection before authorizing submission", async (
     async authorize() { throw new Error("The rejected batch cannot be submitted."); },
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
 
-  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow("The center frame did not pass");
+  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow("Center frame failed the quality check.");
 });

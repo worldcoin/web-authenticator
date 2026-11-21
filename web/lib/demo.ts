@@ -15,7 +15,7 @@ export type DemoAttempt = {
 
 export async function startDemo(signal: AbortSignal): Promise<DemoAttempt> {
   const config = await postDemo(DEMO_REQUEST_PATH, signal);
-  if (!isDemoRequest(config)) throw new Error("The server returned an invalid demo request.");
+  if (!isDemoRequest(config)) throw new Error("Invalid demo request.");
 
   const { IDKit, selfieCheck } = await import("@worldcoin/idkit-core");
   signal.throwIfAborted();
@@ -30,10 +30,10 @@ export async function startDemo(signal: AbortSignal): Promise<DemoAttempt> {
     override_connect_base_url: new URL("/verify", window.location.origin).href,
   }).preset(selfieCheck(), { timeout: 15_000, signal }).catch(() => {
     signal.throwIfAborted();
-    throw new Error("The staging bridge could not create this request. Try again.");
+    throw new Error("Could not create the staging request. Try again.");
   });
   const connector = parseConnector(request.connectorURI);
-  if (connector?.requestId !== request.requestId) throw new Error("IDKit returned an invalid connector.");
+  if (connector?.requestId !== request.requestId) throw new Error("Invalid IDKit connector.");
   const url = new URL(request.connectorURI);
   return { config, request, returnUrl, query: url.search.slice(1), bridgeId: connector.requestId };
 }
@@ -50,15 +50,16 @@ export function isDemoHandoff(attempt: DemoHandoff, incoming: IncomingRequest): 
 
 export async function verifyDemo(attempt: DemoAttempt, signal: AbortSignal): Promise<void> {
   const timeout = attempt.config.rp_context.expires_at * 1000 - Date.now();
-  if (timeout <= 0) throw new Error("This demo request expired. Start a fresh check.");
+  const expired = "Request expired. Create a new request.";
+  if (timeout <= 0) throw new Error(expired);
   const completion = await attempt.request.pollUntilCompletion({ timeout, signal });
   if (!completion.success) {
-    throw new Error(completion.error === "timeout" ? "This demo request expired. Start a fresh check."
-      : completion.error === "verification_rejected" ? "The check was cancelled."
-        : "The demo could not receive a proof. Start a fresh check.");
+    throw new Error(completion.error === "timeout" ? expired
+      : completion.error === "verification_rejected" ? "Check cancelled."
+        : "Could not receive the proof.");
   }
   const result = await postDemo(DEMO_VERIFY_PATH, signal, { rp_context: attempt.config.rp_context, result: completion.result });
-  if (!isRecord(result) || result.success !== true) throw new Error("The relying party could not verify this proof.");
+  if (!isRecord(result) || result.success !== true) throw new Error("Proof verification failed.");
 }
 
 async function postDemo(path: string, signal: AbortSignal, body?: object): Promise<unknown> {
@@ -71,9 +72,9 @@ async function postDemo(path: string, signal: AbortSignal, body?: object): Promi
   });
   if (!response.ok) {
     void response.body?.cancel().catch(() => {});
-    if (response.status === 503) throw new Error("The staging demo relying party is not configured.");
-    if (response.status === 422) throw new Error("The relying party rejected this proof.");
-    throw new Error("The demo request could not be completed.");
+    if (response.status === 503) throw new Error("Demo signing configuration is missing.");
+    if (response.status === 422) throw new Error("The relying party rejected the proof.");
+    throw new Error("Demo request failed.");
   }
   return response.json() as Promise<unknown>;
 }

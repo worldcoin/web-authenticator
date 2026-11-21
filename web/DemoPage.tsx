@@ -74,7 +74,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     if (!next) return;
     if (next.config.rp_context.expires_at * 1000 <= Date.now()) {
       stop();
-      setState({ phase: "error", message: "This request expired. Create a fresh request." });
+      setState({ phase: "error", message: "Request expired. Create a new request." });
       return;
     }
     setState({ phase: "waiting" });
@@ -117,8 +117,7 @@ export function DemoPage() {
       <div className={screenContent}>
         <div className={centeredLayout}>
           <div className={messageBlock}>
-            <h1 className={screenTitle}>Open the demo on localhost</h1>
-            <p className={body}>Use the localhost hostname so your browser can create a passkey.</p>
+            <h1 className={screenTitle}>Use localhost for passkeys</h1>
           </div>
         </div>
       </div>
@@ -133,14 +132,12 @@ export function DemoPage() {
     const query = demo.open();
     if (query) void navigate({ to: "/verify", search: { query } });
   };
-  const status = demoStatus(demo.state);
-
   return <section className={requestFrame} aria-label="Selfie Check demo">
     <div className={screenContent}>
       <div className={centeredLayout}>
         <div className={`${messageBlock} gap-4`}>
-          <h1 className={screenTitle}>{status.title}</h1>
-          <p className={body} role="status">{status.description}</p>
+          <h1 className={screenTitle} aria-live="polite">{demoTitle(demo.state)}</h1>
+          {phase === "captured" && <p className={body}>Use the staging demo to test signup-service.</p>}
           {demo.state.phase === "error" && <p className={errorCopy} role="alert">{demo.state.message}</p>}
           <DemoRequestDetails attempt={demo.attempt} expanded={ready} />
         </div>
@@ -180,28 +177,17 @@ function DemoRequestDetails({ attempt, expanded }: { attempt?: DemoHandoff; expa
   </details>;
 }
 
-function demoStatus(state: DemoState): { title: string; description: string } {
+function demoTitle(state: DemoState): string {
   if (state.phase === "verified") {
-    return state.source === "issued"
-      ? { title: "New credential verified", description: "You completed PoseGuard, saved the issued Selfie Check credential, and sent a proof the relying party verified." }
-      : { title: "Saved credential verified", description: "The relying party verified a proof from the Selfie Check credential already in your wallet." };
+    return state.source === "issued" ? "New credential verified" : "Saved credential verified";
   }
-  if (state.phase === "captured") {
-    return {
-      title: "PoseGuard captures accepted",
-      description: "The staging TEE accepted all four captures. Signup-service submission was skipped on localhost.",
-    };
-  }
-  if (state.phase === "verifying") return { title: "Verifying your proof", description: "Waiting for the staging relying party." };
-  if (state.phase === "ready") return { title: "Selfie Check request created", description: "Review the request below, then open Web Authenticator." };
-  if (state.phase === "waiting") return { title: "Check in progress", description: "Complete the request in Web Authenticator." };
-  return {
-    title: "Try Web Authenticator",
-    description: state.phase === "starting" ? "Creating a World ID request…"
-      : "Create or unlock an authenticator and complete a Selfie Check request on staging.",
-  };
+  if (state.phase === "captured") return "PoseGuard captures accepted";
+  if (state.phase === "verifying") return "Verifying proof…";
+  if (state.phase === "ready") return "Selfie Check request created";
+  if (state.phase === "waiting") return "Check in progress";
+  return "Selfie Check demo";
 }
 
 function demoError(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : "The demo could not be completed. Try again.";
+  return error instanceof Error && error.message ? error.message : "Demo failed. Try again.";
 }

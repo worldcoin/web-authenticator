@@ -222,7 +222,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
-    expect(view.getByText(/signup-service submission was skipped on localhost/i)).toBeTruthy();
+    expect(view.getByText("Use the staging demo to test signup-service.")).toBeTruthy();
     expect(configure).toHaveBeenCalledTimes(1);
     expect(captureMock).not.toHaveBeenCalled();
     expect(f.calls.terminated).toBe(1);

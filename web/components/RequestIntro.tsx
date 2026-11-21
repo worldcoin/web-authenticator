@@ -1,4 +1,4 @@
-import { actions, body, centeredLayout, copy, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, screenTitle } from "./styles";
+import { actions, body, centeredLayout, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, screenTitle } from "./styles";
 
 export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | "unsupported";
 
@@ -9,7 +9,7 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * confirmed. Expired, invalid and unsupported requests end here: there is no
  * way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false, selfieDescription, onReturn }: {
+export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false, onReturn }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
@@ -19,7 +19,6 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
   onStart: () => void;
   onCancel: () => void;
   selfieOnly?: boolean;
-  selfieDescription?: string;
   onReturn?: () => void;
 }) {
   const open = state === "verifying" || state === "ready";
@@ -35,7 +34,6 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
         {open && selfieOnly ? <>
           <h1 className={screenTitle}>Complete a Selfie Check</h1>
           <p className={body}>{state === "ready" ? `${rp} is requesting a Selfie Check.` : "Checking the app’s request…"}</p>
-          <p className={`${copy} text-[15px] text-foreground-secondary`}>{selfieDescription ?? "Use your camera to capture a selfie. This preview does not submit a verification."}</p>
         </> : open ? <h1 className={screenTitle}>
           {state === "ready"
             ? rp
