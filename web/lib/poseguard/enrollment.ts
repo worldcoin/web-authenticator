@@ -109,6 +109,7 @@ export function createPoseGuardEnrollment(
   let receipt: EnrollmentReceipt | undefined;
   let owner: { wallet: WalletKit; factor: string } | undefined;
   let saved = false;
+  let savePromise: Promise<void> | undefined;
   let inFlight = false;
   return async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
@@ -118,6 +119,10 @@ export function createPoseGuardEnrollment(
     try {
       signal.throwIfAborted();
       if (saved) return "completed";
+      if (savePromise) {
+        update(checking("Saving credential"));
+        return await waitForSave(savePromise, signal);
+      }
       if (!receipt) {
         const { capture, identity, wallet, blindingFactor } =
           await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera);
@@ -151,20 +156,27 @@ export function createPoseGuardEnrollment(
       update(checking("Checking enrollment status"));
       try {
         const result = await pollEnrollment(receipt, signupOptions);
-        if (result.state === "completed") {
-          try {
-            if (owner) {
-              update(checking("Saving credential"));
-              const deadline = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
-              await abortable(owner.wallet.storeCredential(result.credential, owner.factor, undefined, 11n), deadline);
-              saved = true;
-              owner = undefined;
-            }
-          } finally {
-            result.credential.fill(0);
-          }
+        if (result.state !== "completed") return result.state;
+        const { credential } = result;
+        if (!owner) {
+          credential.fill(0);
+          return "completed";
         }
-        return result.state;
+        const { wallet, factor } = owner;
+        // The write can outlive the wait and owns the credential bytes until it settles.
+        savePromise = (async () => {
+          try {
+            update(checking("Saving credential"));
+            signal.throwIfAborted();
+            await wallet.storeCredential(credential, factor, undefined, 11n);
+            saved = true;
+            owner = undefined;
+            savePromise = undefined;
+          } finally {
+            credential.fill(0);
+          }
+        })();
+        return await waitForSave(savePromise, signal);
       } catch (error) {
         if (error instanceof SignupServiceError && error.code === "polling_timeout") return "pending";
         throw error;
@@ -173,6 +185,19 @@ export function createPoseGuardEnrollment(
       inFlight = false;
     }
   };
+
+  async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
+    const timeout = AbortSignal.timeout(30_000);
+    try {
+      await abortable(operation, AbortSignal.any([signal, timeout]));
+      return "completed";
+    } catch (error) {
+      signal.throwIfAborted();
+      if (timeout.aborted && error === timeout.reason) return "pending";
+      savePromise = undefined;
+      throw error;
+    }
+  }
 }
 
 async function capturePoseGuard(

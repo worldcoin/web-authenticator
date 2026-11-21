@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
@@ -191,6 +191,84 @@ test.each([
     }
     expect(bundle.encryptedCustody).toEqual(new Uint8Array(2));
   } finally {
+    await server.stop(true);
+  }
+});
+
+test.each(["succeeds", "fails"] as const)("resumes a credential save that %s after its wait times out", async outcome => {
+  const camera = cameraFrames();
+  const capture = enrollmentCapture();
+  const write = Promise.withResolvers<void>();
+  const deadline = new AbortController();
+  const originalTimeout = AbortSignal.timeout;
+  let saveWaits = 0;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(ms =>
+    ms === 30_000 && saveWaits++ === 0 ? deadline.signal : originalTimeout(ms),
+  );
+  let puts = 0;
+  let polls = 0;
+  let writes = 0;
+  let credentialBytes: Uint8Array | undefined;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(incoming) {
+      if (incoming.method === "PUT") {
+        puts++;
+        return Response.json({}, { status: 202 });
+      }
+      polls++;
+      return Response.json({
+        status: "VERIFIED",
+        enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_UNIQUE_SUCCESSFUL", credential: "AQI=" },
+      });
+    },
+  });
+  try {
+    const wallet = {
+      async prepareCredential() { return { sub: "0x1f", blindingFactor: "0x2f" }; },
+      async enrollSelfieWithPoseGuard(_config: string, _sub: string, _key: Uint8Array, capturePose: PoseGuardCapture, signal: AbortSignal) {
+        await capturePose(prompt, signal);
+        return {
+          status: "success",
+          enrollment: { fields: capture.fields, attestationHeader: capture.attestation_header, encryptedCustody: Uint8Array.of(1) },
+        } as const;
+      },
+      async storeCredential(bytes: Uint8Array) {
+        writes++;
+        credentialBytes = bytes;
+        queueMicrotask(() => deadline.abort(new DOMException("Save wait timed out", "TimeoutError")));
+        await write.promise;
+      },
+    };
+    const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
+    const signal = new AbortController().signal;
+    const run = createPoseGuardEnrollment(session, {
+      policy: { endpoint: "wss://tee.test", releases: [] },
+      endpoint: new URL("/api/v2/identity", server.url).href,
+      mode: "staging-demo",
+    }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+    const attempt = () => run({} as HTMLVideoElement, signal, () => {});
+
+    await expect(attempt()).resolves.toBe("pending");
+    expect(credentialBytes).toEqual(Uint8Array.of(1, 2));
+
+    if (outcome === "succeeds") {
+      const retry = attempt();
+      write.resolve();
+      await expect(retry).resolves.toBe("completed");
+      await expect(attempt()).resolves.toBe("completed");
+    } else {
+      const error = new Error("The wallet rejected the save");
+      write.reject(error);
+      await Bun.sleep(0);
+      await expect(attempt()).rejects.toBe(error);
+    }
+    expect({ puts, polls, writes }).toEqual({ puts: 1, polls: 1, writes: 1 });
+    expect(credentialBytes).toEqual(new Uint8Array(2));
+  } finally {
+    timeout.mockRestore();
+    write.resolve();
     await server.stop(true);
   }
 });
