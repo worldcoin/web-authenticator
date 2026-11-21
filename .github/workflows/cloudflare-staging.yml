@@ -38,10 +38,25 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - name: Fetch pinned HeadPose model
+        env:
+          POSEGUARD_HEAD_POSE_READ_TOKEN: ${{ secrets.POSEGUARD_HEAD_POSE_READ_TOKEN }}
+        run: |
+          if [[ -z "$POSEGUARD_HEAD_POSE_READ_TOKEN" ]]; then
+            echo "::error::Set POSEGUARD_HEAD_POSE_READ_TOKEN in the staging-cloudflare environment."
+            exit 1
+          fi
+          mkdir -p .artifacts/models
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 60 --max-filesize 4224209 \
+            --header "Authorization: Bearer $POSEGUARD_HEAD_POSE_READ_TOKEN" \
+            --output .artifacts/models/head_pose.onnx \
+            https://huggingface.co/Worldcoin/HeadPose/resolve/08b25ff73998078ec3c01f5d0008c20423b1e228/onnx/head_pose.onnx
       - run: bun run build:cf
         env:
           VITE_APP_ENV: staging
           VITE_POSEGUARD_TEST_MODE: ${{ vars.VITE_POSEGUARD_TEST_MODE || 'false' }}
+          POSEGUARD_HEAD_POSE_MODEL_FILE: .artifacts/models/head_pose.onnx
       - name: Deploy the tested main commit
         run: bunx wrangler deploy --env staging --tag "$RELEASE_COMMIT"
         env:

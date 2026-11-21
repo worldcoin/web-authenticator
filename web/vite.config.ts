@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
-import { ENVIRONMENTS, parseAppEnvironment, parsePoseGuardTestMode } from "../config/environment";
+import { parseAppEnvironment, parsePoseGuardTestMode } from "../config/environment";
 import { HEAD_POSE_MODEL } from "../config/head-pose-model";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -87,10 +87,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, appRoot, "VITE_");
   const environment = parseAppEnvironment(env.VITE_APP_ENV ?? "staging");
   parsePoseGuardTestMode(env.VITE_POSEGUARD_TEST_MODE, environment);
-  const modelSource = resolve(repositoryRoot, process.env.POSEGUARD_HEAD_POSE_MODEL_FILE ?? ".artifacts/models/head_pose.onnx");
+  const modelFile = process.env.POSEGUARD_HEAD_POSE_MODEL_FILE;
+  const modelSource = resolve(repositoryRoot, modelFile ?? ".artifacts/models/head_pose.onnx");
   const plugins = [rejectServerModulesFromBrowser(), react(), tailwindcss()];
   if (environment === "staging") {
-    plugins.push(stagingHeadPoseAsset(modelSource, ENVIRONMENTS.staging.selfieEnrollment !== null));
+    plugins.push(stagingHeadPoseAsset(modelSource, modelFile !== undefined));
   }
   return {
     root: appRoot,
