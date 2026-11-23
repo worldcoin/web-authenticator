@@ -7,7 +7,7 @@ const origin = ENVIRONMENTS.staging.appOrigin;
 const bindings = {
   DEMO_APP_ID: `app_${"1".repeat(32)}` as const,
   DEMO_RP_ID: "rp_0000000000000001",
-  DEMO_RP_SIGNING_KEY: `0x${"1".padStart(64, "0")}`,
+  IDKIT_EXAMPLE_RP_SIGNING_KEY: `0x${"1".padStart(64, "0")}`,
   DEMO_VERIFY_ORIGIN: "https://staging-verifier.example",
 };
 

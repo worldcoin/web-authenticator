@@ -13,7 +13,7 @@ type DemoSettings = { appId: DemoRequest["app_id"]; rpId: string; signingKey: He
 const DemoSettingsSchema = z.object({
   DEMO_APP_ID: DemoRequestSchema.shape.app_id,
   DEMO_RP_ID: DemoRpContextSchema.shape.rp_id,
-  DEMO_RP_SIGNING_KEY: z.templateLiteral(["0x", z.string().regex(/^[a-fA-F0-9]{64}$/)]),
+  IDKIT_EXAMPLE_RP_SIGNING_KEY: z.templateLiteral(["0x", z.string().regex(/^[a-fA-F0-9]{64}$/)]),
   DEMO_VERIFY_ORIGIN: z.string().refine(value => {
     try {
       const url = new URL(value);
@@ -119,7 +119,7 @@ async function matchesIssuedRequest(context: DemoRpContext, settings: DemoSettin
 function demoSettings(bindings: object): DemoSettings | undefined {
   const parsed = DemoSettingsSchema.safeParse(bindings);
   if (!parsed.success) return;
-  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, DEMO_RP_SIGNING_KEY: signingKey, DEMO_VERIFY_ORIGIN: verifyOrigin } = parsed.data;
+  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, IDKIT_EXAMPLE_RP_SIGNING_KEY: signingKey, DEMO_VERIFY_ORIGIN: verifyOrigin } = parsed.data;
   return { appId, rpId, signingKey, verifyUrl: new URL(`/api/v4/verify/${rpId}`, verifyOrigin) };
 }
 
