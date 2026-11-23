@@ -7,7 +7,7 @@ import { faceGuidance, previewCrop } from "./rgbnet";
 export const CAPTURE_TIMEOUT_MS = 30_000;
 
 export type CaptureState = {
-  phase: "starting" | "framing" | "holding" | "capturing" | "checking" | "pending" | "complete" | "paused" | "error";
+  phase: "starting" | "framing" | "holding" | "capturing" | "captured" | "checking" | "pending" | "complete" | "paused" | "error";
   title: string;
   hint: string;
   progress: number;

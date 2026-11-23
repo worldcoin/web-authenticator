@@ -32,8 +32,15 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, beta = fal
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
+  const [capturedSteps, setCapturedSteps] = useState(0);
   const [visible, setVisible] = useState(() => !document.hidden);
   const [image, setImage] = useState<string>();
+
+  useEffect(() => {
+    if (!capturedSteps) return;
+    const timeout = setTimeout(() => setCapturedSteps(0), 400);
+    return () => clearTimeout(timeout);
+  }, [capturedSteps]);
 
   const clearImage = () => {
     if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
@@ -42,6 +49,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, beta = fal
   const restart = () => {
     controller.current?.abort();
     clearImage(); setImage(undefined);
+    setCapturedSteps(0);
     setState(INITIAL_CAPTURE_STATE); setAttempt(value => value + 1);
   };
   const close = () => { controller.current?.abort(); onClose(); };
@@ -50,6 +58,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, beta = fal
     const pause = () => {
       controller.current?.abort();
       setVisible(false); setImage(undefined);
+      setCapturedSteps(0);
       setState({ phase: "paused", title: "Your camera is off", hint: "Return to this page to start fresh.", progress: 0, cameraReady: false });
     };
     const visibility = () => {
@@ -82,6 +91,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, beta = fal
     if (enroll) {
       void enroll(video.current, active.signal, next => {
         if (active.signal.aborted) return;
+        if (next.phase === "captured" && next.poseStep) setCapturedSteps(next.poseStep.index);
         setState(next);
       }).then(outcome => {
         if (active.signal.aborted) return;
@@ -154,8 +164,13 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, beta = fal
           {complete && !transitioning && !enroll && <div className="absolute inset-0 grid place-items-center bg-[rgb(0_0_0/16%)] text-white" data-testid="selfie-complete" aria-hidden="true"><svg className="size-14 rounded-full bg-accent p-[9px]" viewBox="0 0 48 48" fill="none"><path d="m13 24 7 7 15-15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
         </div>
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
-        <CaptureProgressRing progress={state.progress} />
+        <CaptureProgressRing progress={state.progress} poseGuard={!!enroll} />
         {state.target && <PoseTargetIndicator target={state.target} />}
+        {enroll && capturedSteps > 0 && state.phase !== "error" &&
+          <span data-testid="pose-capture-confirmation" aria-hidden="true"
+            className="pointer-events-none absolute bottom-[14%] left-1/2 grid size-10 -translate-x-1/2 place-items-center rounded-full bg-accent">
+            <img className="size-6" src="/assets/figma/capture-check.svg" alt="" />
+          </span>}
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
         {(!enroll || !complete) && <button className={RETRY} type="button" onClick={restart}>

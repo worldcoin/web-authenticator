@@ -135,7 +135,7 @@ export function createPoseGuardEnrollment(
         }
         try {
           signal.throwIfAborted();
-          update(checking("Submitting to signup-service"));
+          update(checking("Submitting your captures"));
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
           if (signup.mode === "staging-demo" || (signup.mode === "verified" && signup.saveCredential)) {
@@ -245,7 +245,7 @@ async function capturePoseGuard(
           captureSignal.throwIfAborted();
         }
         images = captured;
-        update(checking("Checking your PoseGuard captures"));
+        update(checking("Checking your captures"));
         camera.close();
         return images;
       }, enrollmentSignal,

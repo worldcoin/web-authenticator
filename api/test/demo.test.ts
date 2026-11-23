@@ -63,8 +63,19 @@ test("requires an issued request and a successful upstream proof verdict", async
     ]) {
       expect((await handleDemoApi(post(DEMO_VERIFY_PATH, body), "staging", bindings)).status).toBe(400);
     }
+    const clock = spyOn(Date, "now").mockReturnValue(rp_context.expires_at * 1000);
+    try {
+      expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(400);
+    } finally {
+      clock.mockRestore();
+    }
     expect(remote).not.toHaveBeenCalled();
     expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(422);
+    for (const status of [429, 503]) {
+      remote.mockResolvedValueOnce(new Response(null, { status }));
+      const unavailable = await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings);
+      expect(unavailable.status).toBe(502);
+    }
     accepted = true;
     const response = await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings);
     expect(response.status).toBe(200);

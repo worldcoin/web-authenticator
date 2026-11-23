@@ -53,7 +53,13 @@ test.each([
     targets: [prompt.targets[0], { targetPitch: issuedPitch, targetYaw: 0 }, prompt.targets[2]],
   };
   const directions: string[] = [];
+  const confirmations: number[] = [];
   const images = await collectPoseGuardImages(challenge, new AbortController().signal, camera.readFrame, state => {
+    if (state.phase === "captured") {
+      confirmations.push(state.poseStep!.index);
+      expect(camera.encoded).toHaveLength(confirmations.length);
+      expect(state.progress).toBe(confirmations.length / 4);
+    }
     if (state.phase !== "framing" || state.poseStep?.index !== directions.length + 1) return;
     expect(state.poseStep.total).toBe(4);
     if (state.poseStep.index === 3) {
@@ -65,6 +71,7 @@ test.each([
   expect(directions).toEqual(["Look straight ahead", "Turn your head left", `Turn your head ${direction}`, "Turn your head right"]);
   expect([images.centralPng, ...images.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
   expect(camera.encoded).toEqual([2, 5, 8, 11]);
+  expect(confirmations).toEqual([1, 2, 3, 4]);
   expect(camera.released).toHaveLength(12);
 });
 
@@ -299,14 +306,18 @@ test.each([
   expect(updates.includes("Waiting for your World ID to sync")).toBe(attempts === 2);
 });
 
-test("reports a center quality rejection before authorizing submission", async () => {
+test.each([
+  { result: { status: "failed", reason: "quality_rejected" }, message: "Center frame failed the quality check." },
+  { result: { status: "failed", reason: "challenge", index: 0, challengeReason: "quality_rejected" }, message: "Capture rejected at step 2." },
+  { result: { status: "failed", reason: "challenge", index: 1, challengeReason: "quality_rejected" }, message: "Capture rejected at step 3." },
+] as const)("reports $message before authorizing submission", async ({ result, message }) => {
   const camera = cameraFrames();
   const signal = new AbortController().signal;
   const wallet = {
     async prepareCredential() { return { sub: "0x1f", blindingFactor: "0x2f" }; },
     async enrollSelfieWithPoseGuard(_config: string, _sub: string, _key: Uint8Array, capture: PoseGuardCapture, signal: AbortSignal) {
       await capture(prompt, signal);
-      return { status: "failed", reason: "quality_rejected" } as const;
+      return result;
     },
   };
   const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
@@ -317,5 +328,5 @@ test("reports a center quality rejection before authorizing submission", async (
     async authorize() { throw new Error("The rejected batch cannot be submitted."); },
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
 
-  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow("Center frame failed the quality check.");
+  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow(message);
 });

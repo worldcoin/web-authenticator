@@ -162,11 +162,13 @@ export async function collectPoseGuardImages(
           }
           if (aligned) {
             const progress = Math.min(1, heldMs / requiredMs);
-            update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
-            if (progress === 1) {
+            if (progress < 1) {
+              update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
+            } else {
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
               accepted.push(bytes);
+              update({ ...phase, phase: "captured", hint: "", progress: accepted.length / steps.length });
               logPoseGuardEvent("poseguard_target", {
                 status: "captured", step: phase.poseStep.index,
                 durationMs: Math.round(performance.now() - shownAt),

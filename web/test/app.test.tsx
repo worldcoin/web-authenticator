@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { AuthenticatorAppV1 } from "../App";
 import { bridgeId, signedRequest } from "../../tests/integration/fixtures/request";
 import { DEMO_ACTION, DEMO_PATH } from "../../config/demo";
+import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
@@ -226,8 +227,17 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
     expect(f.calls.unlocked).toBe(1);
 
-    act(() => update({ phase: "framing", title: "Turn your head left", hint: "", progress: 0.25, cameraReady: true,
-      target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
+    expect(view.queryByTestId("pose-capture-confirmation")).toBeNull();
+    act(() => {
+      update({ phase: "captured", title: "Look straight ahead", hint: "", progress: 0.25,
+        cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+      update({ phase: "framing", title: "Turn your head left", hint: "", progress: 0.25, cameraReady: true,
+        target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } });
+    });
+    expect(view.getByTestId("pose-capture-confirmation")).toBeTruthy();
+    const filled = view.getByTestId("selfie-design-ring").querySelectorAll('[data-filled="true"]');
+    expect(filled).toHaveLength(16);
+    expect(filled[0].getAttribute("fill")).toBe("currentColor");
     expect(view.getByText("Turn your head left")).toBeTruthy();
     expect(view.getByText("Step 2 of 4")).toBeTruthy();
     expect(view.getByTestId("pose-target-indicator").style.maskImage).toBe("conic-gradient(from -112.5deg, #000 0deg 45deg, transparent 45deg)");
@@ -235,6 +245,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
+    expect(view.queryByText("Use the staging demo to test signup-service.")).toBeNull();
     expect(view.getByText("Beta", { exact: true })).toBeTruthy();
     expect(configure).toHaveBeenCalledTimes(1);
     expect(captureMock).not.toHaveBeenCalled();
@@ -245,6 +256,60 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     create.mockRestore();
     configure.mockRestore();
     captureMock.mockRestore();
+    log.mockRestore();
+  }
+});
+
+test.each(["accepted", "rejected"] as const)("hosted demo shows the verifier's %s outcome after issuing the credential", async result => {
+  const f = await fixture(11);
+  f.wallet.generateProof = async () => "test-proof";
+  const appId = `app_${"0".repeat(32)}` as const;
+  const returnUrl = new URL(DEMO_PATH, ENVIRONMENTS.staging.appOrigin).href;
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: DEMO_ACTION });
+  const query = `i=${bridgeId}&k=test`;
+  const connector = new URL(`/verify?${query}`, returnUrl);
+  const unexpectedPoll = () => { throw new Error("The verifier handles bridge polling."); };
+  const create = spyOn(demo, "startDemo").mockResolvedValue({
+    bridgeId, query, returnUrl,
+    config: { app_id: appId, rp_context: f.incoming.proof },
+    request: {
+      connectorURI: connector.href, requestId: bridgeId,
+      pollOnce: unexpectedPoll, pollUntilCompletion: unexpectedPoll, getDebugReport: unexpectedPoll,
+    },
+  });
+  const configure = spyOn(poseGuard, "configureDemoEnrollment").mockReturnValue(async () => "completed");
+  const verdict = Promise.withResolvers<void>();
+  const verify = spyOn(demo, "verifyDemo").mockReturnValue(verdict.promise);
+  const log = spyOn(console, "info").mockImplementation(() => {});
+  const browser = (window as typeof window & { happyDOM?: { setURL(url: string): void } }).happyDOM;
+  if (!browser) throw new Error("Expected a detached browser fixture.");
+  const originalUrl = window.location.href;
+  browser.setURL(returnUrl);
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Create Selfie Check request" }));
+    fireEvent.click(await view.findByRole("button", { name: "Open authenticator" }));
+    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
+    expect(f.calls.deliver).toEqual(["test-proof"]);
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+    if (result === "accepted") {
+      verdict.resolve();
+      expect(await view.findByRole("heading", { name: "New credential verified" })).toBeTruthy();
+    } else {
+      verdict.reject(new Error("The relying party rejected the proof."));
+      expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");
+      expect(await view.findByRole("button", { name: "Create another request" })).toBeTruthy();
+      expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+    }
+  } finally {
+    cleanup();
+    browser.setURL(originalUrl);
+    create.mockRestore();
+    configure.mockRestore();
+    verify.mockRestore();
     log.mockRestore();
   }
 });
