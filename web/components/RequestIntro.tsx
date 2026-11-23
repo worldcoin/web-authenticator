@@ -1,4 +1,4 @@
-import { actions, body, centeredLayout, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, screenTitle } from "./styles";
+import { actions, betaLabel, body, centeredLayout, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, screenTitle } from "./styles";
 
 export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | "unsupported";
 
@@ -9,7 +9,7 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * confirmed. Expired, invalid and unsupported requests end here: there is no
  * way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false, onReturn }: {
+export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onStart, onCancel, selfieOnly = false, beta = false, onReturn }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
@@ -19,6 +19,7 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
   onStart: () => void;
   onCancel: () => void;
   selfieOnly?: boolean;
+  beta?: boolean;
   onReturn?: () => void;
 }) {
   const open = state === "verifying" || state === "ready";
@@ -31,6 +32,7 @@ export function RequestIntro({ state, rp, reason, detail, returnUrl, busy, onSta
     <div className={screenContent}><div className={`${centeredLayout} gap-8`}>
       <img className={selfieOnly ? "h-14 w-[56.0035px]" : "size-18"} src={selfieOnly ? "/assets/figma/request-selfie-emblem.svg" : "/assets/brand/human-badge.svg"} alt="" />
       <div className={`${messageBlock} gap-4`}>
+        {beta && <span className={betaLabel}>Beta</span>}
         {open && selfieOnly ? <>
           <h1 className={screenTitle}>Complete a Selfie Check</h1>
           <p className={body}>{state === "ready" ? `${rp} is requesting a Selfie Check.` : "Checking the app’s request…"}</p>

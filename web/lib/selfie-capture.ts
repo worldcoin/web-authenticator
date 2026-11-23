@@ -1,4 +1,4 @@
-import type { PoseDiagnostics, PoseTarget } from "./poseguard/types";
+import type { PoseTarget } from "./poseguard/types";
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
 import { faceGuidance, previewCrop } from "./rgbnet";
@@ -14,7 +14,6 @@ export type CaptureState = {
   cameraReady: boolean;
   target?: PoseTarget | null;
   poseStep?: { index: number; total: number };
-  poseDiagnostics?: PoseDiagnostics;
 };
 
 export type CaptureResult = {

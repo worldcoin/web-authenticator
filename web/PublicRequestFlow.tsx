@@ -278,13 +278,21 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
   if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={flow.enroll ? undefined : () => void complete()} enroll={flow.enroll} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
+      <SelfieCheck
+        onClose={() => void cancel()}
+        backLabel="Cancel check"
+        beta={!!demo}
+        onComplete={flow.enroll ? undefined : () => void complete()}
+        enroll={flow.enroll}
+        completionHint={flow.stage === "preparing" ? openProgress : undefined}
+      />
     </Suspense>
   </div>;
 
   return <div className={requestFrame}>
     <RequestIntro
       selfieOnly
+      beta={!!demo}
       onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
       rp={demo && incoming ? "Web Authenticator" : incoming?.label}

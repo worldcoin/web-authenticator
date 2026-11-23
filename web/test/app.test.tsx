@@ -201,14 +201,27 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     return outcome;
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
+  const log = spyOn(console, "info").mockImplementation(() => {});
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    expect(await view.findByText("Beta", { exact: true })).toBeTruthy();
     fireEvent.click(await view.findByRole("button", { name: "Create Selfie Check request" }));
-    expect(await view.findByText(bridgeId)).toBeTruthy();
+    const open = await view.findByRole("button", { name: "Open authenticator" });
+    expect(view.queryByText("Request details")).toBeNull();
+    expect(view.queryByText(bridgeId)).toBeNull();
+    expect(log.mock.calls.filter(([event]) => event === "selfie_check_beta_request")).toEqual([
+      ["selfie_check_beta_request", {
+        environment: "staging", action: DEMO_ACTION, schemaId: 11, appId,
+        rpId: f.incoming.proof.rp_id, requestId: bridgeId, expiresAt: f.incoming.proof.expires_at,
+      }],
+    ]);
     expect(f.calls.unlocked).toBe(0);
-    fireEvent.click(view.getByRole("button", { name: "Open authenticator" }));
-    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    fireEvent.click(open);
+    const start = await view.findByRole("button", { name: "Start selfie check" });
+    expect(view.getByText("Beta", { exact: true })).toBeTruthy();
+    fireEvent.click(start);
     expect(await view.findByRole("heading", { name: "Look straight ahead" })).toBeTruthy();
+    expect(view.getByText("Beta", { exact: true })).toBeTruthy();
     expect(view.getByText("Step 1 of 4")).toBeTruthy();
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
     expect(f.calls.unlocked).toBe(1);
@@ -222,7 +235,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
-    expect(view.getByText("Use the staging demo to test signup-service.")).toBeTruthy();
+    expect(view.getByText("Beta", { exact: true })).toBeTruthy();
     expect(configure).toHaveBeenCalledTimes(1);
     expect(captureMock).not.toHaveBeenCalled();
     expect(f.calls.terminated).toBe(1);
@@ -232,6 +245,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     create.mockRestore();
     configure.mockRestore();
     captureMock.mockRestore();
+    log.mockRestore();
   }
 });
 

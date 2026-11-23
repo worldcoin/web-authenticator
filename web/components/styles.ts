@@ -15,6 +15,7 @@ export const body = `${copy} text-[17px] text-foreground`;
 /** Callers choose the colour. */
 export const detailCopy = `${copy} rounded-xl bg-background-secondary px-3 py-2.5 text-[17px]`;
 export const errorCopy = `${body} w-full rounded-xl bg-[#fff1f1] p-3`;
+export const betaLabel = "rounded-full bg-background-secondary px-2.5 py-1 text-xs font-medium leading-none text-foreground";
 export const actions = "z-6 flex w-full flex-[0] flex-col gap-2 empty:hidden md:max-w-100";
 
 const action = "w-full min-h-12 rounded-3xl border px-6 py-3 text-[17px] font-medium leading-[1.2] tracking-[-0.17px]";

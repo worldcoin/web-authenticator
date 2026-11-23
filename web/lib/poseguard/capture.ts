@@ -3,7 +3,7 @@ import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../hold-steady-progress";
 import { isFaceTooSmall } from "../rgbnet";
 import { grabFrame, type CaptureState } from "../selfie-capture";
-import type { ImageSize, PoseDiagnostics, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
+import type { ImageSize, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
 import { openPoseDetector } from "./worker";
 
 const CHALLENGE_TIMEOUT_MS = 45_000;
@@ -59,7 +59,6 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
         await abortable(video.play(), active);
         update({
           phase: "framing", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true,
-          poseDiagnostics: import.meta.env.DEV ? { stream: [video.videoWidth, video.videoHeight] } : undefined,
         });
       }), active)),
     ]);
@@ -139,6 +138,7 @@ export async function collectPoseGuardImages(
       });
       let alignedSince: number | undefined;
       let lastTimestamp = -Infinity;
+      const loggedGates = import.meta.env.DEV ? new Set<PoseGate>() : undefined;
       // Paint each new target before looking for a matching frame.
       await pause(75, active);
       while (accepted.length === completed) {
@@ -151,18 +151,18 @@ export async function collectPoseGuardImages(
           const aligned = gate === "aligned";
           alignedSince = aligned ? (alignedSince ?? frame.timestamp) : undefined;
           const heldMs = alignedSince === undefined ? 0 : frame.timestamp - alignedSince;
-          const poseDiagnostics: PoseDiagnostics | undefined = import.meta.env.DEV ? {
-            ...frame.dimensions,
-            sample: {
-              step: phase.poseStep.index, targetPitch: target?.pitch ?? 0, targetYaw: target?.yaw ?? 0,
-              pitch: frame.pose ? Math.round(frame.pose.pitch) : undefined,
-              yaw: frame.pose ? Math.round(frame.pose.yaw) : undefined,
-              gate, heldMs: Math.round(heldMs), requiredMs,
-            },
-          } : undefined;
+          if (loggedGates && !loggedGates.has(gate)) {
+            loggedGates.add(gate);
+            const { stream, png } = frame.dimensions;
+            logPoseGuardEvent("poseguard_gate", {
+              step: phase.poseStep.index, gate, requiredMs, png: png.join("×"),
+              ...(stream ? { stream: stream.join("×") } : {}),
+              ...(frame.pose ? { pitch: Math.round(frame.pose.pitch), yaw: Math.round(frame.pose.yaw) } : {}),
+            });
+          }
           if (aligned) {
             const progress = Math.min(1, heldMs / requiredMs);
-            update({ ...phase, poseDiagnostics, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
+            update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
             if (progress === 1) {
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
@@ -176,7 +176,7 @@ export async function collectPoseGuardImages(
             }
           } else {
             const hint = gate === "too_small" ? "Move closer to the camera." : "Keep your face in the oval.";
-            update({ ...phase, poseDiagnostics, phase: "framing", hint, progress: completed / steps.length });
+            update({ ...phase, phase: "framing", hint, progress: completed / steps.length });
           }
         } finally {
           frame.release();
