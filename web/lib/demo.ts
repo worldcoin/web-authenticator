@@ -1,5 +1,5 @@
 import type { IDKitRequest } from "@worldcoin/idkit-core";
-import { DEMO_ACTION, DEMO_PATH, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, isDemoRequest, isRecord, type DemoRequest } from "../../config/demo";
+import { DEMO_ACTION, DEMO_PATH, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, DemoVerificationSuccessSchema, type DemoRequest } from "../../config/demo";
 import { parseConnector } from "./connector";
 import type { IncomingRequest } from "./incoming-request";
 
@@ -14,8 +14,9 @@ export type DemoAttempt = {
 };
 
 export async function startDemo(signal: AbortSignal): Promise<DemoAttempt> {
-  const config = await postDemo(DEMO_REQUEST_PATH, signal);
-  if (!isDemoRequest(config)) throw new Error("Invalid demo request.");
+  const parsed = DemoRequestSchema.safeParse(await postDemo(DEMO_REQUEST_PATH, signal));
+  if (!parsed.success) throw new Error("Invalid demo request.");
+  const config = parsed.data;
 
   const { IDKit, selfieCheck } = await import("@worldcoin/idkit-core");
   signal.throwIfAborted();
@@ -59,7 +60,7 @@ export async function verifyDemo(attempt: DemoAttempt, signal: AbortSignal): Pro
         : "Could not receive the proof.");
   }
   const result = await postDemo(DEMO_VERIFY_PATH, signal, { rp_context: attempt.config.rp_context, result: completion.result });
-  if (!isRecord(result) || result.success !== true) throw new Error("Proof verification failed.");
+  if (!DemoVerificationSuccessSchema.safeParse(result).success) throw new Error("Proof verification failed.");
 }
 
 async function postDemo(path: string, signal: AbortSignal, body?: object): Promise<unknown> {

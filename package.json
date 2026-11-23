@@ -27,6 +27,9 @@
     "cf:check": "wrangler deploy --dry-run",
     "cf:package": "bun scripts/build-cloudflare.ts --package-only"
   },
+  "dependencies": {
+    "zod": "4.5.4"
+  },
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "@happy-dom/global-registrator": "20.13.2",

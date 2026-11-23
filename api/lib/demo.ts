@@ -1,13 +1,50 @@
 import { computeRpSignatureMessage, signRequest } from "@worldcoin/idkit-core/signing";
 import { hexToBytes, verifyMessage, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { z } from "zod";
 import {
   DEMO_ACTION, DEMO_MAX_BODY_BYTES, DEMO_REQUEST_PATH, DEMO_TTL_SECONDS, DEMO_VERIFY_PATH,
-  isDemoRpContext, isRecord, type DemoRequest, type DemoRpContext,
+  DemoHex32Schema, DemoRequestSchema, DemoRpContextSchema, DemoVerificationSuccessSchema, type DemoRequest, type DemoRpContext,
 } from "../../config/demo";
 import { isAllowedOrigin, type ProtocolEnvironment } from "../../config/environment";
 
 type DemoSettings = { appId: DemoRequest["app_id"]; rpId: string; signingKey: Hex; verifyUrl: URL };
+
+const DemoSettingsSchema = z.object({
+  DEMO_APP_ID: DemoRequestSchema.shape.app_id,
+  DEMO_RP_ID: DemoRpContextSchema.shape.rp_id,
+  DEMO_RP_SIGNING_KEY: z.templateLiteral(["0x", z.string().regex(/^[a-fA-F0-9]{64}$/)]),
+  DEMO_VERIFY_ORIGIN: z.string().refine(value => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && url.origin === value;
+    } catch {
+      return false;
+    }
+  }),
+});
+
+const DemoVerifyRequestSchema = z.object({
+  rp_context: DemoRpContextSchema,
+  result: z.looseObject({}),
+});
+
+const DemoProofResultSchema = z.object({
+  protocol_version: z.literal("4.0"),
+  environment: z.literal("staging"),
+  action: z.literal(DEMO_ACTION),
+  nonce: DemoHex32Schema,
+  session_id: z.null().optional(),
+  responses: z.tuple([z.object({
+    identifier: z.literal("selfie"),
+    issuer_schema_id: z.literal(11),
+    proof: z.array(z.string().regex(/^\d{1,78}$/)).length(5),
+    nullifier: DemoHex32Schema,
+    expires_at_min: z.int().nonnegative(),
+    sybil_score: z.int().nonnegative(),
+    signal_hash: DemoHex32Schema.optional(),
+  })]),
+});
 
 export async function handleDemoApi(request: Request, environment: ProtocolEnvironment, bindings: object): Promise<Response> {
   const url = new URL(request.url);
@@ -35,14 +72,11 @@ export async function handleDemoApi(request: Request, environment: ProtocolEnvir
   } catch {
     return problem(400, "Invalid demo proof request");
   }
-  if (!isRecord(body) || !isDemoRpContext(body.rp_context) || !isRecord(body.result)) {
-    return problem(400, "Invalid demo proof request");
-  }
-  const { rp_context: context, result } = body;
-  const selfie = demoProofItem(result);
-  if (!selfie || result.protocol_version !== "4.0" || result.environment !== "staging" ||
-    result.action !== DEMO_ACTION || result.nonce !== context.nonce || result.session_id != null ||
-    !await matchesIssuedRequest(context, settings)) {
+  const parsed = DemoVerifyRequestSchema.safeParse(body);
+  if (!parsed.success) return problem(400, "Invalid demo proof request");
+  const { rp_context: context, result } = parsed.data;
+  const proof = DemoProofResultSchema.safeParse(result);
+  if (!proof.success || proof.data.nonce !== context.nonce || !await matchesIssuedRequest(context, settings)) {
     return problem(400, "The proof does not match this demo request");
   }
 
@@ -53,7 +87,7 @@ export async function handleDemoApi(request: Request, environment: ProtocolEnvir
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         protocol_version: "4.0", min_protocol_version: "4.0", environment: "staging",
-        action: DEMO_ACTION, nonce: context.nonce, responses: [selfie],
+        action: DEMO_ACTION, nonce: context.nonce, responses: proof.data.responses,
       }),
     });
     if (!response.ok) {
@@ -62,25 +96,11 @@ export async function handleDemoApi(request: Request, environment: ProtocolEnvir
       return problem(422, "The staging verifier rejected this proof");
     }
     const verdict = await readJson(response, deadline);
-    if (!isRecord(verdict) || verdict.success !== true) return problem(422, "The staging verifier rejected this proof");
+    if (!DemoVerificationSuccessSchema.safeParse(verdict).success) return problem(422, "The staging verifier rejected this proof");
     return Response.json({ success: true });
   } catch {
     return problem(502, "The staging verifier is unavailable");
   }
-}
-
-function demoProofItem(result: Record<string, unknown>) {
-  if (!Array.isArray(result.responses) || result.responses.length !== 1) return;
-  const item: unknown = result.responses[0];
-  if (!isRecord(item) || item.identifier !== "selfie" || item.issuer_schema_id !== 11 ||
-    !Array.isArray(item.proof) || item.proof.length !== 5 ||
-    !item.proof.every(value => typeof value === "string" && /^\d{1,78}$/.test(value)) ||
-    typeof item.nullifier !== "string" || !/^0x[a-f0-9]{64}$/.test(item.nullifier) ||
-    typeof item.expires_at_min !== "number" || !Number.isSafeInteger(item.expires_at_min) || item.expires_at_min < 0 ||
-    typeof item.sybil_score !== "number" || !Number.isSafeInteger(item.sybil_score) || item.sybil_score < 0 ||
-    (item.signal_hash !== undefined && (typeof item.signal_hash !== "string" || !/^0x[a-f0-9]{64}$/.test(item.signal_hash)))) return;
-  const { identifier, issuer_schema_id, proof, nullifier, expires_at_min, sybil_score, signal_hash } = item;
-  return { identifier, issuer_schema_id, proof, nullifier, expires_at_min, sybil_score, signal_hash };
 }
 
 async function matchesIssuedRequest(context: DemoRpContext, settings: DemoSettings): Promise<boolean> {
@@ -97,18 +117,10 @@ async function matchesIssuedRequest(context: DemoRpContext, settings: DemoSettin
 }
 
 function demoSettings(bindings: object): DemoSettings | undefined {
-  const values = bindings as Partial<Record<"DEMO_APP_ID" | "DEMO_RP_ID" | "DEMO_RP_SIGNING_KEY" | "DEMO_VERIFY_ORIGIN", unknown>>;
-  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, DEMO_RP_SIGNING_KEY: signingKey, DEMO_VERIFY_ORIGIN: verifyOrigin } = values;
-  if (typeof appId !== "string" || !/^app_[a-f0-9]{32}$/.test(appId) ||
-    typeof rpId !== "string" || !/^rp_[a-f0-9]{1,16}$/.test(rpId) ||
-    typeof signingKey !== "string" || !/^0x[a-fA-F0-9]{64}$/.test(signingKey) || typeof verifyOrigin !== "string") return;
-  try {
-    const url = new URL(verifyOrigin);
-    if (url.protocol !== "https:" || url.origin !== verifyOrigin) return;
-    return { appId: appId as DemoRequest["app_id"], rpId, signingKey: signingKey as Hex, verifyUrl: new URL(`/api/v4/verify/${rpId}`, url) };
-  } catch {
-    return undefined;
-  }
+  const parsed = DemoSettingsSchema.safeParse(bindings);
+  if (!parsed.success) return;
+  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, DEMO_RP_SIGNING_KEY: signingKey, DEMO_VERIFY_ORIGIN: verifyOrigin } = parsed.data;
+  return { appId, rpId, signingKey, verifyUrl: new URL(`/api/v4/verify/${rpId}`, verifyOrigin) };
 }
 
 async function readJson(message: Request | Response, signal: AbortSignal): Promise<unknown> {

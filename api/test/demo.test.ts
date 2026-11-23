@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { DEMO_ACTION, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, isDemoRequest, type DemoRequest } from "../../config/demo";
+import { DEMO_ACTION, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, type DemoRequest } from "../../config/demo";
 import { ENVIRONMENTS } from "../../config/environment";
 import { handleDemoApi } from "../lib/demo";
 
@@ -20,15 +20,18 @@ function post(path: string, body?: object, requestOrigin = origin) {
 async function issue(): Promise<DemoRequest> {
   const response = await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", bindings);
   expect(response.status).toBe(200);
-  const context: unknown = await response.json();
-  if (!isDemoRequest(context)) throw new Error("Invalid fixture context");
-  return context;
+  return DemoRequestSchema.parse(await response.json());
 }
 
 test("serves expiring demo contexts on staging with a fresh nonce each time", async () => {
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "production", bindings)).status).toBe(404);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH, undefined, "https://other.example"), "staging", bindings)).status).toBe(403);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", {})).status).toBe(503);
+  for (const verifyOrigin of ["invalid URL", "http://verifier.example", "https://verifier.example/path", " https://verifier.example "]) {
+    expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", {
+      ...bindings, DEMO_VERIFY_ORIGIN: verifyOrigin,
+    })).status).toBe(503);
+  }
   const first = await issue(), second = await issue();
   expect(first.app_id).toBe(bindings.DEMO_APP_ID);
   expect(first.rp_context.rp_id).toBe(bindings.DEMO_RP_ID);
@@ -54,12 +57,16 @@ test("requires an issued request and a successful upstream proof verdict", async
     return Response.json({ success: accepted });
   }) as typeof fetch);
   try {
+    const selfie = result.responses[0];
     for (const body of [
       { rp_context: otherContext, result },
       { rp_context: { ...rp_context, signature: `0x${"0".repeat(130)}` }, result },
       { rp_context, result: { ...result, environment: "production" } },
       { rp_context, result: { ...result, action: "another-action" } },
       { rp_context, result: { ...result, responses: [{ issuer_schema_id: 1 }] } },
+      { rp_context, result: { ...result, session_id: "not-a-demo-response" } },
+      { rp_context, result: { ...result, responses: [selfie, selfie] } },
+      { rp_context, result: { ...result, responses: [{ ...selfie, sybil_score: Number.MAX_SAFE_INTEGER + 1 }] } },
     ]) {
       expect((await handleDemoApi(post(DEMO_VERIFY_PATH, body), "staging", bindings)).status).toBe(400);
     }
@@ -77,7 +84,10 @@ test("requires an issued request and a successful upstream proof verdict", async
       expect(unavailable.status).toBe(502);
     }
     accepted = true;
-    const response = await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings);
+    const response = await handleDemoApi(post(DEMO_VERIFY_PATH, {
+      rp_context,
+      result: { ...result, session_id: null, responses: [{ ...selfie, extra: "additive metadata" }] },
+    }), "staging", bindings);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
   } finally {
