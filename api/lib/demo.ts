@@ -112,7 +112,8 @@ async function verifySelfieProof(
   const client = createPublicClient({
     chain: worldchain,
     transport: http(settings.rpcUrl, {
-      fetchOptions: { signal: deadline, redirect: "error" },
+      // Workers reject redirect: "error". "manual" returns a 3xx unfollowed, which viem treats as a failed request.
+      fetchOptions: { signal: deadline, redirect: "manual" },
       maxResponseBodySize: DEMO_MAX_BODY_BYTES,
       retryCount: 0,
       timeout: VERIFY_TIMEOUT_MS,
