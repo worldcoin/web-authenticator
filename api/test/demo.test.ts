@@ -64,7 +64,7 @@ test("requires an issued request and verifies the proof with the staging World I
   });
   const remote = spyOn(globalThis, "fetch").mockImplementation((async (input, init) => {
     expect(String(input)).toBe(bindings.DEMO_WORLDCHAIN_RPC_URL);
-    expect(init?.redirect).toBe("error");
+    expect(init?.redirect).toBe("manual");
     const { id, method, params: [call] } = JSON.parse(String(init?.body)) as { id: number; method: string; params: [{ to: string; data: `0x${string}` }] };
     expect(method).toBe("eth_call");
     expect(call.to.toLowerCase()).toBe(STAGING_WORLD_ID_VERIFIER);
@@ -106,7 +106,8 @@ test("requires an issued request and verifies the proof with the staging World I
     expect(remote).toHaveBeenCalledTimes(1);
     expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(422);
     expect(warn).toHaveBeenCalledWith("demo_verify_rejected", expect.objectContaining({ rpId: bindings.DEMO_RP_ID }));
-    for (const status of [429, 503]) {
+    // A redirect is never followed: it fails like any other unusable RPC response.
+    for (const status of [307, 429, 503]) {
       remote.mockResolvedValueOnce(new Response(null, { status }));
       const unavailable = await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings);
       expect(unavailable.status).toBe(502);
