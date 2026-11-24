@@ -41,7 +41,8 @@
         // Web Authenticator v1; the Worker secret must be this RP's signing key.
         "DEMO_APP_ID": "app_e05e48013341a4feca7ed126deaa15b6",
         "DEMO_RP_ID": "rp_c8b34be5b84c6722",
-        "DEMO_VERIFY_ORIGIN": "https://developer.world.org"
+        // Public World Chain RPC; the demo verifies proofs with the staging World ID Verifier contract.
+        "DEMO_WORLDCHAIN_RPC_URL": "https://worldchain-mainnet.g.alchemy.com/public"
       }
     },
     "production": {

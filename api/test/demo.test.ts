@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi, stringToBytes } from "viem";
 import { DEMO_ACTION, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, type DemoRequest } from "../../config/demo";
 import { ENVIRONMENTS } from "../../config/environment";
 import { handleDemoApi } from "../lib/demo";
@@ -8,8 +9,13 @@ const bindings = {
   DEMO_APP_ID: `app_${"1".repeat(32)}` as const,
   DEMO_RP_ID: "rp_0000000000000001",
   IDKIT_EXAMPLE_RP_SIGNING_KEY: `0x${"1".padStart(64, "0")}`,
-  DEMO_VERIFY_ORIGIN: "https://staging-verifier.example",
+  DEMO_WORLDCHAIN_RPC_URL: "https://rpc.example/worldchain",
 };
+const STAGING_WORLD_ID_VERIFIER = "0x703a6316c975deabf30b637c155edd53e24657db";
+const verifierAbi = parseAbi([
+  "function getWorldIDRegistry() view returns (address)",
+  "function verify(uint256 nullifier, uint256 action, uint64 rpId, uint256 nonce, uint256 signalHash, uint64 expiresAtMin, uint64 issuerSchemaId, uint256 credentialGenesisIssuedAtMin, uint256[5] zeroKnowledgeProof) view",
+]);
 
 function post(path: string, body?: object, requestOrigin = origin) {
   return new Request(origin + path, {
@@ -27,9 +33,9 @@ test("serves expiring demo contexts on staging with a fresh nonce each time", as
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "production", bindings)).status).toBe(404);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH, undefined, "https://other.example"), "staging", bindings)).status).toBe(403);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", {})).status).toBe(503);
-  for (const verifyOrigin of ["invalid URL", "http://verifier.example", "https://verifier.example/path", " https://verifier.example "]) {
+  for (const rpcUrl of ["invalid URL", "http://rpc.example", "https://user:secret@rpc.example", " https://rpc.example "]) {
     expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", {
-      ...bindings, DEMO_VERIFY_ORIGIN: verifyOrigin,
+      ...bindings, DEMO_WORLDCHAIN_RPC_URL: rpcUrl,
     })).status).toBe(503);
   }
   const first = await issue(), second = await issue();
@@ -39,7 +45,7 @@ test("serves expiring demo contexts on staging with a fresh nonce each time", as
   expect(first.rp_context.expires_at - first.rp_context.created_at).toBe(600);
 });
 
-test("requires an issued request and a successful upstream proof verdict", async () => {
+test("requires an issued request and verifies the proof with the staging World ID Verifier", async () => {
   const { rp_context } = await issue();
   const { rp_context: otherContext } = await issue();
   const result = {
@@ -49,13 +55,28 @@ test("requires an issued request and a successful upstream proof verdict", async
       nullifier: `0x${"1".padStart(64, "0")}`, expires_at_min: rp_context.created_at, sybil_score: 10,
     }],
   };
-  let accepted = false;
+  let proofReply: { result?: string; error?: { code: number; message: string; data: string } } = {
+    error: { code: 3, message: "execution reverted", data: "0x" },
+  };
+  const registryResult = encodeFunctionResult({
+    abi: verifierAbi, functionName: "getWorldIDRegistry", result: "0x8556d07D75025f286fe757C7EeEceC40D54FA16D",
+  });
   const remote = spyOn(globalThis, "fetch").mockImplementation((async (input, init) => {
-    expect(String(input)).toBe(`${bindings.DEMO_VERIFY_ORIGIN}/api/v4/verify/${bindings.DEMO_RP_ID}`);
-    expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({ ...result, min_protocol_version: "4.0" });
-    return Response.json({ success: accepted });
+    expect(String(input)).toBe(bindings.DEMO_WORLDCHAIN_RPC_URL);
+    expect(init?.redirect).toBe("error");
+    const { id, method, params: [call] } = JSON.parse(String(init?.body)) as { id: number; method: string; params: [{ to: string; data: `0x${string}` }] };
+    expect(method).toBe("eth_call");
+    expect(call.to.toLowerCase()).toBe(STAGING_WORLD_ID_VERIFIER);
+    const { functionName, args } = decodeFunctionData({ abi: verifierAbi, data: call.data });
+    if (functionName === "getWorldIDRegistry") return Response.json({ jsonrpc: "2.0", id, result: registryResult });
+    expect(args).toEqual([
+      1n, BigInt(keccak256(stringToBytes(DEMO_ACTION))) >> 8n, 1n, BigInt(rp_context.nonce),
+      0n, BigInt(rp_context.created_at), 11n, 0n, [1n, 2n, 3n, 4n, 5n],
+    ]);
+    return Response.json({ jsonrpc: "2.0", id, ...proofReply });
   }) as typeof fetch);
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  const error = spyOn(console, "error").mockImplementation(() => {});
   try {
     const selfie = result.responses[0];
     for (const body of [
@@ -67,6 +88,7 @@ test("requires an issued request and a successful upstream proof verdict", async
       { rp_context, result: { ...result, session_id: "not-a-demo-response" } },
       { rp_context, result: { ...result, responses: [selfie, selfie] } },
       { rp_context, result: { ...result, responses: [{ ...selfie, sybil_score: Number.MAX_SAFE_INTEGER + 1 }] } },
+      { rp_context, result: { ...result, responses: [{ ...selfie, proof: ["1", "2", "3", "4", (1n << 256n).toString()] }] } },
     ]) {
       expect((await handleDemoApi(post(DEMO_VERIFY_PATH, body), "staging", bindings)).status).toBe(400);
     }
@@ -77,13 +99,20 @@ test("requires an issued request and a successful upstream proof verdict", async
       clock.mockRestore();
     }
     expect(remote).not.toHaveBeenCalled();
+    remote.mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 0, result: "0x" }));
+    expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(502);
+    expect(remote).toHaveBeenCalledTimes(1);
     expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(422);
+    expect(warn).toHaveBeenCalledWith("demo_verify_rejected", expect.objectContaining({ rpId: bindings.DEMO_RP_ID }));
     for (const status of [429, 503]) {
       remote.mockResolvedValueOnce(new Response(null, { status }));
       const unavailable = await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings);
       expect(unavailable.status).toBe(502);
     }
-    accepted = true;
+    expect(error).toHaveBeenCalledWith("demo_verify_unavailable", expect.objectContaining({ rpId: bindings.DEMO_RP_ID }));
+    proofReply = {};
+    expect((await handleDemoApi(post(DEMO_VERIFY_PATH, { rp_context, result }), "staging", bindings)).status).toBe(502);
+    proofReply = { result: "0x" };
     const response = await handleDemoApi(post(DEMO_VERIFY_PATH, {
       rp_context,
       result: { ...result, session_id: null, responses: [{ ...selfie, extra: "additive metadata" }] },
@@ -92,5 +121,7 @@ test("requires an issued request and a successful upstream proof verdict", async
     expect(await response.json()).toEqual({ success: true });
   } finally {
     remote.mockRestore();
+    warn.mockRestore();
+    error.mockRestore();
   }
 });
