@@ -56,10 +56,15 @@ if (!("bun" in process.versions)) {
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
+      // The hold lasts about a second, so record its first partial frame here rather than by polling.
+      let partialFill: string | undefined;
       const observer = new MutationObserver(() => {
+        const filled = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
+        if (partialFill === undefined && filled.length > 0 && filled.length < 64) partialFill = getComputedStyle(filled[0]).fill;
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
+          partialFill,
           goldDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
@@ -72,12 +77,8 @@ if (!("bun" in process.versions)) {
     }));
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-    const goldDots = page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-    await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
-    expect(await goldDots.count()).toBeLessThan(64);
-    await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ partialFill: "rgb(212, 175, 55)", goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
