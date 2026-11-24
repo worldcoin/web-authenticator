@@ -256,9 +256,14 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   }
 });
 
-test.each(["accepted", "rejected"] as const)("hosted demo shows the verifier's %s outcome after issuing the credential", async result => {
-  const f = await fixture(11);
-  f.wallet.generateProof = async () => "test-proof";
+test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the %s proof outcome", async result => {
+  const f = await fixture(11, result === "replayed");
+  f.wallet.generateProof = async () => {
+    if (result === "replayed") {
+      throw Object.assign(new Error("nullifier_replay"), { name: "WalletKitError", code: "NullifierReplay" });
+    }
+    return "test-proof";
+  };
   const appId = `app_${"0".repeat(32)}` as const;
   const returnUrl = new URL(DEMO_PATH, ENVIRONMENTS.staging.appOrigin).href;
   Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: DEMO_ACTION });
@@ -284,6 +289,16 @@ test.each(["accepted", "rejected"] as const)("hosted demo shows the verifier's %
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+    if (result === "replayed") {
+      expect(await view.findByRole("heading", { name: "Proof already created" })).toBeTruthy();
+      expect(view.getByText("The authenticator detected a nullifier replay for this action.")).toBeTruthy();
+      expect(view.getByRole("button", { name: "Return to demo" })).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
+      expect(configure).not.toHaveBeenCalled();
+      expect(f.calls.deliver).toEqual([]);
+      expect(verify).not.toHaveBeenCalled();
+      return;
+    }
     expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
     expect(f.calls.deliver).toEqual(["test-proof"]);
     expect(configure).toHaveBeenCalledTimes(1);

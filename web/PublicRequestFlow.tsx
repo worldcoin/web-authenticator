@@ -13,7 +13,7 @@ import { configureDemoEnrollment, configuredPoseGuardSignup, createPoseGuardEnro
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -117,6 +117,17 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     let proof: string;
     try {
       proof = await abortable(wallet.generateProof(JSON.stringify(request.proof)), deadline);
+    } catch (error) {
+      deadline.throwIfAborted();
+      if (error instanceof Error && error.name === "WalletKitError" && "code" in error && error.code === "NullifierReplay") {
+        stop();
+        setFlow({ stage: "replayed", returnUrl: request.returnUrl });
+        onDispose();
+        return;
+      }
+      throw new WalletOpenError("Could not create the proof. Try again.");
+    }
+    try {
       await request.deliver(proof, deadline);
     } catch {
       deadline.throwIfAborted();
@@ -263,7 +274,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }} />
   </div>;
 
-  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
+  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired" || flow.stage === "replayed") return <div className={requestFrame}>
     <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} returnUrl={flow.returnUrl} detail={cancelError} onReturn={demo?.back} />
   </div>;
 

@@ -1,7 +1,7 @@
 import { actions, centeredLayout, completionTitle, copy, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, signinPrimary } from "./styles";
 
 export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, onReturn, transient = false, saved = false }: {
-  state: "complete" | "cancelled" | "expired" | "error";
+  state: "complete" | "cancelled" | "expired" | "replayed" | "error";
   returnUrl?: string;
   detail?: string;
   onRetry?: () => void;
@@ -13,11 +13,13 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, o
   const title = state === "complete" ? saved ? "Authenticator saved" : "Selfie captured"
     : state === "cancelled" ? "Check cancelled"
     : state === "expired" ? "This request has expired"
+    : state === "replayed" ? "Proof already created"
     : "Something went wrong";
   const description = state === "complete"
     ? transient ? "Your capture is complete." : "You can close this page."
     : state === "cancelled" ? "You can close this tab and return to the app."
     : state === "expired" ? "Return to the app to start a new check."
+    : state === "replayed" ? "The authenticator detected a nullifier replay for this action."
     : "The check could not be completed. Please try again.";
 
   const showAuthenticator = state === "complete" && saved && onOpen;
