@@ -1,10 +1,10 @@
-import { DEMO_ACTION, type DemoRequest } from "../../config/demo"
+import type { DemoRequest } from "../../config/demo"
 import type { CaptureResult } from "./selfie-capture"
 
 export function logDemoRequest(config: DemoRequest, requestId: string) {
 	console.info('selfie_check_beta_request', {
 		environment: 'staging',
-		action: DEMO_ACTION,
+		action: config.action,
 		schemaId: 11,
 		appId: config.app_id,
 		rpId: config.rp_context.rp_id,

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useCallback, useEffect, useRef, useState, type ContextType, type ReactNode } from "react";
-import { DEMO_ACTION, DEMO_PATH } from "../config/demo";
+import { DEMO_PATH } from "../config/demo";
 import { RequestIntro } from "./components/RequestIntro";
 import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, primaryAction, requestFrame, screenContent, screenTitle, secondaryAction } from "./components/styles";
 import { currentProtocolEnvironment } from "./lib/environment";
@@ -174,9 +174,9 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
 function DemoRequestDetails({ attempt }: { attempt?: DemoHandoff }) {
   const rows = [
     ["Environment", "Staging"],
-    ["Action", DEMO_ACTION],
     ["Credential", "Selfie Check (schema 11)"],
     ...(attempt ? [
+      ["Action", attempt.config.action],
       ["App ID", attempt.config.app_id],
       ["RP ID", attempt.config.rp_context.rp_id],
       ["Request ID", attempt.bridgeId],

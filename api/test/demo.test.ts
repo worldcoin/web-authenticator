@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi, stringToBytes } from "viem";
-import { DEMO_ACTION, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, type DemoRequest } from "../../config/demo";
+import { DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, type DemoRequest } from "../../config/demo";
 import { ENVIRONMENTS } from "../../config/environment";
 import { handleDemoApi } from "../lib/demo";
 
@@ -29,7 +29,7 @@ async function issue(): Promise<DemoRequest> {
   return DemoRequestSchema.parse(await response.json());
 }
 
-test("serves expiring demo contexts on staging with a fresh nonce each time", async () => {
+test("issues an expiring signed demo request with a fresh action and nonce", async () => {
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "production", bindings)).status).toBe(404);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH, undefined, "https://other.example"), "staging", bindings)).status).toBe(403);
   expect((await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", {})).status).toBe(503);
@@ -38,18 +38,19 @@ test("serves expiring demo contexts on staging with a fresh nonce each time", as
       ...bindings, DEMO_WORLDCHAIN_RPC_URL: rpcUrl,
     })).status).toBe(503);
   }
-  const first = await issue(), second = await issue();
+  const [first, second] = await Promise.all([issue(), issue()]);
   expect(first.app_id).toBe(bindings.DEMO_APP_ID);
   expect(first.rp_context.rp_id).toBe(bindings.DEMO_RP_ID);
+  expect(first.action).not.toBe(second.action);
   expect(first.rp_context.nonce).not.toBe(second.rp_context.nonce);
   expect(first.rp_context.expires_at - first.rp_context.created_at).toBe(600);
 });
 
 test("requires an issued request and verifies the proof with the staging World ID Verifier", async () => {
-  const { rp_context } = await issue();
-  const { rp_context: otherContext } = await issue();
+  const { action, rp_context } = await issue();
+  const { action: otherAction, rp_context: otherContext } = await issue();
   const result = {
-    protocol_version: "4.0", action: DEMO_ACTION, environment: "staging", nonce: rp_context.nonce,
+    protocol_version: "4.0", action, environment: "staging", nonce: rp_context.nonce,
     responses: [{
       identifier: "selfie", issuer_schema_id: 11, proof: ["1", "2", "3", "4", "5"],
       nullifier: `0x${"1".padStart(64, "0")}`, expires_at_min: rp_context.created_at, sybil_score: 10,
@@ -70,7 +71,7 @@ test("requires an issued request and verifies the proof with the staging World I
     const { functionName, args } = decodeFunctionData({ abi: verifierAbi, data: call.data });
     if (functionName === "getWorldIDRegistry") return Response.json({ jsonrpc: "2.0", id, result: registryResult });
     expect(args).toEqual([
-      1n, BigInt(keccak256(stringToBytes(DEMO_ACTION))) >> 8n, 1n, BigInt(rp_context.nonce),
+      1n, BigInt(keccak256(stringToBytes(action))) >> 8n, 1n, BigInt(rp_context.nonce),
       0n, BigInt(rp_context.created_at), 11n, 0n, [1n, 2n, 3n, 4n, 5n],
     ]);
     return Response.json({ jsonrpc: "2.0", id, ...proofReply });
@@ -81,6 +82,7 @@ test("requires an issued request and verifies the proof with the staging World I
     const selfie = result.responses[0];
     for (const body of [
       { rp_context: otherContext, result },
+      { rp_context, result: { ...result, action: otherAction } },
       { rp_context: { ...rp_context, signature: `0x${"0".repeat(130)}` }, result },
       { rp_context, result: { ...result, environment: "production" } },
       { rp_context, result: { ...result, action: "another-action" } },

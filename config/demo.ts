@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const DEMO_PATH = "/demo";
-export const DEMO_ACTION = "web-authenticator-demo";
+export const DEMO_ACTION_PREFIX = "web-authenticator-demo-";
 export const DEMO_REQUEST_PATH = "/api/demo/request";
 export const DEMO_VERIFY_PATH = "/api/demo/verify";
 export const DEMO_TTL_SECONDS = 600;
@@ -19,6 +19,7 @@ export const DemoRpContextSchema = z.object({
 
 export const DemoRequestSchema = z.object({
   app_id: z.templateLiteral(["app_", z.string().regex(/^[a-f0-9]{32}$/)]),
+  action: z.templateLiteral([DEMO_ACTION_PREFIX, z.uuidv4()]),
   rp_context: DemoRpContextSchema,
 });
 

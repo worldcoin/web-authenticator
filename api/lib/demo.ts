@@ -9,13 +9,13 @@ import { worldchain } from "viem/chains";
 import { getNodeError } from "viem/utils";
 import { z } from "zod";
 import {
-  DEMO_ACTION, DEMO_MAX_BODY_BYTES, DEMO_REQUEST_PATH, DEMO_TTL_SECONDS, DEMO_VERIFY_PATH,
+  DEMO_ACTION_PREFIX, DEMO_MAX_BODY_BYTES, DEMO_REQUEST_PATH, DEMO_TTL_SECONDS, DEMO_VERIFY_PATH,
   DemoHex32Schema, DemoRequestSchema, DemoRpContextSchema, type DemoRequest, type DemoRpContext,
 } from "../../config/demo";
 import { isAllowedOrigin, type ProtocolEnvironment } from "../../config/environment";
 
 type DemoSettings = { appId: DemoRequest["app_id"]; rpId: string; signingKey: Hex; rpcUrl: string };
-type DemoSelfieResponse = z.infer<typeof DemoProofResultSchema>["responses"][0];
+type DemoProofResult = z.infer<typeof DemoProofResultSchema>;
 
 // World Chain staging proxies from world-id-protocol/contracts/deployments/core/staging.json.
 const STAGING_WORLD_ID_VERIFIER = "0x703a6316c975DEabF30b637c155edD53e24657DB";
@@ -24,7 +24,6 @@ const WORLD_ID_VERIFIER_ABI = parseAbi([
   "function getWorldIDRegistry() view returns (address)",
   "function verify(uint256 nullifier, uint256 action, uint64 rpId, uint256 nonce, uint256 signalHash, uint64 expiresAtMin, uint64 issuerSchemaId, uint256 credentialGenesisIssuedAtMin, uint256[5] zeroKnowledgeProof) view",
 ]);
-const ACTION_HASH = BigInt(hashSignal(DEMO_ACTION));
 const VERIFY_TIMEOUT_MS = 10_000;
 
 const DemoSettingsSchema = z.object({
@@ -51,7 +50,7 @@ const ProofWordSchema = z.string().regex(/^\d{1,78}$/).transform(BigInt).pipe(z.
 const DemoProofResultSchema = z.object({
   protocol_version: z.literal("4.0"),
   environment: z.literal("staging"),
-  action: z.literal(DEMO_ACTION),
+  action: DemoRequestSchema.shape.action,
   nonce: DemoHex32Schema,
   session_id: z.null().optional(),
   responses: z.tuple([z.object({
@@ -75,9 +74,11 @@ export async function handleDemoApi(request: Request, environment: ProtocolEnvir
   if (!settings) return problem(503, "The staging demo RP is not configured");
 
   if (url.pathname === DEMO_REQUEST_PATH) {
-    const signed = signRequest({ action: DEMO_ACTION, signingKeyHex: settings.signingKey, ttl: DEMO_TTL_SECONDS });
+    const action = `${DEMO_ACTION_PREFIX}${crypto.randomUUID()}`;
+    const signed = signRequest({ action, signingKeyHex: settings.signingKey, ttl: DEMO_TTL_SECONDS });
     return Response.json({
       app_id: settings.appId,
+      action,
       rp_context: {
         rp_id: settings.rpId, nonce: signed.nonce, signature: signed.sig,
         created_at: signed.createdAt, expires_at: signed.expiresAt,
@@ -96,16 +97,17 @@ export async function handleDemoApi(request: Request, environment: ProtocolEnvir
   if (!parsed.success) return problem(400, "Invalid demo proof request");
   const { rp_context: context, result } = parsed.data;
   const proof = DemoProofResultSchema.safeParse(result);
-  if (!proof.success || proof.data.nonce !== context.nonce || !await matchesIssuedRequest(context, settings)) {
+  if (!proof.success || proof.data.nonce !== context.nonce || !await matchesIssuedRequest(context, proof.data.action, settings)) {
     return problem(400, "The proof does not match this demo request");
   }
 
-  return verifySelfieProof(context, proof.data.responses[0], settings, request.signal);
+  return verifySelfieProof(context, proof.data, settings, request.signal);
 }
 
 async function verifySelfieProof(
-  context: DemoRpContext, response: DemoSelfieResponse, settings: DemoSettings, signal: AbortSignal,
+  context: DemoRpContext, proof: DemoProofResult, settings: DemoSettings, signal: AbortSignal,
 ): Promise<Response> {
+  const { action, responses: [response] } = proof;
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(VERIFY_TIMEOUT_MS)]);
   const client = createPublicClient({
     chain: worldchain,
@@ -131,7 +133,7 @@ async function verifySelfieProof(
       functionName: "verify",
       args: [
         BigInt(response.nullifier),
-        ACTION_HASH,
+        BigInt(hashSignal(action)),
         BigInt(`0x${settings.rpId.slice(3)}`),
         BigInt(context.nonce),
         // Protocol 4.0 defaults a missing signal hash to zero.
@@ -164,13 +166,13 @@ async function verifySelfieProof(
   }
 }
 
-async function matchesIssuedRequest(context: DemoRpContext, settings: DemoSettings): Promise<boolean> {
+async function matchesIssuedRequest(context: DemoRpContext, action: DemoRequest["action"], settings: DemoSettings): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000);
   if (context.rp_id !== settings.rpId || context.created_at > now || context.expires_at <= now ||
     context.expires_at - context.created_at !== DEMO_TTL_SECONDS) return false;
   try {
     const address = privateKeyToAccount(settings.signingKey).address;
-    const message = computeRpSignatureMessage(hexToBytes(context.nonce), context.created_at, context.expires_at, DEMO_ACTION);
+    const message = computeRpSignatureMessage(hexToBytes(context.nonce), context.created_at, context.expires_at, action);
     return await verifyMessage({ address, message: { raw: message }, signature: context.signature });
   } catch {
     return false;

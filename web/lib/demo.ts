@@ -1,5 +1,5 @@
 import type { IDKitRequest } from "@worldcoin/idkit-core";
-import { DEMO_ACTION, DEMO_PATH, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, DemoVerificationSuccessSchema, type DemoRequest } from "../../config/demo";
+import { DEMO_PATH, DEMO_REQUEST_PATH, DEMO_VERIFY_PATH, DemoRequestSchema, DemoVerificationSuccessSchema, type DemoRequest } from "../../config/demo";
 import { parseConnector } from "./connector";
 import type { IncomingRequest } from "./incoming-request";
 
@@ -24,7 +24,6 @@ export async function startDemo(signal: AbortSignal): Promise<DemoAttempt> {
   const request = await IDKit.request({
     ...config,
     environment: "staging",
-    action: DEMO_ACTION,
     allow_legacy_proofs: false,
     bridge_url: "https://staging-bridge.worldcoin.org",
     return_to: returnUrl,
@@ -45,7 +44,7 @@ export function isDemoHandoff(attempt: DemoHandoff, incoming: IncomingRequest): 
   const context = attempt.config.rp_context;
   return incoming.bridgeRequestId === attempt.bridgeId && incoming.appId === attempt.config.app_id &&
     incoming.proof.rp_id === context.rp_id && incoming.proof.nonce === context.nonce &&
-    incoming.actionLabel === DEMO_ACTION && incoming.returnUrl === attempt.returnUrl &&
+    incoming.actionLabel === attempt.config.action && incoming.returnUrl === attempt.returnUrl &&
     incoming.proof.proof_requests.length === 1 && incoming.proof.proof_requests[0].issuer_schema_id === 11;
 }
 

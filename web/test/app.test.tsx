@@ -3,7 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
 import { bridgeId, signedRequest } from "../../tests/integration/fixtures/request";
-import { DEMO_ACTION, DEMO_PATH } from "../../config/demo";
+import { DEMO_PATH } from "../../config/demo";
 import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
@@ -18,6 +18,7 @@ import * as poseGuard from "../lib/poseguard/enrollment";
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
+const demoAction = "web-authenticator-demo-f47ac10b-58cc-4372-8567-0e02b2c3d479";
 afterAll(() => GlobalRegistrator.unregister());
 // Request flows live at /verify; the landing and authenticator tests visit their own paths.
 const visit = (path: string) => window.history.replaceState(null, "", path);
@@ -179,12 +180,12 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   const f = await fixture(11, true);
   const appId = `app_${"0".repeat(32)}` as const;
   const returnUrl = new URL(DEMO_PATH, window.location.origin).href;
-  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: DEMO_ACTION });
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: demoAction });
   const query = `i=${bridgeId}&k=test`;
   const unexpectedPoll = () => { throw new Error("The local demo must not poll for a proof."); };
   const create = spyOn(demo, "startDemo").mockResolvedValue({
     bridgeId, query, returnUrl,
-    config: { app_id: appId, rp_context: f.incoming.proof },
+    config: { app_id: appId, action: demoAction, rp_context: f.incoming.proof },
     request: {
       connectorURI: new URL(`/verify?${query}`, returnUrl).href,
       requestId: bridgeId,
@@ -211,7 +212,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(create).toHaveBeenCalledTimes(1);
     expect(log.mock.calls.filter(([event]) => event === "selfie_check_beta_request")).toEqual([
       ["selfie_check_beta_request", {
-        environment: "staging", action: DEMO_ACTION, schemaId: 11, appId,
+        environment: "staging", action: demoAction, schemaId: 11, appId,
         rpId: f.incoming.proof.rp_id, requestId: bridgeId, expiresAt: f.incoming.proof.expires_at,
       }],
     ]);
@@ -240,6 +241,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
+    expect(view.getByText(demoAction)).toBeTruthy();
     expect(view.queryByText("Use the staging demo to test signup-service.")).toBeNull();
     expect(view.queryByText("Beta", { exact: true })).toBeNull();
     expect(view.getByText("Request details")).toBeTruthy();
@@ -266,13 +268,13 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
   };
   const appId = `app_${"0".repeat(32)}` as const;
   const returnUrl = new URL(DEMO_PATH, ENVIRONMENTS.staging.appOrigin).href;
-  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: DEMO_ACTION });
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: demoAction });
   const query = `i=${bridgeId}&k=test`;
   const connector = new URL(`/verify?${query}`, returnUrl);
   const unexpectedPoll = () => { throw new Error("The verifier handles bridge polling."); };
   const create = spyOn(demo, "startDemo").mockResolvedValue({
     bridgeId, query, returnUrl,
-    config: { app_id: appId, rp_context: f.incoming.proof },
+    config: { app_id: appId, action: demoAction, rp_context: f.incoming.proof },
     request: {
       connectorURI: connector.href, requestId: bridgeId,
       pollOnce: unexpectedPoll, pollUntilCompletion: unexpectedPoll, getDebugReport: unexpectedPoll,
