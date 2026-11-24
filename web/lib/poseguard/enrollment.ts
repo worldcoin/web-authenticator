@@ -6,6 +6,7 @@ import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, 
 import { fetchEnrollmentChallenge } from "../enrollment-challenge";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
+import type { SelfieCheckDiagnosticAttempt } from "../selfie-check-debug-report";
 import {
   getEnrollmentAuthorization, pollEnrollment, SignupServiceError, submitEnrollment,
   type EnrollmentAuthorization, type EnrollmentReceipt, type EnrollmentResult,
@@ -41,6 +42,7 @@ export type RunPoseGuard = (
   video: HTMLVideoElement,
   signal: AbortSignal,
   update: (state: CaptureState) => void,
+  diagnostic?: SelfieCheckDiagnosticAttempt,
 ) => Promise<PoseGuardOutcome>;
 
 export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
@@ -63,8 +65,8 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
 
 /** Runs the PoseGuard capture and TEE check without submitting to signup-service. */
 export function createPoseGuardCapture(session: RequestWalletSession, policy: SelfieEnrollmentPolicy, requestSignal: AbortSignal): RunPoseGuard {
-  return async (video, viewSignal, update) => {
-    await capturePoseGuard(session, policy, video, AbortSignal.any([requestSignal, viewSignal]), update, preparePoseGuardCamera, INDEXER_SYNC_DELAYS_MS);
+  return async (video, viewSignal, update, diagnostic) => {
+    await capturePoseGuard(session, policy, video, AbortSignal.any([requestSignal, viewSignal]), update, preparePoseGuardCamera, INDEXER_SYNC_DELAYS_MS, diagnostic);
     return "captured";
   };
 }
@@ -99,7 +101,7 @@ export function createPoseGuardEnrollment(
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
-  return async (video, viewSignal, update) => {
+  return async (video, viewSignal, update, diagnostic) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
     const signal = AbortSignal.any([viewSignal, requestSignal]);
@@ -109,13 +111,15 @@ export function createPoseGuardEnrollment(
       if (saved) return "completed";
       if (savePromise) {
         update(checking());
-        return await waitForSave(savePromise, signal);
+        diagnostic?.enter("credential_store");
+        return await waitForSave(savePromise, signal, diagnostic);
       }
       if (!receipt) {
         const { capture, identity, wallet, blindingFactor } =
-          await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera, indexerSyncDelays);
+          await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera, indexerSyncDelays, diagnostic);
         let authorization: EnrollmentAuthorization | "staging" = "staging";
         if (signup.mode === "production") {
+          diagnostic?.enter("enrollment_authorize");
           update(checking());
           authorization = await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
         } else if (signup.mode === "test") {
@@ -123,6 +127,7 @@ export function createPoseGuardEnrollment(
         }
         try {
           signal.throwIfAborted();
+          diagnostic?.enter("enrollment_submit");
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
@@ -142,15 +147,24 @@ export function createPoseGuardEnrollment(
       }
 
       update(checking());
+      diagnostic?.enter("enrollment_poll");
       try {
         const result = await pollEnrollment(receipt, signupOptions);
-        if (result.state !== "completed") return result.state;
+        if (result.state === "duplicate") {
+          diagnostic?.finish({ type: "rejected", reason: "not_unique" });
+          return result.state;
+        }
+        if (result.state === "failed") {
+          diagnostic?.finish({ type: "failed", reason: "enrollment_failed" });
+          return result.state;
+        }
         const { credential } = result;
         if (!owner) {
           credential.fill(0);
           return "completed";
         }
         const { wallet, factor } = owner;
+        diagnostic?.enter("credential_store");
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
           try {
@@ -164,9 +178,12 @@ export function createPoseGuardEnrollment(
             credential.fill(0);
           }
         })();
-        return await waitForSave(savePromise, signal);
+        return await waitForSave(savePromise, signal, diagnostic);
       } catch (error) {
-        if (error instanceof SignupServiceError && error.code === "polling_timeout") return "pending";
+        if (error instanceof SignupServiceError && error.code === "polling_timeout") {
+          diagnostic?.finish({ type: "pending", reason: "enrollment_pending" });
+          return "pending";
+        }
         throw error;
       }
     } finally {
@@ -174,14 +191,17 @@ export function createPoseGuardEnrollment(
     }
   };
 
-  async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
+  async function waitForSave(operation: Promise<void>, signal: AbortSignal, diagnostic?: SelfieCheckDiagnosticAttempt): Promise<"completed" | "pending"> {
     const timeout = AbortSignal.timeout(30_000);
     try {
       await abortable(operation, AbortSignal.any([signal, timeout]));
       return "completed";
     } catch (error) {
       signal.throwIfAborted();
-      if (timeout.aborted && error === timeout.reason) return "pending";
+      if (timeout.aborted && error === timeout.reason) {
+        diagnostic?.finish({ type: "pending", reason: "credential_store_pending" });
+        return "pending";
+      }
       savePromise = undefined;
       throw error;
     }
@@ -196,14 +216,17 @@ async function capturePoseGuard(
   update: (state: CaptureState) => void,
   prepareCamera: typeof preparePoseGuardCamera,
   indexerSyncDelays: readonly number[],
+  diagnostic?: SelfieCheckDiagnosticAttempt,
 ) {
   signal.throwIfAborted();
+  diagnostic?.enter("wallet_ready");
   update({ ...INITIAL_CAPTURE_STATE, title: "Preparing enrollment", hint: "" });
   const wallet = await logPoseGuardStep("wallet_ready", async () => {
     const state = await abortable(session.ready, signal);
     if ("error" in state) throw state.error;
     return state.wallet;
   });
+  diagnostic?.enter("credential_prepare");
   const { sub, blindingFactor } = await logPoseGuardStep("prepare_credential", () =>
     prepareEnrollmentCredential(wallet, signal, update, indexerSyncDelays));
   const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
@@ -211,6 +234,7 @@ async function capturePoseGuard(
   const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
 
   // Bound permission and model startup separately from the enclave's capture window.
+  diagnostic?.enter("camera");
   update(INITIAL_CAPTURE_STATE);
   const start = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   const cameraScope = new AbortController();
@@ -221,6 +245,7 @@ async function capturePoseGuard(
   let images: PoseGuardImages | undefined;
   const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   try {
+    diagnostic?.enter("poseguard");
     update({ phase: "checking", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true });
     const requestedAt = performance.now();
     const operation = wallet.enrollSelfieWithPoseGuard(
@@ -245,7 +270,7 @@ async function capturePoseGuard(
     });
     const result = await abortable(operation, enrollmentSignal);
     enrollmentSignal.throwIfAborted();
-    if (result.status !== "success") throw teeRejection(result);
+    if (result.status !== "success") throw teeRejection(result, diagnostic);
     if (!images) throw new Error("WalletKit finished before collecting the PoseGuard captures.");
     const capture = EnrollmentCaptureSchema.parse({
       fields: result.enrollment.fields,
@@ -303,12 +328,18 @@ function indexerSyncPending(error: unknown): "invalid_leaf_index" | "locked" | u
   if (/"code"\s*:\s*"locked"/.test(body) && /"message"\s*:\s*"Insertion is still pending\."/.test(body)) return "locked";
 }
 
-function teeRejection(result: SelfieCaptureFailure): Error {
+function teeRejection(result: SelfieCaptureFailure, diagnostic?: SelfieCheckDiagnosticAttempt): Error {
   if (result.reason === "challenge") {
     const step = result.index + 2;
+    diagnostic?.finish({
+      type: "rejected",
+      reason: result.challengeReason === "quality_rejected" ? "quality_rejected" : "challenge_rejected",
+      step: [2, 3, 4][result.index],
+    });
     logPoseGuardEvent("poseguard_rejected", { step, reason: result.challengeReason });
     return new Error(`Capture rejected at step ${step}. Try again.`);
   }
+  diagnostic?.finish({ type: "rejected", reason: result.reason === "quality_rejected" ? "quality_rejected" : "poseguard_rejected" });
   logPoseGuardEvent("poseguard_rejected", { reason: result.reason });
   if (result.reason === "quality_rejected") {
     return new Error("Center frame failed the quality check. Keep your face in view and try again.");

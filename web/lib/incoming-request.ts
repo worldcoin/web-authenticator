@@ -1,6 +1,7 @@
 import { openBridge } from './bridge'
 import { currentProtocolEnvironment } from './environment'
 import type { WalletKit } from './walletkit'
+import type { SelfieCheckDiagnosticAttempt } from './selfie-check-debug-report'
 import { abortable } from './async'
 import { parseConnector, returnUrl } from './connector'
 import {
@@ -8,6 +9,7 @@ import {
 	parsePayload,
 	validateSignature,
 	checkExpiry,
+	type Payload,
 	type ProofRequest,
 } from './proof-request'
 
@@ -16,11 +18,12 @@ export type IncomingRequest = {
 	bridgeRequestId?: string
 	label: string
 	appId?: string
+	environment: Payload['environment']
 	actionLabel: string
 	returnUrl?: string
 	unsupportedReason?: string
 	validate: (signal: AbortSignal) => Promise<void>
-	deliver: (proof: string, signal: AbortSignal) => Promise<void>
+	deliver: (proof: string, signal: AbortSignal, diagnostic?: SelfieCheckDiagnosticAttempt) => Promise<void>
 	cancel: (signal: AbortSignal) => Promise<void>
 }
 
@@ -53,6 +56,7 @@ export async function loadIncomingRequest(
 		bridgeRequestId: connector.requestId,
 		label: payload.proof_request.rp_id,
 		appId: payload.app_id,
+		environment: payload.environment,
 		actionLabel: payload.action,
 		returnUrl: callback,
 		unsupportedReason: payload.require_user_presence
@@ -63,7 +67,8 @@ export async function loadIncomingRequest(
 		validate: async signal => {
 			await validateSignature(payload.proof_request, signal, environment)
 		},
-		deliver: async (proof, signal) => {
+		deliver: async (proof, signal, diagnostic) => {
+			diagnostic?.enter('proof_validate')
 			const response = JSON.parse(proof) as {
 				id?: unknown
 				error?: unknown
@@ -78,6 +83,7 @@ export async function loadIncomingRequest(
 			)
 				throw new Error('WalletKit returned an error or mismatched proof response.')
 			checkExpiry(payload.proof_request)
+			diagnostic?.enter('proof_share')
 			await bridge.send({ proof_response: response }, signal)
 		},
 		cancel: signal => bridge.send({ error_code: 'verification_rejected' }, signal),

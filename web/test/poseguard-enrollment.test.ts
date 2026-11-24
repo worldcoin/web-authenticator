@@ -1,9 +1,11 @@
 import { expect, spyOn, test } from "bun:test";
+import type { SelfieCheckDebugReport } from "../../config/selfie-check-debug-report";
 import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
 import type { EnrollmentReceipt } from "../lib/signup-service";
 import type { RequestWalletSession } from "../lib/wallet-session";
+import { createSelfieCheckDiagnostics } from "../lib/selfie-check-debug-report";
 import { CAPTURE_ID, CHALLENGE_ID, enrollmentCapture } from "./fixtures/enrollment";
 
 const prompt: PoseGuardPrompt = {
@@ -281,9 +283,19 @@ test.each(["succeeds", "fails"] as const)("resumes a credential save that %s aft
       endpoint: new URL("/api/v2/identity", server.url).href,
       mode: "staging",
     }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
-    const attempt = () => run({} as HTMLVideoElement, signal, () => {});
+    const reports: SelfieCheckDebugReport[] = [];
+    const diagnostics = createSelfieCheckDiagnostics(async report => { reports.push(report); });
+    diagnostics.setConsent("granted");
+    const start = diagnostics.forRequest("staging");
+    const attempt = async () => {
+      const diagnostic = start("camera");
+      try { return await run({} as HTMLVideoElement, signal, () => {}, diagnostic); }
+      finally { diagnostic?.finish(); }
+    };
 
     await expect(attempt()).resolves.toBe("pending");
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.metadata).toMatchObject({ stage: "credential_store", outcome: { type: "pending", reason: "credential_store_pending" } });
     expect(credentialBytes).toEqual(Uint8Array.of(1, 2));
 
     if (outcome === "succeeds") {
@@ -338,10 +350,10 @@ test.each([
 });
 
 test.each([
-  { result: { status: "failed", reason: "quality_rejected" }, message: "Center frame failed the quality check." },
-  { result: { status: "failed", reason: "challenge", index: 0, challengeReason: "quality_rejected" }, message: "Capture rejected at step 2." },
-  { result: { status: "failed", reason: "challenge", index: 1, challengeReason: "quality_rejected" }, message: "Capture rejected at step 3." },
-] as const)("reports $message before authorizing submission", async ({ result, message }) => {
+  { result: { status: "failed", reason: "quality_rejected" }, message: "Center frame failed the quality check.", step: undefined },
+  { result: { status: "failed", reason: "challenge", index: 0, challengeReason: "quality_rejected" }, message: "Capture rejected at step 2.", step: 2 },
+  { result: { status: "failed", reason: "challenge", index: 1, challengeReason: "quality_rejected" }, message: "Capture rejected at step 3.", step: 3 },
+] as const)("reports $message before authorizing submission", async ({ result, message, step }) => {
   const camera = cameraFrames();
   const signal = new AbortController().signal;
   const wallet = {
@@ -359,5 +371,13 @@ test.each([
     async authorize() { throw new Error("The rejected batch cannot be submitted."); },
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
 
-  await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow(message);
+  const reports: SelfieCheckDebugReport[] = [];
+  const diagnostics = createSelfieCheckDiagnostics(async report => { reports.push(report); });
+  diagnostics.setConsent("granted");
+  const diagnostic = diagnostics.forRequest("staging")("camera")!;
+  await expect(run({} as HTMLVideoElement, signal, () => {}, diagnostic)).rejects.toThrow(message);
+  diagnostic.fail(new Error("User-visible error"));
+  expect(reports).toHaveLength(1);
+  expect(reports[0]?.metadata.stage).toBe("poseguard");
+  expect(reports[0]?.metadata.outcome).toEqual({ type: "rejected", reason: "quality_rejected", ...(step === undefined ? {} : { step }) });
 });

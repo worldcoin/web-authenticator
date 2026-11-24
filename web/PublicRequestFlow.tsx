@@ -1,4 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { DiagnosticOutcome, DiagnosticStage } from "../config/selfie-check-debug-report";
+import { SelfieCheckDiagnosticsContext } from "./AppShell";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
@@ -10,11 +12,13 @@ import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
 import { configureDemoEnrollment } from "./lib/demo-enrollment";
 import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import type { SelfieCheckDiagnosticAttempt } from "./lib/selfie-check-debug-report";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 // The second of two loading messages; enrollment shows "Processing liveness" before it.
 const GENERATING_PROOF = "Credential received - generating proof";
+const REQUEST_EXPIRED = { type: "expired", reason: "request_expired" } as const;
 type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
@@ -34,7 +38,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   onDispose: () => void;
   demo?: {
     captureOnly: boolean;
-    complete: (source: DemoProofSource) => void;
+    complete: (source: DemoProofSource, diagnostic?: SelfieCheckDiagnosticAttempt) => void;
     captureComplete: () => void;
     back: () => void;
   };
@@ -52,16 +56,42 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   const session = useRef<RequestWalletSession | null>(null);
   const completing = useRef(false);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
+  const diagnostics = use(SelfieCheckDiagnosticsContext);
+  const activeDiagnostic = useRef<SelfieCheckDiagnosticAttempt | undefined>(undefined);
+  const startReport = useMemo(() => incoming ? diagnostics?.forRequest(incoming.environment) : undefined, [diagnostics, incoming]);
+  const beginDiagnosticAttempt = useCallback((stage: DiagnosticStage) => {
+    activeDiagnostic.current = startReport?.(stage);
+    return activeDiagnostic.current;
+  }, [startReport]);
+  const beginCaptureDiagnostic = useCallback(() => {
+    const active = activeDiagnostic.current;
+    if (!active || active.finished) return beginDiagnosticAttempt("capture");
+    active.enter("capture");
+    return active;
+  }, [beginDiagnosticAttempt]);
+  const finishDiagnostic = useCallback((outcome: DiagnosticOutcome) => {
+    if (!incoming || failed || unsupported) return;
+    (activeDiagnostic.current ?? beginDiagnosticAttempt("request"))?.finish(outcome);
+  }, [beginDiagnosticAttempt, failed, incoming, unsupported]);
+
   const stop = useCallback(() => {
     operation.current?.abort(new DOMException("The request flow stopped.", "AbortError")); operation.current = null;
     session.current?.dispose(); session.current = null;
   }, []);
   useEffect(() => {
-    const leave = () => { stop(); cancelling.current?.abort(); };
+    const cleanup = () => { activeDiagnostic.current?.finish(); stop(); cancelling.current?.abort(); };
+    const leave = () => {
+      activeDiagnostic.current?.finish({ type: "interrupted", reason: "page_left" });
+      cleanup();
+    };
     window.addEventListener("pagehide", leave);
-    return () => { leave(); window.removeEventListener("pagehide", leave); };
+    return () => { cleanup(); window.removeEventListener("pagehide", leave); };
   }, [stop]);
-  useEffect(() => { if (expired) stop(); }, [expired, stop]);
+  useEffect(() => {
+    if (!expired) return;
+    finishDiagnostic(REQUEST_EXPIRED);
+    stop();
+  }, [expired, finishDiagnostic, stop]);
 
   const automatic = flow.stage in COMPLETION_STEPS;
   useLayoutEffect(() => {
@@ -111,41 +141,54 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
-  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource) => {
+  const completeDemo = useCallback(async (
+    request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource, diagnostic?: SelfieCheckDiagnosticAttempt,
+  ) => {
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
     checkExpiry(request.proof);
     let proof: string;
+    diagnostic?.enter("proof_generate");
     try {
       proof = await abortable(wallet.generateProof(JSON.stringify(request.proof)), deadline);
     } catch (error) {
+      if (deadline.aborted) diagnostic?.fail(deadline.reason);
       deadline.throwIfAborted();
       if (error instanceof Error && error.name === "WalletKitError" && "code" in error && error.code === "NullifierReplay") {
+        diagnostic?.finish({ type: "rejected", reason: "nullifier_replay" });
         stop();
         setFlow({ stage: "replayed", returnUrl: request.returnUrl });
         onDispose();
         return;
       }
+      diagnostic?.fail(error);
       throw new WalletOpenError("Could not create the proof. Try again.");
     }
+    diagnostic?.enter("proof_validate");
     try {
-      await request.deliver(proof, deadline);
-    } catch {
+      await request.deliver(proof, deadline, diagnostic);
+    } catch (error) {
+      diagnostic?.fail(deadline.aborted ? deadline.reason : error);
       deadline.throwIfAborted();
       throw new WalletOpenError("Could not send the proof. Try again.");
     }
     deadline.throwIfAborted();
     stop();
+    activeDiagnostic.current = undefined;
     onDispose();
-    demo?.complete(source);
+    demo?.complete(source, diagnostic);
   }, [demo, onDispose, stop]);
 
   const start = useCallback(async () => {
     // The request screen's Continue tap is the gesture that opens the passkey.
     if (loading || !incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
     try { checkExpiry(incoming.proof); }
-    catch { setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return; }
+    catch {
+      finishDiagnostic(REQUEST_EXPIRED);
+      setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return;
+    }
     const controller = new AbortController();
     operation.current = controller;
+    const diagnostic = beginDiagnosticAttempt("passkey");
     const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
     setOpening(true); setOpenError(undefined); setOpenProgress("Opening authenticator…");
     try {
@@ -158,6 +201,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
       if (demo) {
+        diagnostic?.enter("wallet_ready");
         const ready = await abortable(current.ready, deadline);
         if ("error" in ready) throw ready.error;
         if (!demo.captureOnly) {
@@ -165,7 +209,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           checkExpiry(incoming.proof);
           if (credentials.satisfied) {
             setOpenProgress(GENERATING_PROOF);
-            await completeDemo(incoming, ready.wallet, deadline, "saved");
+            await completeDemo(incoming, ready.wallet, deadline, "saved", diagnostic);
             return;
           }
           if (!credentials.canEnrollSelfie) {
@@ -173,31 +217,40 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
-        setFlow({ stage: "capture", enroll: async (video, signal, update) => {
-          const result = await enroll(video, signal, update);
+        setFlow({ stage: "capture", enroll: async (video, signal, update, captureDiagnostic) => {
+          const result = await enroll(video, signal, update, captureDiagnostic);
           if (result === "captured") {
             checkExpiry(incoming.proof);
+            captureDiagnostic?.finish();
             stop();
             onDispose();
             demo.captureComplete();
           } else if (result === "completed") {
             update({ phase: "checking", title: GENERATING_PROOF, hint: "", progress: 1, cameraReady: false });
-            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
+            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued", captureDiagnostic);
           }
           return result;
         } });
         return;
       }
       const signup = configuredPoseGuardSignup();
-      setFlow({ stage: "capture", enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
+      const enroll = signup && createPoseGuardEnrollment(current, signup, controller.signal);
+      setFlow({ stage: "capture", enroll: enroll ? async (video, signal, update, captureDiagnostic) => {
+        const outcome = await enroll(video, signal, update, captureDiagnostic);
+        if (outcome === "completed") captureDiagnostic?.finish();
+        return outcome;
+      } : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
+        activeDiagnostic.current?.enter("wallet_ready");
+        activeDiagnostic.current?.fail(result.error);
         stop();
         setOpenError(walletOpenErrorMessage(result.error));
         setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
       });
     } catch (cause) {
       if (!controller.signal.aborted) {
+        diagnostic?.fail(cause);
         stop();
         if (cause instanceof RequestExpiredError) {
           setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose();
@@ -207,7 +260,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         }
       }
     } finally { setOpening(false); }
-  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, demo, completeDemo]);
+  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, demo, completeDemo, beginDiagnosticAttempt, finishDiagnostic]);
 
   const complete = async () => {
     const current = session.current;
@@ -216,16 +269,19 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     try {
       if (incoming) checkExpiry(incoming.proof);
       setFlow({ stage: "preparing", returnUrl: incoming?.returnUrl });
+      activeDiagnostic.current?.enter("wallet_ready");
       const result = await current.ready;
       if (session.current !== current) return;
       if ("error" in result) throw result.error;
       if (incoming) checkExpiry(incoming.proof);
+      activeDiagnostic.current?.finish();
       stop();
       // Real attested enrollment and proof delivery are connected separately.
       setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
       onDispose();
     } catch (cause) {
       if (session.current !== current) return;
+      activeDiagnostic.current?.fail(cause);
       stop();
       if (cause instanceof RequestExpiredError) { finish("expired"); return; }
       setOpenError(walletOpenErrorMessage(cause));
@@ -235,6 +291,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   const cancel = async () => {
     if (cancelling.current) return;
     const request = incoming;
+    finishDiagnostic({ type: "cancelled", reason: "user_cancelled" });
     finish("cancelled");
     if (!request) return;
     const controller = new AbortController();
@@ -280,6 +337,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         onClose={() => void cancel()}
         backLabel="Cancel check"
         onComplete={flow.enroll ? undefined : () => void complete()}
+        beginDiagnosticAttempt={beginCaptureDiagnostic}
         enroll={flow.enroll}
         completionHint={flow.stage === "preparing" ? openProgress : undefined}
       />

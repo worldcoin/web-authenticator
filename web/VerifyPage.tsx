@@ -61,8 +61,8 @@ export function VerifyPage({ services }: { services: Services }) {
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
     captureOnly: new URL(attempt.returnUrl).protocol === "http:",
-    complete: (source: Parameters<typeof demo.complete>[0]) => {
-      demo.complete(source);
+    complete: (...args: Parameters<typeof demo.complete>) => {
+      demo.complete(...args);
       void navigate({ to: DEMO_PATH, replace: true });
     },
     captureComplete: () => {

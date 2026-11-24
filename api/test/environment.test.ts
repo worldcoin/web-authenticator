@@ -7,7 +7,8 @@ const environments = Object.keys(ENVIRONMENTS) as ProtocolEnvironment[];
 /** Every URL an environment's build or Worker may contact. */
 function urls(environment: ProtocolEnvironment): string[] {
   const config = ENVIRONMENTS[environment];
-  return [config.appOrigin, config.signupServiceOrigin, ...config.connectSrc, ...(config.selfieEnrollment ? [config.selfieEnrollment.endpoint] : [])];
+  return [config.appOrigin, config.signupServiceOrigin, ...config.connectSrc, ...(config.selfieEnrollment ? [config.selfieEnrollment.endpoint] : []),
+    ...(config.debugReports ? [config.debugReports.apiOrigin, config.debugReports.uploadOrigin] : [])];
 }
 
 const STAGING_HOSTS = [
@@ -47,6 +48,13 @@ test("each environment's CSP allows exactly its own services", () => {
     expect(connectSrc).toContain(signupOrigin);
     expect(connectSrc).not.toContain(ENVIRONMENTS[other].signupServiceOrigin);
   }
+});
+
+test("an enabled debug report transport adds only its presign and upload origins", () => {
+  const debugReports = { apiOrigin: "https://presign.example", uploadOrigin: "https://reports.example" };
+  const sources = connectSources("staging", { ...ENVIRONMENTS.staging, debugReports });
+  expect(sources).toEqual([...connectSources("staging"), debugReports.apiOrigin, debugReports.uploadOrigin]);
+  expect(connectSources("production")).not.toContain(debugReports.uploadOrigin);
 });
 
 test("PoseGuard test mode requires an explicit staging build flag", () => {
