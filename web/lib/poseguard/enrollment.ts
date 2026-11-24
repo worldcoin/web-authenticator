@@ -108,7 +108,7 @@ export function createPoseGuardEnrollment(
       signal.throwIfAborted();
       if (saved) return "completed";
       if (savePromise) {
-        update(checking("Saving credential"));
+        update(checking());
         return await waitForSave(savePromise, signal);
       }
       if (!receipt) {
@@ -116,14 +116,14 @@ export function createPoseGuardEnrollment(
           await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera, indexerSyncDelays);
         let authorization: EnrollmentAuthorization | "staging" = "staging";
         if (signup.mode === "production") {
-          update(checking("Getting enrollment authorization"));
+          update(checking());
           authorization = await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
         } else if (signup.mode === "test") {
           authorization = { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) };
         }
         try {
           signal.throwIfAborted();
-          update(checking("Submitting your captures"));
+          update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
           if (signup.mode === "staging" || (signup.mode === "production" && signup.saveCredential)) {
@@ -141,7 +141,7 @@ export function createPoseGuardEnrollment(
         }
       }
 
-      update(checking("Checking enrollment status"));
+      update(checking());
       try {
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state !== "completed") return result.state;
@@ -154,7 +154,7 @@ export function createPoseGuardEnrollment(
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
           try {
-            update(checking("Saving credential"));
+            update(checking());
             signal.throwIfAborted();
             await wallet.storeCredential(credential, factor, undefined, 11n);
             saved = true;
@@ -234,7 +234,7 @@ async function capturePoseGuard(
           captureSignal.throwIfAborted();
         }
         images = captured;
-        update(checking(""));
+        update(checking());
         camera.close();
         return images;
       }, enrollmentSignal,
@@ -321,6 +321,7 @@ function clearImages(images: PoseGuardImages) {
   for (const image of images.captures) image.fill(0);
 }
 
-function checking(title: string): CaptureState {
-  return { phase: "checking", title, hint: "", progress: 1, cameraReady: false };
+// Everything after capture shows one message, so the screen doesn't step through internal stages.
+function checking(): CaptureState {
+  return { phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false };
 }
