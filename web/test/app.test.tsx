@@ -5,6 +5,7 @@ import { AuthenticatorAppV1 } from "../App";
 import { bridgeId, signedRequest } from "../../tests/integration/fixtures/request";
 import { DEMO_PATH } from "../../config/demo";
 import { ENVIRONMENTS } from "../../config/environment";
+import { SelfieCheckDebugReportSchema, type SelfieCheckDebugReport } from "../../config/selfie-check-debug-report";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
@@ -15,10 +16,12 @@ import * as capture from "../lib/selfie-capture";
 import * as demo from "../lib/demo";
 import * as demoEnrollment from "../lib/demo-enrollment";
 import * as poseGuard from "../lib/poseguard/enrollment";
+import * as diagnostics from "../lib/selfie-check-debug-report";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
+const grantedConsent: ConsentClient = { read: async () => "granted", save: async choice => choice };
 const demoAction = "web-authenticator-demo-f47ac10b-58cc-4372-8567-0e02b2c3d479";
 afterAll(() => GlobalRegistrator.unregister());
 // Request flows live at /verify; the landing and authenticator tests visit their own paths.
@@ -31,7 +34,7 @@ async function fixture(schema: number, available = false) {
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
   const calls = { unlocked: 0, prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
-    proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
+    proof: payload.proof_request, label: "rp_1", actionLabel: payload.action, environment: payload.environment,
     validate: async () => {}, cancel: async () => {},
     deliver: async proof => { calls.deliver.push(proof); if (calls.failDelivery) throw new Error("Transport unavailable"); },
   };
@@ -209,8 +212,12 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
   const log = spyOn(console, "info").mockImplementation(() => {});
+  const reports: SelfieCheckDebugReport[] = [];
+  const createDiagnostics = diagnostics.createSelfieCheckDiagnostics;
+  const reporter = spyOn(diagnostics, "createSelfieCheckDiagnostics").mockImplementation(() =>
+    createDiagnostics(async report => { reports.push(report); }));
   try {
-    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={grantedConsent} />);
     // The demo creates its request on arrival and hands over to the consent screen at /verify.
     expect(await view.findByRole("heading", { name: "Request from Web Authenticator" })).toBeTruthy();
     expect(window.location.pathname).toBe("/verify");
@@ -260,16 +267,19 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(f.calls.terminated).toBe(1);
     expect(f.calls.deliver).toHaveLength(0);
     expect(view.queryByRole("heading", { name: /verified/i })).toBeNull();
+    expect(reports).toEqual([]);
   } finally {
     create.mockRestore();
     configure.mockRestore();
     captureMock.mockRestore();
     log.mockRestore();
+    reporter.mockRestore();
   }
 });
 
-test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the %s proof outcome", async result => {
-  const f = await fixture(11, result === "replayed");
+test.each(["accepted", "saved", "rejected", "replayed"] as const)("hosted demo shows the %s proof outcome", async result => {
+  const saved = result === "saved";
+  const f = await fixture(11, saved || result === "replayed");
   f.wallet.generateProof = async () => {
     if (result === "replayed") {
       throw Object.assign(new Error("nullifier_replay"), { name: "WalletKitError", code: "NullifierReplay" });
@@ -297,9 +307,13 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
   const browser = (window as typeof window & { happyDOM?: { setURL(url: string): void } }).happyDOM;
   if (!browser) throw new Error("Expected a detached browser fixture.");
   const originalUrl = window.location.href;
+  const reports: SelfieCheckDebugReport[] = [];
+  const createDiagnostics = diagnostics.createSelfieCheckDiagnostics;
+  const reporter = spyOn(diagnostics, "createSelfieCheckDiagnostics").mockImplementation(() =>
+    createDiagnostics(async report => { reports.push(SelfieCheckDebugReportSchema.parse(report)); }));
   browser.setURL(returnUrl);
   try {
-    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={grantedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Continue" }));
     if (result === "replayed") {
       expect(await view.findByRole("heading", { name: "Proof already created" })).toBeTruthy();
@@ -308,6 +322,8 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual([]);
       expect(verify).not.toHaveBeenCalled();
+      expect(reports).toHaveLength(1);
+      expect(reports[0]?.metadata).toMatchObject({ stage: "proof_generate", outcome: { type: "rejected", reason: "nullifier_replay" } });
       // Returning ends the attempt; it must not start another request on its own.
       fireEvent.click(view.getByRole("button", { name: "Return to demo" }));
       expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
@@ -317,25 +333,68 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
     }
     expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
     expect(f.calls.deliver).toEqual(["test-proof"]);
-    expect(configure).toHaveBeenCalledTimes(1);
+    expect(configure).toHaveBeenCalledTimes(saved ? 0 : 1);
     expect(verify).toHaveBeenCalledTimes(1);
     expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
-    if (result === "accepted") {
+    if (result === "accepted" || saved) {
       verdict.resolve();
-      expect(await view.findByRole("heading", { name: "New credential verified" })).toBeTruthy();
+      expect(await view.findByRole("heading", { name: saved ? "Saved credential verified" : "New credential verified" })).toBeTruthy();
+      expect(reports).toEqual([]);
     } else {
       verdict.reject(new Error("The relying party rejected the proof."));
       expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");
       expect(await view.findByRole("button", { name: "Try again" })).toBeTruthy();
       expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+      expect(reports).toHaveLength(1);
+      expect(reports[0]?.metadata).toMatchObject({ stage: "demo_verify", outcome: { type: "failed", reason: "operation_failed" } });
     }
   } finally {
     cleanup();
     browser.setURL(originalUrl);
+    reporter.mockRestore();
     create.mockRestore();
     configure.mockRestore();
     verify.mockRestore();
     log.mockRestore();
+  }
+});
+
+test("a consented camera failure sends one report and retry succeeds despite an upload failure", async () => {
+  const f = await fixture(11);
+  const reports: SelfieCheckDebugReport[] = [];
+  const createDiagnostics = diagnostics.createSelfieCheckDiagnostics;
+  const reporter = spyOn(diagnostics, "createSelfieCheckDiagnostics").mockImplementation(() => createDiagnostics(async report => {
+    reports.push(SelfieCheckDebugReportSchema.parse(report));
+    throw new Error("The report collector is unavailable");
+  }));
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  const captureMock = spyOn(capture, "captureSelfie")
+    .mockRejectedValueOnce(new DOMException("private camera details", "NotAllowedError"))
+    .mockResolvedValueOnce({ image: new Blob(["test"], { type: "image/jpeg" }), timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 } });
+  try {
+    const consent: ConsentClient = { read: async () => "unset", save: async choice => choice };
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
+    await view.findByRole("heading", { name: "Help improve World ID" });
+    fireEvent.click(view.getByRole("button", { name: "Accept" }));
+    const proceed = await view.findByRole("button", { name: "Continue" });
+    expect(f.calls.unlocked).toBe(0);
+    expect(reports).toEqual([]);
+    fireEvent.click(proceed);
+    const retry = await view.findByRole("button", { name: "Try again" });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.metadata).toMatchObject({ stage: "camera", outcome: { type: "failed", reason: "permission_denied" } });
+    expect(reports[0]?.metadata.milestones.map(({ stage }) => stage)).toEqual(["passkey", "capture", "camera"]);
+    expect(JSON.stringify(reports)).not.toContain("private camera details");
+    fireEvent.click(retry);
+    await view.findByRole("heading", { name: "Selfie captured" }, { timeout: 4000 });
+    expect(reports).toHaveLength(1);
+    expect(f.calls.unlocked).toBe(1);
+    expect(warn).toHaveBeenCalledWith("selfie_check_debug_report_failed");
+  } finally {
+    cleanup();
+    reporter.mockRestore();
+    warn.mockRestore();
+    captureMock.mockRestore();
   }
 });
 
@@ -385,12 +444,22 @@ for (const fails of [false, true]) {
 test("public cancellation closes the request even when the bridge is unavailable", async () => {
   const f = await fixture(11);
   f.incoming.cancel = async () => { throw new Error("offline"); };
-  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  fireEvent.click(await view.findByRole("button", { name: "Cancel request" }));
-  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
-  expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
-  expect(f.calls.prove).toBe(0);
+  const reports: SelfieCheckDebugReport[] = [];
+  const createDiagnostics = diagnostics.createSelfieCheckDiagnostics;
+  const reporter = spyOn(diagnostics, "createSelfieCheckDiagnostics").mockImplementation(() =>
+    createDiagnostics(async report => { reports.push(report); }));
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={grantedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Cancel request" }));
+    expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+    expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(f.calls.prove).toBe(0);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.metadata).toMatchObject({ stage: "request", outcome: { type: "cancelled", reason: "user_cancelled" } });
+  } finally {
+    reporter.mockRestore();
+  }
 });
 
 test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {

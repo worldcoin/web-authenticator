@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
+import type { DiagnosticStage } from "../../config/selfie-check-debug-report";
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload, validateSignature } from "../lib/proof-request";
@@ -34,12 +35,17 @@ test("fetches, decrypts and validates a real-format RP request; encrypts the mat
   const f = await fixture();
   const incoming = await loadIncomingRequest("http://localhost" + f.encrypted.query, signal(), () => {});
   expect(incoming?.proof).toEqual(f.payload.proof_request);
+  expect(incoming?.environment).toBe(f.payload.environment);
   const response = { id: "test-request", responses: [{ issuer_schema_id: 11, proof: "test-proof" }] };
-  await incoming!.deliver(JSON.stringify(response), signal());
+  const stages: DiagnosticStage[] = [];
+  const diagnostic = { finished: false, enter: (stage: DiagnosticStage) => stages.push(stage), finish() {}, fail() {} };
+  await expect(incoming!.deliver(JSON.stringify({ ...response, id: "wrong" }), signal(), diagnostic)).rejects.toThrow("mismatched");
+  expect(stages.splice(0)).toEqual(["proof_validate"]);
+  await incoming!.deliver(JSON.stringify(response), signal(), diagnostic);
+  expect(stages).toEqual(["proof_validate", "proof_share"]);
   expect(f.sent).toEqual([{ proof_response: response }]);
   await incoming!.cancel(signal());
   expect(f.sent[1]).toEqual({ error_code: "verification_rejected" });
-  await expect(incoming!.deliver(JSON.stringify({ ...response, id: "wrong" }), signal())).rejects.toThrow("mismatched");
 });
 test("the public flow accepts Selfie requests but rejects other schemas, mixed alternatives and unsupported requirements", async () => {
   const f = await fixture();

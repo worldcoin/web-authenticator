@@ -5,6 +5,7 @@ import { RequestIntro } from "./components/RequestIntro";
 import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, primaryAction, requestFrame, screenContent, screenTitle, secondaryAction } from "./components/styles";
 import { currentProtocolEnvironment } from "./lib/environment";
 import { logDemoRequest, startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
+import type { SelfieCheckDiagnosticAttempt } from "./lib/selfie-check-debug-report";
 
 type DemoState =
   | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" | "cancelled" }
@@ -15,6 +16,7 @@ type ActiveDemoAttempt = {
   controller: AbortController;
   attempt?: DemoAttempt;
   verifying?: boolean;
+  diagnostic?: SelfieCheckDiagnosticAttempt;
 };
 
 export const DemoContext = createContext<{
@@ -22,7 +24,7 @@ export const DemoContext = createContext<{
   attempt: DemoHandoff | undefined;
   create: () => Promise<void>;
   open: () => string | undefined;
-  complete: (source: DemoProofSource) => void;
+  complete: (source: DemoProofSource, diagnostic?: SelfieCheckDiagnosticAttempt) => void;
   captureComplete: () => void;
   cancel: () => void;
 } | null>(null);
@@ -34,8 +36,12 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stop = () => active.current?.controller.abort();
-    window.addEventListener("pagehide", stop);
-    return () => { window.removeEventListener("pagehide", stop); stop(); };
+    const leave = () => {
+      active.current?.diagnostic?.finish({ type: "interrupted", reason: "page_left" });
+      stop();
+    };
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); stop(); };
   }, []);
 
   const stop = useCallback(() => {
@@ -44,6 +50,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const cancel = () => {
+    active.current?.diagnostic?.finish({ type: "cancelled", reason: "user_cancelled" });
     stop();
     setAttempt(undefined);
     // Not "idle": only the first visit creates a request without a tap.
@@ -84,16 +91,22 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     return next.query;
   }, [stop]);
 
-  const complete = (source: DemoProofSource) => {
+  const complete = (source: DemoProofSource, diagnostic?: SelfieCheckDiagnosticAttempt) => {
     const current = active.current;
-    if (!current?.attempt || current.verifying) return;
+    if (!current?.attempt || current.verifying) { diagnostic?.finish(); return; }
     current.verifying = true;
+    current.diagnostic = diagnostic;
+    diagnostic?.enter("demo_verify");
     const { signal } = current.controller;
     setState({ phase: "verifying" });
     void verifyDemo(current.attempt, signal).then(() => {
-      if (!signal.aborted) setState({ phase: "verified", source });
+      if (signal.aborted) return;
+      diagnostic?.finish();
+      setState({ phase: "verified", source });
     }).catch(error => {
-      if (!signal.aborted) setState({ phase: "error", message: demoError(error) });
+      if (signal.aborted) return;
+      diagnostic?.fail(error);
+      setState({ phase: "error", message: demoError(error) });
     }).finally(() => {
       if (active.current === current) active.current = null;
     });

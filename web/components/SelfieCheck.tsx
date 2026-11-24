@@ -5,6 +5,7 @@ import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STAT
 import { CaptureProgressRing } from "./CaptureProgressRing";
 import { PoseTargetIndicator } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
+import type { SelfieCheckDiagnosticAttempt } from "../lib/selfie-check-debug-report";
 
 // 11 units inside the ring viewBox, scaling with the aperture on narrow screens.
 const APERTURE_INSET = "absolute inset-x-[calc(11/345.005*100%)] inset-y-[calc(11/481.637*100%)]";
@@ -12,22 +13,26 @@ const APERTURE_INSET = "absolute inset-x-[calc(11/345.005*100%)] inset-y-[calc(1
 const CAMERA_WIDTH = "w-[min(345px,max(60px,calc((100svh_-_292px)*0.7163)))]";
 const RETRY = "min-h-12 max-w-45 flex-1 rounded-2xl bg-background-secondary p-3 text-[15px] text-foreground hover:bg-[#ededed]";
 
-export default function SelfieCheck({ onClose, onComplete, backLabel, completionHint, enroll }: {
+export default function SelfieCheck({ onClose, onComplete, backLabel, completionHint, enroll, beginDiagnosticAttempt }: {
   onClose: () => void;
   onComplete?: () => void;
   backLabel: string;
   completionHint?: string;
   enroll?: RunPoseGuard;
+  beginDiagnosticAttempt?: () => SelfieCheckDiagnosticAttempt | undefined;
 }) {
   const setCaptureActive = use(CaptureScreenContext);
   useEffect(() => { setCaptureActive(true); return () => setCaptureActive(false); }, [setCaptureActive]);
   const video = useRef<HTMLVideoElement>(null);
   const controller = useRef<AbortController | null>(null);
+  const beginDiagnostics = useRef(beginDiagnosticAttempt);
+  const captureDiagnostic = useRef<SelfieCheckDiagnosticAttempt | undefined>(undefined);
   const completion = useRef(onComplete);
   const publicCompleted = useRef(false);
   const enrollmentFinished = useRef(false);
   const imageUrl = useRef<string | undefined>(undefined);
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
+  useEffect(() => { beginDiagnostics.current = beginDiagnosticAttempt; }, [beginDiagnosticAttempt]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
   const [visible, setVisible] = useState(() => !document.hidden);
@@ -61,7 +66,12 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         }
         return;
       }
-      if (document.hidden) pause();
+      if (document.hidden) {
+        if (controller.current && !controller.current.signal.aborted) {
+          captureDiagnostic.current?.finish({ type: "interrupted", reason: "tab_backgrounded" });
+        }
+        pause();
+      }
       else { setState(INITIAL_CAPTURE_STATE); setVisible(true); setAttempt(value => value + 1); }
     };
     const leave = () => { clearImage(); pause(); };
@@ -77,11 +87,13 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
     if (!visible || !video.current) return;
     const active = new AbortController();
     controller.current = active;
+    const diagnostic = beginDiagnostics.current?.();
+    captureDiagnostic.current = diagnostic;
     if (enroll) {
       void enroll(video.current, active.signal, next => {
         if (active.signal.aborted) return;
         setState(next);
-      }).then(outcome => {
+      }, diagnostic).then(outcome => {
         if (active.signal.aborted) return;
         enrollmentFinished.current = outcome !== "pending";
         const title = {
@@ -94,6 +106,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         setState({ phase: outcome === "pending" ? "pending" : "complete", title, hint: "", progress: outcome === "failed" || outcome === "duplicate" ? 0 : 1, cameraReady: false });
       }).catch(error => {
         if (active.signal.aborted) return;
+        diagnostic?.fail(error);
         active.abort();
         logCaptureFailure(error);
         setState(captureFailure(error));
@@ -106,6 +119,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
     const timeout = new AbortController();
     const deadline = setTimeout(() => timeout.abort(new DOMException("Capture timed out", "TimeoutError")), CAPTURE_TIMEOUT_MS);
     const signal = AbortSignal.any([active.signal, timeout.signal]);
+    diagnostic?.enter("camera");
     void captureSelfie(video.current, signal, next => {
       if (!signal.aborted) setState(next);
     }, { retainPreviewUntilAbort: !!completion.current }).then(result => {
@@ -118,6 +132,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
       completion.current?.();
     }).catch(error => {
       if (active.signal.aborted) return;
+      diagnostic?.fail(error);
       active.abort(); clearImage();
       logCaptureFailure(error);
       setImage(undefined); setState(captureFailure(error));

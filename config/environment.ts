@@ -1,5 +1,7 @@
 export type ProtocolEnvironment = "staging" | "production";
 
+export type DebugReportUploadConfig = Readonly<{ apiOrigin: string; uploadOrigin: string }>;
+
 /** A reviewed `worldcoin/tee-apps` selfie-enrollment client release policy. */
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
@@ -21,6 +23,8 @@ export interface EnvironmentConfig {
   readonly signupServiceOrigin: string;
   /** Origins the page may connect to besides 'self'; becomes CSP `connect-src`. */
   readonly connectSrc: readonly string[];
+  /** Presign API and bucket origins, or null while debug uploads are disabled. */
+  readonly debugReports: DebugReportUploadConfig | null;
   /** Attested selfie-enrollment TEE policy, or null while extraction is off for this environment. */
   readonly selfieEnrollment: SelfieEnrollmentPolicy | null;
 }
@@ -47,6 +51,8 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
     // Source: world-id-deploy/developer-portal/stacks/web/parameters.ts.
     rpRegistry: "0x37d2462fE7B4a07987263AAd062C6593C4f567b9",
     signupServiceOrigin: "https://app.stage.face.worldcoin.org",
+    // Enable after the web presign endpoint and bucket CORS are deployed.
+    debugReports: null,
     connectSrc: Object.freeze([
       "https://gateway.id-infra.worldcoin.dev",
       "https://indexer.us.id-infra.worldcoin.dev",
@@ -65,6 +71,7 @@ export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfi
     appOrigin: "https://web.world.org",
     rpRegistry: "0xD9A213A92Bca460D56cDbBF4d775b48fB5925BbC",
     signupServiceOrigin: "https://app.face.worldcoin.org",
+    debugReports: null,
     connectSrc: Object.freeze([
       "https://gateway.id-infra.world.org",
       "https://indexer.us.id-infra.world.org",
@@ -81,13 +88,14 @@ export const APP_ORIGINS = Object.freeze({
 } as const);
 
 /** CSP `connect-src` sources for one environment, including its TEE endpoint when enabled. */
-export function connectSources(environment: ProtocolEnvironment): readonly string[] {
-  const config = ENVIRONMENTS[environment];
+export function connectSources(environment: ProtocolEnvironment, config = ENVIRONMENTS[environment]): readonly string[] {
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
   const challengeUrl = environment === "staging" ? config.selfieEnrollment?.ownershipChallengeUrl : undefined;
+  const debugReportOrigins = config.debugReports ? [config.debugReports.apiOrigin, config.debugReports.uploadOrigin] : [];
   return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
     ...(challengeUrl ? [new URL(challengeUrl).href] : []),
+    ...debugReportOrigins,
   ];
 }
 
