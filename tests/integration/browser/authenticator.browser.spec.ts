@@ -48,7 +48,7 @@ if (!("bun" in process.versions)) {
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query + "&deny");
-    await page.getByRole("button", { name: "Start selfie check" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
@@ -108,7 +108,7 @@ if (!("bun" in process.versions)) {
         await page.emulateMedia({ reducedMotion });
         const footerPosition = await page.getByRole("button", { name: "Menu" }).boundingBox();
         await hideAtStage(page, "capture-complete");
-        await page.getByRole("button", { name: "Start selfie check" }).click();
+        await page.getByRole("button", { name: "Continue" }).click();
         await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
         const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
         await page.clock.runFor(10_000);
@@ -160,7 +160,7 @@ if (!("bun" in process.versions)) {
 
     test("leaving during completion cancels advancement and clears the image", async ({ page }) => {
       await hideAtStage(page, "capture-complete");
-      await page.getByRole("button", { name: "Start selfie check" }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
       const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
@@ -263,8 +263,8 @@ if (!("bun" in process.versions)) {
       await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } });
     });
     await page.goto("/verify" + encrypted.query);
-    await expect(page.getByRole("heading", { name: "Complete a Selfie Check" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start selfie check" })).toBeEnabled();
+    await expect(page.getByRole("heading", { name: /^Request from / })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
     expect(new URL(page.url()).pathname).toBe("/verify");
     expect(new URL(page.url()).search).toBe("");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-request-mobile.png`, fullPage: true });
@@ -283,7 +283,7 @@ if (!("bun" in process.versions)) {
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start selfie check" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create or unlock with passkey" })).toHaveCount(0);
   });
 
@@ -295,7 +295,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request has expired" })).toBeVisible();
     await expect(page.getByText("Close this tab and return to the app to start again.")).toBeVisible();
-    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Continue|Cancel request/ })).toHaveCount(0);
   });
 
   test.describe("first visit without a consent choice", () => {

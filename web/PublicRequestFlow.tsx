@@ -10,7 +10,7 @@ import type { WalletKit } from "./lib/walletkit";
 import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
 import { configureDemoEnrollment, configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
-import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
+import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
@@ -281,7 +281,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       <SelfieCheck
         onClose={() => void cancel()}
         backLabel="Cancel check"
-        beta={!!demo}
         onComplete={flow.enroll ? undefined : () => void complete()}
         enroll={flow.enroll}
         completionHint={flow.stage === "preparing" ? openProgress : undefined}
@@ -289,16 +288,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     </Suspense>
   </div>;
 
-  return <div className={requestFrame}>
+  return <div className={consentFrame}>
     <RequestIntro
-      selfieOnly
-      beta={!!demo}
       onReturn={demo?.back}
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
       rp={demo && incoming ? "Web Authenticator" : incoming?.label}
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
-      busy={false}
       onStart={() => void start()}
       onCancel={() => void cancel()}
     />
