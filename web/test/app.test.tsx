@@ -115,13 +115,17 @@ test("a first visit sees the consent screen before the home page, and the choice
   expect(saved).toEqual(["granted", "denied"]);
 });
 
-test("a request link waits behind consent and continues to unlock and capture once the user chooses", async () => {
+test("a request link waits behind consent, then shows the request before unlocking", async () => {
   const f = await fixture(11);
   const consent: ConsentClient = { read: async () => "unset", save: async choice => choice };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Decline" }));
+  // The cookie choice only dismisses the cookie screen; the user still sees who is asking.
+  expect(await view.findByRole("heading", { name: /^Request from / })).toBeTruthy();
+  expect(f.calls.unlocked).toBe(0);
+  fireEvent.click(await view.findByRole("button", { name: "Continue" }));
   expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   expect(f.calls.unlocked).toBe(1);
 });
