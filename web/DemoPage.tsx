@@ -7,7 +7,7 @@ import { currentProtocolEnvironment } from "./lib/environment";
 import { logDemoRequest, startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
 
 type DemoState =
-  | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" }
+  | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" | "cancelled" }
   | { phase: "verified"; source: DemoProofSource }
   | { phase: "error"; message: string };
 
@@ -46,7 +46,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const cancel = () => {
     stop();
     setAttempt(undefined);
-    setState({ phase: "idle" });
+    // Not "idle": only the first visit creates a request without a tap.
+    setState({ phase: "cancelled" });
   };
 
   const create = useCallback(async () => {
@@ -199,6 +200,7 @@ function demoTitle(state: DemoState): string {
     return state.source === "issued" ? "New credential verified" : "Saved credential verified";
   }
   if (state.phase === "captured") return "PoseGuard captures accepted";
+  if (state.phase === "cancelled") return "Check cancelled";
   if (state.phase === "verifying") return "Verifying proof…";
   if (state.phase === "waiting") return "Check in progress";
   return "Selfie Check";

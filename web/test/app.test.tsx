@@ -295,11 +295,15 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
     if (result === "replayed") {
       expect(await view.findByRole("heading", { name: "Proof already created" })).toBeTruthy();
       expect(view.getByText("The authenticator detected a nullifier replay for this action.")).toBeTruthy();
-      expect(view.getByRole("button", { name: "Return to demo" })).toBeTruthy();
       expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual([]);
       expect(verify).not.toHaveBeenCalled();
+      // Returning ends the attempt; it must not start another request on its own.
+      fireEvent.click(view.getByRole("button", { name: "Return to demo" }));
+      expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+      expect(view.getByRole("button", { name: "Create another request" })).toBeTruthy();
+      expect(create).toHaveBeenCalledTimes(1);
       return;
     }
     expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
