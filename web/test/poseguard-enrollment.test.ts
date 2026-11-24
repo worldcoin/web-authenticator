@@ -176,7 +176,10 @@ test.each([
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
     await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
-    await expect(run(video, signal, () => {})).resolves.toBe("completed");
+    const checkingTitles = new Set<string>();
+    await expect(run(video, signal, state => { if (state.phase === "checking") checkingTitles.add(state.title); })).resolves.toBe("completed");
+    // The resumed run polls and saves; neither step is named on screen.
+    expect([...checkingTitles]).toEqual(["Processing liveness"]);
     expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: mode === "production" ? 1 : 0 });
     expect(stored).toBe(saveCredential ? 1 : 0);
     if (saveCredential) await expect(run(video, signal, () => {})).resolves.toBe("completed");
