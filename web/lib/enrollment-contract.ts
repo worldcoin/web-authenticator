@@ -13,8 +13,8 @@ export interface EnrollmentChallenge {
   readonly expires_at: string;
 }
 
-// PVS uses FieldElement::from_arbitrary_raw_bytes(b"enrollment"): Keccak-256 >> 8.
-export const ENROLLMENT_CONTEXT = `0x${(BigInt(keccak256(stringToHex("enrollment"))) >> 8n).toString(16)}`;
+// PVS uses FieldElement::from_arbitrary_raw_bytes(b"enrollment"): Keccak-256 >> 8 as 32 bytes.
+export const ENROLLMENT_CONTEXT = `0x${(BigInt(keccak256(stringToHex("enrollment"))) >> 8n).toString(16).padStart(64, "0")}`;
 
 const FIELDS = [
   "contract_version", "sub", "capture_id", "timestamp",

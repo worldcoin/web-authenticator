@@ -44,7 +44,7 @@ export async function openSelfieRequest(page: Page, query = "", origin = "") {
   await page.route("https://staging-bridge.worldcoin.org/response/*", route => route.fulfill({ json: {}, headers: { "access-control-allow-origin": "*" } }));
   await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
   await page.goto(origin + "/verify" + encrypted.query + (query ? "&" + query.replace(/^\?/, "") : ""));
-  await page.getByRole("button", { name: "Start selfie check" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 }
 
 /** Isolates capture/UI checks from passkey providers and live account services. */

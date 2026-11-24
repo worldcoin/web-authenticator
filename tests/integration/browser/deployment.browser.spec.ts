@@ -40,11 +40,11 @@ if (!("bun" in process.versions)) {
       }));
       await page.goto(origin + "/verify" + encrypted.query);
       if (accepted) {
-        await expect(page.getByRole("button", { name: "Start selfie check" })).toBeEnabled();
+        await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
         expect(lookups).toEqual([endpoint]);
       } else {
         await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Start selfie check" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
         expect(lookups).toEqual([]);
       }
     });

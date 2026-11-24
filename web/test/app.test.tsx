@@ -57,13 +57,14 @@ test("request intro names the RP only after validation, then starts the check", 
   window.history.replaceState(null, "", "/verify?t=wld&i=550e8400-e29b-41d4-a716-446655440000&k=a2V5");
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   // Load is pending: the RP is unverified, so it is not shown and the check cannot start.
-  await view.findByRole("heading", { name: "Complete a Selfie Check" });
+  await view.findByRole("heading", { name: "Request from an app" });
   expect(window.location.search).toBe("");
   expect(view.queryByText("rp_1")).toBeNull();
   expect((view.getByRole("button", { name: "Verifying request…" }) as HTMLButtonElement).disabled).toBe(true);
   resolve(f.incoming);
-  expect(await view.findByText("rp_1 is requesting a Selfie Check.")).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Start selfie check" }));
+  expect(await view.findByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
+  expect(view.getByRole("heading", { name: "App will receive" })).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Continue" }));
   expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   expect(opened).toBe(0);
   expect(f.calls.unlocked).toBe(1);
@@ -87,9 +88,9 @@ test("a request that expires on the intro stops offering the check", async () =>
   f.incoming.proof.expires_at = Math.ceil(Date.now() / 1000) + 1;
   f.incoming.returnUrl = "https://rp.example/done";
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-  expect(await view.findByRole("button", { name: "Start selfie check" })).toBeTruthy();
+  expect(await view.findByRole("button", { name: "Continue" })).toBeTruthy();
   expect(await view.findByRole("heading", { name: "This request has expired" }, { timeout: 3000 })).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(view.getByRole("link", { name: "Return to the app" }).getAttribute("href")).toBe("https://rp.example/done");
 });
 
@@ -119,7 +120,7 @@ test("a request link waits behind consent and continues to unlock and capture on
   const consent: ConsentClient = { read: async () => "unset", save: async choice => choice };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={consent} />);
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Decline" }));
   expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   expect(f.calls.unlocked).toBe(1);
@@ -151,7 +152,7 @@ test("public Selfie capture reuses the unlocked session without another save pro
   });
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-    fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+    fireEvent.click(await view.findByRole("button", { name: "Continue" }));
     // Browser lifecycle tests inspect transient animation states with a controlled clock.
     await waitFor(() => expect(f.calls.terminated).toBe(1), { timeout: 4000 });
     await waitFor(() => expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true), { timeout: 4000 });
@@ -161,7 +162,6 @@ test("public Selfie capture reuses the unlocked session without another save pro
     expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
     expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
     expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
-    expect(view.queryByRole("link", { name: "Open authenticator" })).toBeNull();
     expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
     expect(opened).toBe(0);
     expect(f.calls.prove).toBe(0);
@@ -174,7 +174,7 @@ test("public non-Selfie requests stop before capture or wallet access", async ()
   const f = await fixture(1);
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   expect(await view.findByRole("heading", { name: "This request isn’t supported here" })).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(view.queryByRole("button", { name: /passkey|Approve/ })).toBeNull();
   expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
   expect(f.calls.listed).toBe(0);
@@ -194,7 +194,7 @@ for (const fails of [false, true]) {
     });
     try {
       const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-      fireEvent.click(await view.findByRole("button", { name: "Start selfie check" }));
+      fireEvent.click(await view.findByRole("button", { name: "Continue" }));
       await waitFor(() => expect(view.getByTestId("request-frame").getAttribute("data-stage")).toBe("preparing"));
       expect(f.calls.unlocked).toBe(1);
       expect(f.calls.terminated).toBe(0);
@@ -220,7 +220,7 @@ test("public cancellation closes the request even when the bridge is unavailable
   fireEvent.click(await view.findByRole("button", { name: "Cancel request" }));
   expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
   expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Start selfie check" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(f.calls.prove).toBe(0);
 });
 

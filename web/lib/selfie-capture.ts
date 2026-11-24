@@ -1,3 +1,4 @@
+import type { PoseTarget } from "./poseguard/types";
 import { startFaceDetector } from "./face-detector";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "./hold-steady-progress";
 import { faceGuidance, previewCrop } from "./rgbnet";
@@ -6,11 +7,13 @@ import { faceGuidance, previewCrop } from "./rgbnet";
 export const CAPTURE_TIMEOUT_MS = 30_000;
 
 export type CaptureState = {
-  phase: "starting" | "framing" | "holding" | "capturing" | "complete" | "paused" | "error";
+  phase: "starting" | "framing" | "holding" | "capturing" | "captured" | "checking" | "pending" | "complete" | "paused" | "error";
   title: string;
   hint: string;
   progress: number;
   cameraReady: boolean;
+  target?: PoseTarget | null;
+  poseStep?: { index: number; total: number };
 };
 
 export type CaptureResult = {
@@ -46,6 +49,9 @@ export function captureFailure(error: unknown): CaptureState {
   } else if (name === "TimeoutError") {
     title = "Let's give that another try";
     hint = "The check took too long. Find good light and try again.";
+  } else if (name === "AbortError") {
+    // An abort message names the internal reason, or is the browser's generic text.
+    hint = "Something went wrong. Please try again.";
   }
   return { phase: "error", title, hint, progress: 0, cameraReady: false };
 }

@@ -107,7 +107,7 @@ test('rejects malformed acceptance bodies as unconfirmed submissions', async () 
 		await withFetch(() => Response.json(wire, { status: 202 }), async () => {
 			await expect(submitEnrollment(capture(), authorization, options())).rejects.toMatchObject({
 				code: 'invalid_response', retryable: true, status: 202,
-				message: 'Enrollment submission could not be confirmed. Keep this capture; retrying requires a fresh ownership proof.',
+				message: 'Enrollment submission could not be confirmed. Keep this capture and check its status.',
 			})
 		})
 	}

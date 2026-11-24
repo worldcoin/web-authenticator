@@ -36,11 +36,12 @@ const DOTS = Array.from({ length: DOT_COUNT }, (_, index) => {
 const BORDER_PATH = samples.filter((_, index) => index % 4 === 0)
   .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(3)} ${point.y.toFixed(3)}`).join(" ") + " Z";
 
-export function CaptureProgressRing({ progress }: { progress: number }) {
+export function CaptureProgressRing({ progress, poseGuard = false }: { progress: number; poseGuard?: boolean }) {
   const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOT_COUNT);
+  const filledColor = poseGuard ? "currentColor" : "#d4af37";
   // On completion the dots give way to a border that the capture-border stage animates.
-  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full" data-testid="selfie-design-ring" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fill="none" aria-hidden="true">
-    {DOTS.map(({ x, y }, index) => <circle className="fill-[#e3e3e3] data-[filled=true]:fill-[#d4af37] group-data-[transitioning=true]/selfie:invisible" key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
+  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full text-accent" data-testid="selfie-design-ring" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fill="none" aria-hidden="true">
+    {DOTS.map(({ x, y }, index) => <circle className="group-data-[transitioning=true]/selfie:invisible" fill={index < filled ? filledColor : "#e3e3e3"} key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
     <path className="hidden group-data-[transitioning=true]/selfie:block group-data-[stage=capture-border]/sequence:motion-safe:animate-selfie-border-complete" data-testid="selfie-completion-border" d={BORDER_PATH} pathLength={DOT_COUNT}
       stroke="#28a86b" strokeWidth="5.89732" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1 0" strokeDashoffset="0.5" />
   </svg>;
