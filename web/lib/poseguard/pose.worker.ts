@@ -9,7 +9,6 @@ import type { PoseObservation, PoseWorkerRequest, PoseWorkerResponse } from "./t
 const POSE_SIZE = 224;
 let detector: ort.InferenceSession | undefined;
 let estimator: ort.InferenceSession | undefined;
-const send = (response: PoseWorkerResponse) => self.postMessage(response);
 
 self.onmessage = async ({ data }: MessageEvent<PoseWorkerRequest>) => {
   try {
@@ -30,6 +29,10 @@ self.onmessage = async ({ data }: MessageEvent<PoseWorkerRequest>) => {
     });
   }
 };
+
+function send(response: PoseWorkerResponse) {
+  self.postMessage(response);
+}
 
 async function initialize() {
   ort.env.wasm.numThreads = 1;
