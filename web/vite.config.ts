@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-import { parseAppEnvironment } from "../config/environment";
+import { parseAppEnvironment, parsePoseGuardTestMode } from "../config/environment";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const appRoot = fileURLToPath(new URL("./", import.meta.url));
@@ -36,11 +36,13 @@ function rejectServerModulesFromBrowser(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  // Fail the build on typos; Vite exposes this public setting to browser code.
-  parseAppEnvironment(loadEnv(mode, appRoot, "VITE_").VITE_APP_ENV ?? "staging");
+  const env = loadEnv(mode, appRoot, "VITE_");
+  const environment = parseAppEnvironment(env.VITE_APP_ENV ?? "staging");
+  parsePoseGuardTestMode(env.VITE_POSEGUARD_TEST_MODE, environment);
+  const plugins = [rejectServerModulesFromBrowser(), react(), tailwindcss()];
   return {
     root: appRoot,
-    plugins: [rejectServerModulesFromBrowser(), react(), tailwindcss()],
+    plugins,
     publicDir: "public",
     worker: { format: "es", plugins: () => [rejectServerModulesFromBrowser()] },
     // Discover ONNX before entering capture so Vite cannot reload an active camera attempt.
@@ -49,7 +51,7 @@ export default defineConfig(({ mode }) => {
       host: "127.0.0.1",
       port: 4173,
       strictPort: true,
-      fs: { allow: [repositoryRoot] },
+      fs: { allow: [repositoryRoot], deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**"] },
     },
     build: {
       target: "es2022",

@@ -1,16 +1,16 @@
-import { lazy, Suspense, use, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { ConsentContinuationContext } from "./AppShell";
 import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
 import { walletOpenErrorMessage } from "./lib/wallet-errors";
 import { abortable } from "./lib/async";
-import { actions, body, captureFrame, centeredLayout, requestFrame, screenContent, secondaryAction } from "./components/styles";
+import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -36,15 +36,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string>();
   const [openProgress, setOpenProgress] = useState("Opening authenticator…");
-  const continuationRef = use(ConsentContinuationContext);
-  const pendingStart = useRef(false);
   const operation = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const session = useRef<RequestWalletSession | null>(null);
   const completing = useRef(false);
   const unsupported = incoming ? publicRequestUnsupportedReason(incoming) : undefined;
   const stop = useCallback(() => {
-    operation.current?.abort(); operation.current = null;
+    operation.current?.abort(new DOMException("The request flow stopped.", "AbortError")); operation.current = null;
     session.current?.dispose(); session.current = null;
   }, []);
   useEffect(() => {
@@ -103,9 +101,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     onDispose();
   };
   const start = useCallback(async () => {
-    if (loading) { pendingStart.current = true; return; }
-    pendingStart.current = false;
-    if (!incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
+    // The request screen's Continue tap is the gesture that opens the passkey.
+    if (loading || !incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
     try { checkExpiry(incoming.proof); }
     catch { setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return; }
     const controller = new AbortController();
@@ -121,7 +118,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }), deadline);
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
-      setFlow({ stage: "capture" });
+      const signup = configuredPoseGuardSignup();
+      setFlow({ stage: "capture", enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
         stop();
@@ -140,18 +138,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }
     } finally { setOpening(false); }
   }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop]);
-
-  useEffect(() => {
-    if (!continuationRef) return;
-    const proceed = () => { void start(); };
-    continuationRef.current = proceed;
-    return () => { if (continuationRef.current === proceed) continuationRef.current = null; };
-  }, [continuationRef, start]);
-  useEffect(() => {
-    if (!pendingStart.current || loading) return;
-    const timer = setTimeout(() => void start(), 0);
-    return () => clearTimeout(timer);
-  }, [loading, start]);
 
   const complete = async () => {
     const current = session.current;
@@ -220,18 +206,22 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
   if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
     <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck onClose={() => void cancel()} backLabel="Cancel check" onComplete={() => void complete()} completionHint={flow.stage === "preparing" ? openProgress : undefined} />
+      <SelfieCheck
+        onClose={() => void cancel()}
+        backLabel="Cancel check"
+        onComplete={flow.enroll ? undefined : () => void complete()}
+        enroll={flow.enroll}
+        completionHint={flow.stage === "preparing" ? openProgress : undefined}
+      />
     </Suspense>
   </div>;
 
-  return <div className={requestFrame}>
+  return <div className={consentFrame}>
     <RequestIntro
-      selfieOnly
       state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
       rp={incoming?.label}
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
-      busy={false}
       onStart={() => void start()}
       onCancel={() => void cancel()}
     />

@@ -1,10 +1,15 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { ENROLLMENT_CONTEXT } from '../lib/enrollment-contract'
 import { WalletKit } from '../lib/walletkit'
 import type { WalletKit as PublishedWalletKit, CredentialStore } from '@worldcoin/walletkit-web'
 
-function fixture(actualSubject = '0x01') {
+const SUBJECT_HEX = `0x${'1'.padStart(64, '0')}`
+const FACTOR_HEX = `0x${'2'.padStart(64, '0')}`
+
+function fixture(actualSubject = SUBJECT_HEX, computedSubject = SUBJECT_HEX) {
 	const freed: string[] = []
+	const parsedFields: string[] = []
 	const field = (name: string, hex: string) => ({
 		toHexString: async () => hex,
 		free: () => freed.push(name),
@@ -29,9 +34,10 @@ function fixture(actualSubject = '0x01') {
 		},
 		computeCredentialSub: async () => {
 			if (failSub) throw new Error('subject unavailable')
-			return field('expected', '0x01')
+			return field('expected', computedSubject)
 		},
-		generateCredentialBlindingFactorRemote: async () => field('factor', '0x02'),
+		generateCredentialBlindingFactorRemote: async () => field('factor', FACTOR_HEX),
+		proveCredentialSub: async () => Uint8Array.of(0xa0),
 		generateProof: async () => response,
 		free: () => freed.push('authenticator'),
 	}
@@ -39,7 +45,11 @@ function fixture(actualSubject = '0x01') {
 		EmbeddedZkArtifacts: { new: async () => ({ free: () => freed.push('artifacts') }) },
 		Authenticator: { initWithDefaults: async () => authenticator },
 		Credential: { fromBytes: async () => credential },
-		FieldElement: { tryFromHexString: async () => field('factor', '0x02') },
+		FieldElement: { tryFromHexString: async (hex: string) => {
+			assert.match(hex, /^0x[0-9a-f]{64}$/)
+			parsedFields.push(hex)
+			return field('factor', hex)
+		} },
 		ProofRequest: { fromJson: async () => ({ free: () => freed.push('request') }) },
 	} as unknown as PublishedWalletKit
 	const store = {
@@ -52,6 +62,7 @@ function fixture(actualSubject = '0x01') {
 	return {
 		wallet: new WalletKit(client, store, 'staging', 'us'),
 		freed,
+		parsedFields,
 		writes: () => writes,
 		failInit: () => {
 			failInit = true
@@ -65,7 +76,7 @@ function fixture(actualSubject = '0x01') {
 test('published adapter refuses a different credential subject before writing and releases handles', async () => {
 	const f = fixture('0x03')
 	await f.wallet.initializeAuthenticator(new Uint8Array(32))
-	await assert.rejects(f.wallet.storeCredential(new Uint8Array(), '0x02'), /subject does not match/)
+	await assert.rejects(f.wallet.storeCredential(new Uint8Array(), FACTOR_HEX), /subject does not match/)
 	assert.equal(f.writes(), 0)
 	for (const name of ['actual', 'expected', 'factor', 'credential']) assert.ok(f.freed.includes(name))
 })
@@ -73,7 +84,7 @@ test('published adapter refuses a different credential subject before writing an
 test('published adapter stores a matching credential and returns its schema/id', async () => {
 	const f = fixture()
 	await f.wallet.initializeAuthenticator(new Uint8Array(32))
-	assert.deepEqual(await f.wallet.storeCredential(new Uint8Array(), '0x02'), {
+	assert.deepEqual(await f.wallet.storeCredential(new Uint8Array(), FACTOR_HEX), {
 		credentialId: BigInt(7),
 		issuerSchemaId: BigInt(11),
 	})
@@ -86,6 +97,23 @@ test('failed vault initialization releases the authenticator and never marks the
 	await assert.rejects(f.wallet.initializeAuthenticator(new Uint8Array(32)), /storage unavailable/)
 	assert.throws(() => f.wallet.listCredentials(), /Initialize the authenticator first/)
 	assert.deepEqual(f.freed, ['authenticator', 'artifacts'])
+})
+
+test('uses the same subject in canonical form for enrollment and fixed width for the proof', async () => {
+	const f = fixture()
+	await f.wallet.initializeAuthenticator(new Uint8Array(32))
+	const identity = await f.wallet.prepareCredential(11n)
+	assert.deepEqual(identity, { blindingFactor: FACTOR_HEX, sub: '0x1' })
+	const nonce = `0x${'3'.padStart(64, '0')}`
+	await f.wallet.proveCredentialSub(nonce, ENROLLMENT_CONTEXT, identity.blindingFactor, identity.sub)
+	assert.deepEqual(f.parsedFields, [nonce, ENROLLMENT_CONTEXT, FACTOR_HEX, SUBJECT_HEX])
+})
+
+test('subject preparation rejects zero and releases both fields', async () => {
+	const f = fixture(SUBJECT_HEX, `0x${'0'.repeat(64)}`)
+	await f.wallet.initializeAuthenticator(new Uint8Array(32))
+	await assert.rejects(f.wallet.prepareCredential(11n), /invalid enrollment subject/)
+	assert.deepEqual(f.freed.slice(-2), ['expected', 'factor'])
 })
 
 test('subject preparation releases the blinding factor when computation fails', async () => {

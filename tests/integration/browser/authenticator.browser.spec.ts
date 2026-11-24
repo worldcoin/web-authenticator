@@ -48,7 +48,7 @@ if (!("bun" in process.versions)) {
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query + "&deny");
-    await page.getByRole("button", { name: "Start selfie check" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
@@ -56,10 +56,15 @@ if (!("bun" in process.versions)) {
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
+      // The hold lasts about a second, so record its first partial frame here rather than by polling.
+      let partialFill: string | undefined;
       const observer = new MutationObserver(() => {
+        const filled = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
+        if (partialFill === undefined && filled.length > 0 && filled.length < 64) partialFill = getComputedStyle(filled[0]).fill;
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
+          partialFill,
           goldDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
@@ -72,12 +77,8 @@ if (!("bun" in process.versions)) {
     }));
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-    const goldDots = page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-    await expect.poll(() => goldDots.count()).toBeGreaterThan(0);
-    expect(await goldDots.count()).toBeLessThan(64);
-    await expect(goldDots.first()).toHaveCSS("fill", "rgb(212, 175, 55)");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ partialFill: "rgb(212, 175, 55)", goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
@@ -108,7 +109,7 @@ if (!("bun" in process.versions)) {
         await page.emulateMedia({ reducedMotion });
         const footerPosition = await page.getByRole("button", { name: "Menu" }).boundingBox();
         await hideAtStage(page, "capture-complete");
-        await page.getByRole("button", { name: "Start selfie check" }).click();
+        await page.getByRole("button", { name: "Continue" }).click();
         await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
         const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
         await page.clock.runFor(10_000);
@@ -160,7 +161,7 @@ if (!("bun" in process.versions)) {
 
     test("leaving during completion cancels advancement and clears the image", async ({ page }) => {
       await hideAtStage(page, "capture-complete");
-      await page.getByRole("button", { name: "Start selfie check" }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.locator("[data-stage]")).toHaveAttribute("data-stage", "capture-complete");
       const photoUrl = await page.getByAltText("Your captured selfie").getAttribute("src");
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
@@ -263,8 +264,8 @@ if (!("bun" in process.versions)) {
       await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } });
     });
     await page.goto("/verify" + encrypted.query);
-    await expect(page.getByRole("heading", { name: "Complete a Selfie Check" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start selfie check" })).toBeEnabled();
+    await expect(page.getByRole("heading", { name: /^Request from / })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
     expect(new URL(page.url()).pathname).toBe("/verify");
     expect(new URL(page.url()).search).toBe("");
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-request-mobile.png`, fullPage: true });
@@ -283,7 +284,7 @@ if (!("bun" in process.versions)) {
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start selfie check" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create or unlock with passkey" })).toHaveCount(0);
   });
 
@@ -295,7 +296,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request has expired" })).toBeVisible();
     await expect(page.getByText("Close this tab and return to the app to start again.")).toBeVisible();
-    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Start selfie check|Cancel request/ })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("button", { name: /passkey|Continue|Cancel request/ })).toHaveCount(0);
   });
 
   test.describe("first visit without a consent choice", () => {
@@ -321,7 +322,7 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
-    test("a request link continues from consent into passkey unlock and camera", async ({ page }) => {
+    test("a request link shows the request after consent, and Continue opens passkey unlock and camera", async ({ page }) => {
       await installCamera(page);
       const { payload, registry } = await signedRequest(11);
       const encrypted = await encryptedRequest(payload);
@@ -330,6 +331,10 @@ if (!("bun" in process.versions)) {
       await page.goto("/verify" + encrypted.query);
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
       await page.getByRole("button", { name: "Decline" }).click();
+      // The cookie choice does not start the check: the request screen names who is asking first.
+      await expect(page.getByRole("heading", { name: /^Request from / })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toHaveCount(0);
+      await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.getByRole("region", { name: "Selfie capture" })).toBeVisible();
     });
   });

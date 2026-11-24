@@ -3,7 +3,7 @@ import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, 
 import { CAPTURE_ID, enrollmentCapture, enrollmentChallenge } from "./fixtures/enrollment";
 
 test("enrollment context matches the proof-verification service's field element", () => {
-  expect(BigInt(ENROLLMENT_CONTEXT)).toBe(BigInt("0x0008a52ed08c9195e9e08fd66805cd2421a53f4719ff668abcfebbcc2d2a4ed2"));
+  expect(ENROLLMENT_CONTEXT).toBe("0x0008a52ed08c9195e9e08fd66805cd2421a53f4719ff668abcfebbcc2d2a4ed2");
 });
 
 test("v2 capture validation preserves the attested bytes, including old captures for authorized retries", () => {
