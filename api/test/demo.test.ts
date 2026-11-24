@@ -8,7 +8,7 @@ const origin = ENVIRONMENTS.staging.appOrigin;
 const bindings = {
   DEMO_APP_ID: `app_${"1".repeat(32)}` as const,
   DEMO_RP_ID: "rp_0000000000000001",
-  IDKIT_EXAMPLE_RP_SIGNING_KEY: `0x${"1".padStart(64, "0")}`,
+  WEB_AUTH_RP_SIGNER: `0x${"1".padStart(64, "0")}`,
   DEMO_WORLDCHAIN_RPC_URL: "https://rpc.example/worldchain",
 };
 const STAGING_WORLD_ID_VERIFIER = "0x703a6316c975deabf30b637c155edd53e24657db";

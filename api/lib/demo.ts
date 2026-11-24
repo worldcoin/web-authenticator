@@ -29,7 +29,7 @@ const VERIFY_TIMEOUT_MS = 10_000;
 const DemoSettingsSchema = z.object({
   DEMO_APP_ID: DemoRequestSchema.shape.app_id,
   DEMO_RP_ID: DemoRpContextSchema.shape.rp_id,
-  IDKIT_EXAMPLE_RP_SIGNING_KEY: z.templateLiteral(["0x", z.string().regex(/^[a-fA-F0-9]{64}$/)]),
+  WEB_AUTH_RP_SIGNER: z.templateLiteral(["0x", z.string().regex(/^[a-fA-F0-9]{64}$/)]),
   DEMO_WORLDCHAIN_RPC_URL: z.string().refine(value => {
     try {
       const url = new URL(value);
@@ -182,7 +182,7 @@ async function matchesIssuedRequest(context: DemoRpContext, action: DemoRequest[
 function demoSettings(bindings: object): DemoSettings | undefined {
   const parsed = DemoSettingsSchema.safeParse(bindings);
   if (!parsed.success) return;
-  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, IDKIT_EXAMPLE_RP_SIGNING_KEY: signingKey, DEMO_WORLDCHAIN_RPC_URL: rpcUrl } = parsed.data;
+  const { DEMO_APP_ID: appId, DEMO_RP_ID: rpId, WEB_AUTH_RP_SIGNER: signingKey, DEMO_WORLDCHAIN_RPC_URL: rpcUrl } = parsed.data;
   return { appId, rpId, signingKey, rpcUrl };
 }
 
