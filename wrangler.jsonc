@@ -38,8 +38,9 @@
         "APP_ENV": "staging",
         "CF_ACCESS_TEAM_DOMAIN": "toolsforhumanity.cloudflareaccess.com",
         "CF_ACCESS_AUD": "d0a462b581bb5cc080282fb737691d2fa93332168d859514a0f2ab7fc6692d46",
-        "DEMO_APP_ID": "app_83ea83aa5cb7935b70e5057dc447e2cc",
-        "DEMO_RP_ID": "rp_f82d4637a3068697",
+        // Web Authenticator v1; the Worker secret must be this RP's signing key.
+        "DEMO_APP_ID": "app_e05e48013341a4feca7ed126deaa15b6",
+        "DEMO_RP_ID": "rp_c8b34be5b84c6722",
         "DEMO_VERIFY_ORIGIN": "https://developer.world.org"
       }
     },
