@@ -65,7 +65,7 @@ if (!("bun" in process.versions)) {
         observer.disconnect();
         resolve({
           partialFill,
-          goldDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
+          filledDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
           live: !!document.querySelector('video')?.srcObject,
@@ -78,7 +78,7 @@ if (!("bun" in process.versions)) {
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ partialFill: "rgb(212, 175, 55)", goldDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ partialFill: "rgb(0, 124, 251)", filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);

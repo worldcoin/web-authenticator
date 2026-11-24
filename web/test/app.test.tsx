@@ -236,9 +236,8 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     });
     // Nothing marks the moment a frame is taken.
     expect(view.queryByTestId("pose-capture-confirmation")).toBeNull();
-    const filled = view.getByTestId("selfie-design-ring").querySelectorAll('[data-filled="true"]');
-    expect(filled).toHaveLength(16);
-    expect(filled[0].getAttribute("fill")).toBe("currentColor");
+    // PoseGuard guides with the target bumper alone: no dot ring.
+    expect(view.queryByTestId("selfie-design-ring")).toBeNull();
     expect(view.getByText("Turn your head left")).toBeTruthy();
     expect(view.getByText("Step 2 of 4")).toBeTruthy();
     // A left turn puts the bumper and chevron at 270° on the ring; the bumper goes solid while the user holds.

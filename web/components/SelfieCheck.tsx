@@ -156,7 +156,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
           {complete && !transitioning && !enroll && <div className="absolute inset-0 grid place-items-center bg-[rgb(0_0_0/16%)] text-white" data-testid="selfie-complete" aria-hidden="true"><svg className="size-14 rounded-full bg-accent p-[9px]" viewBox="0 0 48 48" fill="none"><path d="m13 24 7 7 15-15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
         </div>
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
-        <CaptureProgressRing progress={state.progress} poseGuard={!!enroll} />
+        {/* PoseGuard guides with the target bumper alone; the dot ring is for plain capture. */}
+        {!enroll && <CaptureProgressRing progress={state.progress} />}
         {state.target && <PoseTargetIndicator target={state.target} aligned={state.phase === "holding"} />}
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
