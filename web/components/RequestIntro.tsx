@@ -15,13 +15,14 @@ const shimmer = "animate-request-shimmer bg-[linear-gradient(90deg,#ecebe8_0%,#f
  * the registry and its expiry confirmed. Expired, invalid and unsupported requests end here: there
  * is no way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, returnUrl, onStart, onCancel }: {
+export function RequestIntro({ state, rp, reason, returnUrl, onStart, onCancel, onReturn }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
   returnUrl?: string;
   onStart: () => void;
   onCancel: () => void;
+  onReturn?: () => void;
 }) {
   if (state === "verifying" || state === "ready") {
     return <RequestConsent rp={state === "ready" ? rp : undefined} onStart={onStart} onCancel={onCancel} />;
@@ -39,7 +40,8 @@ export function RequestIntro({ state, rp, reason, returnUrl, onStart, onCancel }
       </div>
     </div></div>
     <div className={actions}>
-      {returnUrl && <a className={`${primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
+      {onReturn ? <button type="button" className={primaryAction} onClick={onReturn}>Return to demo</button>
+        : returnUrl && <a className={`${primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
     </div>
   </>;
 }

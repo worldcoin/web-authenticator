@@ -43,6 +43,24 @@ jobs:
           VITE_APP_ENV: staging
           VITE_POSEGUARD_TEST_MODE: ${{ vars.VITE_POSEGUARD_TEST_MODE || 'false' }}
       - name: Deploy the tested main commit
-        run: bunx wrangler deploy --env staging --tag "$RELEASE_COMMIT"
+        run: |
+          deploy_args=(--env staging --tag "$RELEASE_COMMIT")
+          if [[ -n "$IDKIT_EXAMPLE_RP_SIGNING_KEY" ]]; then
+            if [[ ! "$IDKIT_EXAMPLE_RP_SIGNING_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+              echo "::error::IDKIT_EXAMPLE_RP_SIGNING_KEY must be a 32-byte hex key with a 0x prefix."
+              exit 1
+            fi
+            secrets_dir="$(mktemp -d "$RUNNER_TEMP/worker-secrets.XXXXXX")"
+            secrets_file="$secrets_dir/secrets.json"
+            trap 'rm -f -- "$secrets_file"; rmdir -- "$secrets_dir"' EXIT
+            bun -e 'await Bun.write(process.argv.at(-1), JSON.stringify({
+              IDKIT_EXAMPLE_RP_SIGNING_KEY: process.env.IDKIT_EXAMPLE_RP_SIGNING_KEY,
+            }))' "$secrets_file"
+            deploy_args+=(--secrets-file "$secrets_file")
+          else
+            echo "::notice::No demo RP key supplied. Existing staging Worker secrets will be retained."
+          fi
+          bunx wrangler deploy "${deploy_args[@]}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          IDKIT_EXAMPLE_RP_SIGNING_KEY: ${{ secrets.IDKIT_EXAMPLE_RP_SIGNING_KEY }}
