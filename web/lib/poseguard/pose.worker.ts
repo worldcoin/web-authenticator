@@ -49,7 +49,7 @@ async function initialize() {
 }
 
 async function loadModel(model: { url: string; bytes: number; sha256: string }) {
-  const response = await fetch(model.url, { cache: "force-cache", credentials: "same-origin", signal: AbortSignal.timeout(20_000) });
+  const response = await fetch(model.url, { cache: "force-cache", credentials: "omit", signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error("The model could not be downloaded.");
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength !== model.bytes) throw new Error("Unexpected model size.");
