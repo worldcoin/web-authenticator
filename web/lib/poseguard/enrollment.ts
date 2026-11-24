@@ -37,6 +37,10 @@ export type PoseGuardSignup = {
 
 export type PoseGuardOutcome = EnrollmentResult["state"] | "pending" | "captured";
 
+/**
+ * After capture the camera preview stays live until `signal` aborts, so the view ends it
+ * when the run settles or the screen goes away.
+ */
 export type RunPoseGuard = (
   video: HTMLVideoElement,
   signal: AbortSignal,
@@ -235,7 +239,6 @@ async function capturePoseGuard(
         }
         images = captured;
         update(checking());
-        camera.close();
         return images;
       }, enrollmentSignal,
     ).then(result => {
@@ -263,8 +266,10 @@ async function capturePoseGuard(
       });
     }
     return { capture, identity, wallet, blindingFactor };
-  } finally {
+  } catch (error) {
     camera.close();
+    throw error;
+  } finally {
     if (images) clearImages(images);
   }
 }
@@ -321,7 +326,7 @@ function clearImages(images: PoseGuardImages) {
   for (const image of images.captures) image.fill(0);
 }
 
-// Everything after capture shows one message, so the screen doesn't step through internal stages.
+// Everything after capture shows one message over the live preview and the full ring.
 function checking(): CaptureState {
-  return { phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false };
+  return { phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: true };
 }

@@ -186,14 +186,22 @@ test.each([
       return { challengeId: CHALLENGE_ID, proofCbor: proof };
     };
     const signup = mode === "production" ? { mode, authorize, saveCredential: saveCredential ? true as const : undefined } : { mode };
+    let closes = 0;
     const run = createPoseGuardEnrollment(session, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
       ...signup,
-    }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+    }, request.signal, async (_video, signal) => ({ signal, close() { closes++; }, readFrame: camera.readFrame }));
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
-    await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
+    const afterCapture: { title: string; cameraReady: boolean }[] = [];
+    await expect(run(video, signal, state => {
+      if (state.phase === "checking" && state.progress === 1) afterCapture.push({ title: state.title, cameraReady: state.cameraReady });
+    })).rejects.toThrow("HTTP 503");
+    // A completed capture keeps the preview live behind the full ring; the view ends it.
+    expect(closes).toBe(0);
+    expect(afterCapture.length).toBeGreaterThan(0);
+    expect(afterCapture.every(state => state.title === "Processing liveness" && state.cameraReady)).toBe(true);
     const checkingTitles = new Set<string>();
     await expect(run(video, signal, state => { if (state.phase === "checking") checkingTitles.add(state.title); })).resolves.toBe("completed");
     // The resumed run polls and saves; neither step is named on screen.
@@ -347,12 +355,15 @@ test.each([
     },
   };
   const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
+  let closes = 0;
   const run = createPoseGuardEnrollment(session, {
     policy: { endpoint: "wss://tee.test", releases: [] },
     endpoint: "https://signup.test/api/v2/identity",
     mode: "production",
     async authorize() { throw new Error("The rejected batch cannot be submitted."); },
-  }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+  }, signal, async (_video, signal) => ({ signal, close() { closes++; }, readFrame: camera.readFrame }));
 
   await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow(message);
+  // A rejected capture releases the camera itself.
+  expect(closes).toBe(1);
 });
