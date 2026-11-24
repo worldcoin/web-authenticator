@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { abortable, pause } from "../async";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../hold-steady-progress";
@@ -9,6 +10,14 @@ import { openPoseDetector } from "./worker";
 const CHALLENGE_TIMEOUT_MS = 45_000;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SAMPLE_GAP_MS = 1_000;
+// The TEE issues the prompt; WalletKit types it but does not check it at runtime.
+const PoseGuardPromptSchema = z.object({
+  targets: z.array(z.object({
+    targetPitch: z.number().min(-20).max(20),
+    targetYaw: z.number().min(-35).max(35),
+  }).refine(target => target.targetPitch !== 0 || target.targetYaw !== 0)).length(3),
+  captureTimeoutMs: z.number().min(1),
+});
 const DIRECTIONS = ["right", "up and right", "up", "up and left", "left", "down and left", "down", "down and right"];
 
 export interface PoseFrame {
@@ -105,18 +114,14 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
 }
 
 export async function collectPoseGuardImages(
-  prompt: PoseGuardPrompt,
+  issuedPrompt: PoseGuardPrompt,
   signal: AbortSignal,
   readFrame: (signal: AbortSignal) => Promise<PoseFrame>,
   update: (state: CaptureState) => void,
 ): Promise<PoseGuardImages> {
-  if (!Array.isArray(prompt.targets) || prompt.targets.length !== 3 || !prompt.targets.every(target =>
-    target && Number.isFinite(target.targetPitch) && Math.abs(target.targetPitch) <= 20 &&
-    Number.isFinite(target.targetYaw) && Math.abs(target.targetYaw) <= 35 &&
-    (target.targetPitch !== 0 || target.targetYaw !== 0),
-  ) || !Number.isFinite(prompt.captureTimeoutMs) || prompt.captureTimeoutMs < 1) {
-    throw new Error("WalletKit supplied an invalid PoseGuard prompt.");
-  }
+  const parsed = PoseGuardPromptSchema.safeParse(issuedPrompt);
+  if (!parsed.success) throw new Error("WalletKit supplied an invalid PoseGuard prompt.");
+  const prompt = parsed.data;
   const active = AbortSignal.any([signal, AbortSignal.timeout(Math.min(CHALLENGE_TIMEOUT_MS, Math.floor(prompt.captureTimeoutMs)))]);
   const accepted: Uint8Array[] = [];
   const steps = [null, ...prompt.targets];
