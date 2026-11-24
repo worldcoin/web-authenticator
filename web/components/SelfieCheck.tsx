@@ -83,8 +83,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         setState(next);
       }).then(outcome => {
         if (active.signal.aborted) return;
-        // The run kept the preview live through processing; the result screen ends it.
-        active.abort();
         enrollmentFinished.current = outcome !== "pending";
         const title = {
           captured: "PoseGuard captures accepted",
@@ -135,6 +133,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   const complete = state.phase === "complete";
   const transitioning = complete && !!onComplete;
   const showVideo = !(complete && !transitioning) && !(transitioning && !state.cameraReady);
+  // After the last capture the camera is off; processing shows its message alone.
+  const textOnly = state.phase === "checking" && !state.cameraReady;
   return <section className="group/selfie fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col overflow-y-auto bg-white px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
     <header className="relative flex min-h-11 items-center justify-center" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <button className="absolute left-0 grid size-11 place-items-center rounded-full bg-background-secondary text-foreground hover:bg-[#ededed]" type="button" aria-label={backLabel} onClick={close}><img className="size-6" src="/assets/figma/close.svg" alt="" /></button>
@@ -146,7 +146,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
       </div>
-      <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full`} data-testid="selfie-camera-stage">
+      <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
           {image && <img className="size-full object-cover -scale-x-100" data-testid="selfie-photo" src={image} alt="Your captured selfie" />}

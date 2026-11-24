@@ -240,6 +240,11 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.getByTestId("pose-target-indicator").style.maskImage).toBe("conic-gradient(from -112.5deg, #000 0deg 45deg, transparent 45deg)");
     expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
 
+    // Processing shows its message alone: no oval, ring or camera preview.
+    act(() => update({ phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false }));
+    expect(view.getByRole("heading", { name: "Processing liveness" })).toBeTruthy();
+    expect(view.getByTestId("selfie-camera-stage").classList.contains("hidden")).toBe(true);
+
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
     expect(view.getByText(demoAction)).toBeTruthy();

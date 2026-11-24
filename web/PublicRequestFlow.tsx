@@ -185,7 +185,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
             onDispose();
             demo.captureComplete();
           } else if (result === "completed") {
-            update({ phase: "checking", title: GENERATING_PROOF, hint: "", progress: 1, cameraReady: true });
+            update({ phase: "checking", title: GENERATING_PROOF, hint: "", progress: 1, cameraReady: false });
             await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
           }
           return result;
