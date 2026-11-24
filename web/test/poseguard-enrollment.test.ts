@@ -76,6 +76,22 @@ test.each([
 });
 
 test.each([
+  { label: "two targets", targets: prompt.targets.slice(0, 2) },
+  { label: "a yaw beyond 35°", targets: [{ targetPitch: 0, targetYaw: 36 }, ...prompt.targets.slice(1)] },
+  { label: "a pitch beyond 20°", targets: [{ targetPitch: -21, targetYaw: 0 }, ...prompt.targets.slice(1)] },
+  { label: "a centred target", targets: [{ targetPitch: 0, targetYaw: 0 }, ...prompt.targets.slice(1)] },
+  { label: "a non-finite angle", targets: [{ targetPitch: Number.NaN, targetYaw: 30 }, ...prompt.targets.slice(1)] },
+  { label: "no capture time", targets: prompt.targets, captureTimeoutMs: 0 },
+])("rejects a prompt with $label before reading the camera", async ({ targets, captureTimeoutMs = prompt.captureTimeoutMs }) => {
+  let reads = 0;
+  await expect(collectPoseGuardImages({ ...prompt, targets, captureTimeoutMs }, new AbortController().signal, async () => {
+    reads++;
+    throw new Error("The camera must not be read.");
+  }, () => {})).rejects.toThrow("WalletKit supplied an invalid PoseGuard prompt.");
+  expect(reads).toBe(0);
+});
+
+test.each([
   { label: "center face is too small in the crop", timestamp: 1200, relativeWidth: 0.5, png: [758, 1080], step: 1, encoded: [] },
   { label: "target face is below the pixel floor", timestamp: 1700, relativeWidth: 0.6, png: [180, 255], step: 2, encoded: [2] },
 ] as const)("asks the user to move closer when the $label", async ({ timestamp, relativeWidth, png, step, encoded }) => {
