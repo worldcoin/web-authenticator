@@ -17,16 +17,16 @@ const verifierAbi = parseAbi([
   "function verify(uint256 nullifier, uint256 action, uint64 rpId, uint256 nonce, uint256 signalHash, uint64 expiresAtMin, uint64 issuerSchemaId, uint256 credentialGenesisIssuedAtMin, uint256[5] zeroKnowledgeProof) view",
 ]);
 
-function post(path: string, body?: object, requestOrigin = origin) {
-  return new Request(origin + path, {
-    method: "POST", headers: { Origin: requestOrigin, "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-}
-
 async function issue(): Promise<DemoRequest> {
   const response = await handleDemoApi(post(DEMO_REQUEST_PATH), "staging", bindings);
   expect(response.status).toBe(200);
   return DemoRequestSchema.parse(await response.json());
+}
+
+function post(path: string, body?: object, requestOrigin = origin) {
+  return new Request(origin + path, {
+    method: "POST", headers: { Origin: requestOrigin, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
 }
 
 test("issues an expiring signed demo request with a fresh action and nonce", async () => {
