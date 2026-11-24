@@ -1,7 +1,6 @@
-import { lazy, Suspense, use, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { ConsentContinuationContext } from "./AppShell";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
@@ -48,8 +47,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string>();
   const [openProgress, setOpenProgress] = useState("Opening authenticator…");
-  const continuationRef = use(ConsentContinuationContext);
-  const pendingStart = useRef(false);
   const operation = useRef<AbortController | null>(null);
   const cancelling = useRef<AbortController | null>(null);
   const session = useRef<RequestWalletSession | null>(null);
@@ -143,9 +140,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   }, [demo, onDispose, stop]);
 
   const start = useCallback(async () => {
-    if (loading) { pendingStart.current = true; return; }
-    pendingStart.current = false;
-    if (!incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
+    // The request screen's Continue tap is the gesture that opens the passkey.
+    if (loading || !incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
     try { checkExpiry(incoming.proof); }
     catch { setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose(); return; }
     const controller = new AbortController();
@@ -212,18 +208,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }
     } finally { setOpening(false); }
   }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, demo, completeDemo]);
-
-  useEffect(() => {
-    if (!continuationRef) return;
-    const proceed = () => { void start(); };
-    continuationRef.current = proceed;
-    return () => { if (continuationRef.current === proceed) continuationRef.current = null; };
-  }, [continuationRef, start]);
-  useEffect(() => {
-    if (!pendingStart.current || loading) return;
-    const timer = setTimeout(() => void start(), 0);
-    return () => clearTimeout(timer);
-  }, [loading, start]);
 
   const complete = async () => {
     const current = session.current;

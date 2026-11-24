@@ -322,7 +322,7 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toHaveCount(0);
     });
 
-    test("a request link continues from consent into passkey unlock and camera", async ({ page }) => {
+    test("a request link shows the request after consent, and Continue opens passkey unlock and camera", async ({ page }) => {
       await installCamera(page);
       const { payload, registry } = await signedRequest(11);
       const encrypted = await encryptedRequest(payload);
@@ -331,6 +331,10 @@ if (!("bun" in process.versions)) {
       await page.goto("/verify" + encrypted.query);
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
       await page.getByRole("button", { name: "Decline" }).click();
+      // The cookie choice does not start the check: the request screen names who is asking first.
+      await expect(page.getByRole("heading", { name: /^Request from / })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toHaveCount(0);
+      await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.getByRole("region", { name: "Selfie capture" })).toBeVisible();
     });
   });
