@@ -29,12 +29,6 @@ export interface PoseFrame {
   release(): void;
 }
 
-export function poseDirection(target: PoseTarget): { degrees: number; label: string } {
-  // Mirror yaw for the preview. Positive pitch points down in the browser.
-  const degrees = (Math.atan2(-target.pitch, -target.yaw) * 180 / Math.PI + 360) % 360;
-  return { degrees, label: DIRECTIONS[Math.round(degrees / 45) % 8] };
-}
-
 export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void) {
   const controller = new AbortController();
   const active = AbortSignal.any([signal, controller.signal]);
@@ -196,6 +190,12 @@ export async function collectPoseGuardImages(
     for (const image of accepted) image.fill(0);
     throw error;
   }
+}
+
+export function poseDirection(target: PoseTarget): { degrees: number; label: string } {
+  // Mirror yaw for the preview. Positive pitch points down in the browser.
+  const degrees = (Math.atan2(-target.pitch, -target.yaw) * 180 / Math.PI + 360) % 360;
+  return { degrees, label: DIRECTIONS[Math.round(degrees / 45) % 8] };
 }
 
 function poseGate(pose: PoseObservation | null, target: PoseTarget | null, [width, height]: ImageSize): PoseGate {
