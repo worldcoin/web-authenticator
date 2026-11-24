@@ -22,6 +22,35 @@ export class EnrollmentChallengeError extends Error {
   }
 }
 
+/** Fetches once. The caller supplies the returned challenge to finishEnrollment. */
+export async function fetchEnrollmentChallenge(options: EnrollmentChallengeOptions): Promise<EnrollmentChallenge> {
+  options.signal.throwIfAborted();
+  const url = endpoint(options.endpoint);
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const signal = AbortSignal.any([options.signal, timeout]);
+  try {
+    signal.throwIfAborted();
+    const response = await abortable(fetch(url, {
+      method: "POST", signal, credentials: "omit", redirect: "error", cache: "no-store", referrerPolicy: "no-referrer",
+    }), signal);
+    if (response.status !== 201) {
+      // Error bodies are not part of the challenge contract and may be non-JSON edge responses.
+      void response.body?.cancel().catch(() => {});
+      throw new EnrollmentChallengeError(`Ownership challenge request failed (HTTP ${response.status}).`, "http_error", response.status);
+    }
+    try {
+      return await readChallenge(response, signal);
+    } catch (cause) {
+      throw new EnrollmentChallengeError("PVS returned an invalid or expired enrollment ownership challenge. Obtain a fresh challenge.", "invalid_response", response.status, { cause });
+    }
+  } catch (cause) {
+    if (options.signal.aborted) throw options.signal.reason;
+    if (timeout.aborted) throw new EnrollmentChallengeError("Ownership challenge request timed out.", "request_timeout", undefined, { cause });
+    if (cause instanceof EnrollmentChallengeError) throw cause;
+    throw new EnrollmentChallengeError("Ownership challenge request could not be completed.", "request_failed", undefined, { cause });
+  }
+}
+
 function endpoint(value: string): URL {
   const url = new URL(value);
   const localHttp = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
@@ -55,34 +84,5 @@ async function readChallenge(response: Response, signal: AbortSignal): Promise<E
     // Cleanup must not replace the validation or cancellation error.
     if (!complete) void reader.cancel().catch(() => {});
     reader.releaseLock();
-  }
-}
-
-/** Fetches once. The caller supplies the returned challenge to finishEnrollment. */
-export async function fetchEnrollmentChallenge(options: EnrollmentChallengeOptions): Promise<EnrollmentChallenge> {
-  options.signal.throwIfAborted();
-  const url = endpoint(options.endpoint);
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const signal = AbortSignal.any([options.signal, timeout]);
-  try {
-    signal.throwIfAborted();
-    const response = await abortable(fetch(url, {
-      method: "POST", signal, credentials: "omit", redirect: "error", cache: "no-store", referrerPolicy: "no-referrer",
-    }), signal);
-    if (response.status !== 201) {
-      // Error bodies are not part of the challenge contract and may be non-JSON edge responses.
-      void response.body?.cancel().catch(() => {});
-      throw new EnrollmentChallengeError(`Ownership challenge request failed (HTTP ${response.status}).`, "http_error", response.status);
-    }
-    try {
-      return await readChallenge(response, signal);
-    } catch (cause) {
-      throw new EnrollmentChallengeError("PVS returned an invalid or expired enrollment ownership challenge. Obtain a fresh challenge.", "invalid_response", response.status, { cause });
-    }
-  } catch (cause) {
-    if (options.signal.aborted) throw options.signal.reason;
-    if (timeout.aborted) throw new EnrollmentChallengeError("Ownership challenge request timed out.", "request_timeout", undefined, { cause });
-    if (cause instanceof EnrollmentChallengeError) throw cause;
-    throw new EnrollmentChallengeError("Ownership challenge request could not be completed.", "request_failed", undefined, { cause });
   }
 }
