@@ -14,6 +14,8 @@ import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
+// The second of two loading messages; enrollment shows "Processing liveness" before it.
+const GENERATING_PROOF = "Credential received - generating proof";
 type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
@@ -166,7 +168,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           const credentials = await checkRequestCredentials(incoming, ready.wallet, deadline);
           checkExpiry(incoming.proof);
           if (credentials.satisfied) {
-            setOpenProgress("Preparing proof…");
+            setOpenProgress(GENERATING_PROOF);
             await completeDemo(incoming, ready.wallet, deadline, "saved");
             return;
           }
@@ -183,7 +185,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
             onDispose();
             demo.captureComplete();
           } else if (result === "completed") {
-            update({ phase: "checking", title: "Preparing proof…", hint: "", progress: 1, cameraReady: false });
+            update({ phase: "checking", title: GENERATING_PROOF, hint: "", progress: 1, cameraReady: false });
             await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
           }
           return result;
