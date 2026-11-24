@@ -241,7 +241,15 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(filled[0].getAttribute("fill")).toBe("currentColor");
     expect(view.getByText("Turn your head left")).toBeTruthy();
     expect(view.getByText("Step 2 of 4")).toBeTruthy();
-    expect(view.getByTestId("pose-target-indicator").style.maskImage).toBe("conic-gradient(from -112.5deg, #000 0deg 45deg, transparent 45deg)");
+    // A left turn puts the bumper and chevron at 270° on the ring; the bumper goes solid while the user holds.
+    const indicator = view.getByTestId("pose-target-indicator");
+    expect(indicator.dataset).toMatchObject({ angle: "270", aligned: "false" });
+    expect(indicator.querySelector("path")!.getAttribute("stroke-opacity")).toBe("0.22");
+    expect(indicator.querySelector("g")!.getAttribute("transform")).toMatch(/rotate\(270\.0\)$/);
+    act(() => update({ phase: "holding", title: "Turn your head left", hint: "Hold still.", progress: 0.3, cameraReady: true,
+      target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
+    expect(view.getByTestId("pose-target-indicator").dataset.aligned).toBe("true");
+    expect(view.getByTestId("pose-target-indicator").querySelector("path")!.getAttribute("stroke-opacity")).toBe("1");
     expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
 
     // Processing shows its message alone: no oval, ring or camera preview.
