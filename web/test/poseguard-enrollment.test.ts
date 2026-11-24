@@ -84,7 +84,9 @@ test.each([
   { label: "no capture time", targets: prompt.targets, captureTimeoutMs: 0 },
 ])("rejects a prompt with $label before reading the camera", async ({ targets, captureTimeoutMs = prompt.captureTimeoutMs }) => {
   let reads = 0;
-  await expect(collectPoseGuardImages({ ...prompt, targets, captureTimeoutMs }, new AbortController().signal, async () => {
+  // Deliberately outside the WalletKit prompt type: this is what the runtime check guards against.
+  const invalid = { ...prompt, targets, captureTimeoutMs } as unknown as PoseGuardPrompt;
+  await expect(collectPoseGuardImages(invalid, new AbortController().signal, async () => {
     reads++;
     throw new Error("The camera must not be read.");
   }, () => {})).rejects.toThrow("WalletKit supplied an invalid PoseGuard prompt.");
