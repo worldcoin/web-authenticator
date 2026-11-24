@@ -3,16 +3,13 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
-import { PoseTargetIndicator } from "./PoseTargetIndicator";
+import { bumperGap, PoseTargetIndicator } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
 
 // 11 units inside the ring viewBox, scaling with the aperture on narrow screens.
 const APERTURE_INSET = "absolute inset-x-[calc(11/345.005*100%)] inset-y-[calc(11/481.637*100%)]";
 // Reserve vertical space for camera guidance, controls, and safe-area padding.
 const CAMERA_WIDTH = "w-[min(345px,max(60px,calc((100svh_-_292px)*0.7163)))]";
-// PoseGuard's chevron sits 30 units outside the ring (44 to its far edge), so the camera shrinks
-// to keep 345 + 2 × 44 units inside the column, with the same room above and below.
-const POSEGUARD_CAMERA_WIDTH = "w-[min(345px,max(60px,calc((100svh_-_336px)*0.7163)),calc(100%*345.005/433.005))] my-[calc(44/433.005*100%)]";
 const RETRY = "min-h-12 max-w-45 flex-1 rounded-2xl bg-background-secondary p-3 text-[15px] text-foreground hover:bg-[#ededed]";
 
 export default function SelfieCheck({ onClose, onComplete, backLabel, completionHint, enroll }: {
@@ -149,15 +146,14 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
       </div>
-      <div className={`relative aspect-[345.005/481.637] ${enroll ? POSEGUARD_CAMERA_WIDTH : CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">
+      <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
           {image && <img className="size-full object-cover -scale-x-100" data-testid="selfie-photo" src={image} alt="Your captured selfie" />}
           {complete && !transitioning && !enroll && <div className="absolute inset-0 grid place-items-center bg-[rgb(0_0_0/16%)] text-white" data-testid="selfie-complete" aria-hidden="true"><svg className="size-14 rounded-full bg-accent p-[9px]" viewBox="0 0 48 48" fill="none"><path d="m13 24 7 7 15-15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
         </div>
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
-        {/* PoseGuard guides with the target bumper alone; the dot ring is for plain capture. */}
-        {!enroll && <CaptureProgressRing progress={state.progress} />}
+        <CaptureProgressRing progress={state.progress} gap={state.target ? bumperGap(state.target) : undefined} />
         {state.target && <PoseTargetIndicator target={state.target} aligned={state.phase === "holding"} />}
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
