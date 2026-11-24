@@ -135,6 +135,8 @@ test.each([
   let sdkCalls = 0;
   let authorizationCalls = 0;
   let stored = 0;
+  let closes = 0;
+  let closesAtSubmit: number | undefined;
   const submitted: { header: string | null; body?: FormData } = { header: null };
   const polledSubjects: (string | null)[] = [];
   const server = Bun.serve({
@@ -145,6 +147,7 @@ test.each([
       if (url.pathname !== "/api/v2/identity") return new Response(null, { status: 404 });
       if (incoming.method === "PUT") {
         puts++;
+        closesAtSubmit ??= closes;
         submitted.header = incoming.headers.get("X-Nitro-Attestation");
         submitted.body = await incoming.formData();
         return Response.json({}, { status: 202 });
@@ -190,7 +193,7 @@ test.each([
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
       ...signup,
-    }, request.signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
+    }, request.signal, async (_video, signal) => ({ signal, close() { closes++; }, readFrame: camera.readFrame }));
     const video = {} as HTMLVideoElement;
     const signal = new AbortController().signal;
     await expect(run(video, signal, () => {})).rejects.toThrow("HTTP 503");
@@ -205,6 +208,8 @@ test.each([
     expect(polls).toBe(2);
     expect(stored).toBe(saveCredential ? 1 : 0);
     expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
+    // The preview is off before anything is submitted: users never watch themselves while it processes.
+    expect(closesAtSubmit).toBeGreaterThan(0);
     expect(submitted.header).toBe(mode === "test" ? btoa("poseguard test attestation") : capture.attestation_header);
     for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);
     const sentChallenge = submitted.body?.get("world_id_challenge_id");

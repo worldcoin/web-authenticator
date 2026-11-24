@@ -3,6 +3,8 @@ import { serveWorkerAsset } from "./lib/cloudflare-assets";
 import { internalError, withSecurityHeaders } from "./lib/http";
 import { GET as healthLive } from "./routes/api/health/live";
 import { lookupRp } from "./lib/rp-handler";
+import { handleDemoApi } from "./lib/demo";
+import { DEMO_REQUEST_PATH, DEMO_VERIFY_PATH } from "../config/demo";
 import { APP_ORIGINS, type ProtocolEnvironment } from "../config/environment";
 
 const verifyAccess = createAccessVerifier();
@@ -38,6 +40,10 @@ async function handle(request: Request, env: Env, configured: ProtocolEnvironmen
         : Response.json({ status: "unavailable", failed: ["web_bundle"] }, { status: 503 });
     } else if ((pathname === "/api/rp" || (pathname === "/api/staging-rp" && environment === "staging")) && method === "GET") {
       response = await lookupRp(request, environment);
+    }
+    else if (method === "POST" && new URL(request.url).origin === origin &&
+      (pathname === DEMO_REQUEST_PATH || pathname === DEMO_VERIFY_PATH)) {
+      response = await handleDemoApi(request, environment, env);
     }
     else if (pathname === "/api" || pathname.startsWith("/api/")) response = Response.json({ error: "Not found" }, { status: 404 });
     else response = await serveWorkerAsset(request, env.ASSETS);

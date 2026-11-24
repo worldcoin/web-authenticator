@@ -2,7 +2,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { AuthenticatorAppV1 } from "../App";
-import { signedRequest } from "../../tests/integration/fixtures/request";
+import { bridgeId, signedRequest } from "../../tests/integration/fixtures/request";
+import { DEMO_PATH } from "../../config/demo";
+import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
@@ -10,10 +12,14 @@ import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
+import * as demo from "../lib/demo";
+import * as demoEnrollment from "../lib/demo-enrollment";
+import * as poseGuard from "../lib/poseguard/enrollment";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
+const demoAction = "web-authenticator-demo-f47ac10b-58cc-4372-8567-0e02b2c3d479";
 afterAll(() => GlobalRegistrator.unregister());
 // Request flows live at /verify; the landing and authenticator tests visit their own paths.
 const visit = (path: string) => window.history.replaceState(null, "", path);
@@ -172,6 +178,165 @@ test("public Selfie capture reuses the unlocked session without another save pro
     expect(f.calls.deliver).toHaveLength(0);
     expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
   } finally { captureMock.mockRestore(); }
+});
+
+test("the localhost demo opens the wallet and follows PoseGuard directions before reporting a capture result", async () => {
+  visit(DEMO_PATH);
+  const f = await fixture(11, true);
+  const appId = `app_${"0".repeat(32)}` as const;
+  const returnUrl = new URL(DEMO_PATH, window.location.origin).href;
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: demoAction });
+  const query = `i=${bridgeId}&k=test`;
+  const unexpectedPoll = () => { throw new Error("The local demo must not poll for a proof."); };
+  const create = spyOn(demo, "startDemo").mockResolvedValue({
+    bridgeId, query, returnUrl,
+    config: { app_id: appId, action: demoAction, rp_context: f.incoming.proof },
+    request: {
+      connectorURI: new URL(`/verify?${query}`, returnUrl).href,
+      requestId: bridgeId,
+      pollOnce: unexpectedPoll,
+      pollUntilCompletion: unexpectedPoll,
+      getDebugReport: unexpectedPoll,
+    },
+  });
+  let update!: Parameters<poseGuard.RunPoseGuard>[2];
+  let finish!: (result: poseGuard.PoseGuardOutcome) => void;
+  const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
+  const configure = spyOn(demoEnrollment, "configureDemoEnrollment").mockReturnValue(async (_video, _signal, report) => {
+    update = report;
+    update({ phase: "framing", title: "Look straight ahead", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+    return outcome;
+  });
+  const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
+  const log = spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    // The demo creates its request on arrival and hands over to the consent screen at /verify.
+    expect(await view.findByRole("heading", { name: "Request from Web Authenticator" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/verify");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls.filter(([event]) => event === "selfie_check_beta_request")).toEqual([
+      ["selfie_check_beta_request", {
+        environment: "staging", action: demoAction, schemaId: 11, appId,
+        rpId: f.incoming.proof.rp_id, requestId: bridgeId, expiresAt: f.incoming.proof.expires_at,
+      }],
+    ]);
+    expect(f.calls.unlocked).toBe(0);
+    fireEvent.click(view.getByRole("button", { name: "Continue" }));
+    expect(await view.findByRole("heading", { name: "Look straight ahead" })).toBeTruthy();
+    expect(view.getByText("Step 1 of 4")).toBeTruthy();
+    expect(view.queryByTestId("pose-target-indicator")).toBeNull();
+    expect(f.calls.unlocked).toBe(1);
+
+    act(() => {
+      update({ phase: "captured", title: "Look straight ahead", hint: "", progress: 0.25,
+        cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+      update({ phase: "framing", title: "Turn your head left", hint: "", progress: 0.25, cameraReady: true,
+        target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } });
+    });
+    // Nothing marks the moment a frame is taken.
+    expect(view.queryByTestId("pose-capture-confirmation")).toBeNull();
+    const filled = view.getByTestId("selfie-design-ring").querySelectorAll('[data-filled="true"]');
+    expect(filled).toHaveLength(16);
+    expect(filled[0].getAttribute("fill")).toBe("currentColor");
+    expect(view.getByText("Turn your head left")).toBeTruthy();
+    expect(view.getByText("Step 2 of 4")).toBeTruthy();
+    expect(view.getByTestId("pose-target-indicator").style.maskImage).toBe("conic-gradient(from -112.5deg, #000 0deg 45deg, transparent 45deg)");
+    expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
+
+    // Processing shows its message alone: no oval, ring or camera preview.
+    act(() => update({ phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false }));
+    expect(view.getByRole("heading", { name: "Processing liveness" })).toBeTruthy();
+    expect(view.getByTestId("selfie-camera-stage").classList.contains("hidden")).toBe(true);
+
+    finish("captured");
+    expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
+    expect(view.getByText(demoAction)).toBeTruthy();
+    expect(view.queryByText("Use the staging demo to test signup-service.")).toBeNull();
+    expect(view.queryByText("Beta", { exact: true })).toBeNull();
+    expect(view.getByText("Request details")).toBeTruthy();
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(f.calls.terminated).toBe(1);
+    expect(f.calls.deliver).toHaveLength(0);
+    expect(view.queryByRole("heading", { name: /verified/i })).toBeNull();
+  } finally {
+    create.mockRestore();
+    configure.mockRestore();
+    captureMock.mockRestore();
+    log.mockRestore();
+  }
+});
+
+test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the %s proof outcome", async result => {
+  const f = await fixture(11, result === "replayed");
+  f.wallet.generateProof = async () => {
+    if (result === "replayed") {
+      throw Object.assign(new Error("nullifier_replay"), { name: "WalletKitError", code: "NullifierReplay" });
+    }
+    return "test-proof";
+  };
+  const appId = `app_${"0".repeat(32)}` as const;
+  const returnUrl = new URL(DEMO_PATH, ENVIRONMENTS.staging.appOrigin).href;
+  Object.assign(f.incoming, { appId, bridgeRequestId: bridgeId, returnUrl, actionLabel: demoAction });
+  const query = `i=${bridgeId}&k=test`;
+  const connector = new URL(`/verify?${query}`, returnUrl);
+  const unexpectedPoll = () => { throw new Error("The verifier handles bridge polling."); };
+  const create = spyOn(demo, "startDemo").mockResolvedValue({
+    bridgeId, query, returnUrl,
+    config: { app_id: appId, action: demoAction, rp_context: f.incoming.proof },
+    request: {
+      connectorURI: connector.href, requestId: bridgeId,
+      pollOnce: unexpectedPoll, pollUntilCompletion: unexpectedPoll, getDebugReport: unexpectedPoll,
+    },
+  });
+  const configure = spyOn(demoEnrollment, "configureDemoEnrollment").mockReturnValue(async () => "completed");
+  const verdict = Promise.withResolvers<void>();
+  const verify = spyOn(demo, "verifyDemo").mockReturnValue(verdict.promise);
+  const log = spyOn(console, "info").mockImplementation(() => {});
+  const browser = (window as typeof window & { happyDOM?: { setURL(url: string): void } }).happyDOM;
+  if (!browser) throw new Error("Expected a detached browser fixture.");
+  const originalUrl = window.location.href;
+  browser.setURL(returnUrl);
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+    if (result === "replayed") {
+      expect(await view.findByRole("heading", { name: "Proof already created" })).toBeTruthy();
+      expect(view.getByText("The authenticator detected a nullifier replay for this action.")).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
+      expect(configure).not.toHaveBeenCalled();
+      expect(f.calls.deliver).toEqual([]);
+      expect(verify).not.toHaveBeenCalled();
+      // Returning ends the attempt; it must not start another request on its own.
+      fireEvent.click(view.getByRole("button", { name: "Return to demo" }));
+      expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+      expect(view.getByRole("button", { name: "Create another request" })).toBeTruthy();
+      expect(create).toHaveBeenCalledTimes(1);
+      return;
+    }
+    expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
+    expect(f.calls.deliver).toEqual(["test-proof"]);
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+    if (result === "accepted") {
+      verdict.resolve();
+      expect(await view.findByRole("heading", { name: "New credential verified" })).toBeTruthy();
+    } else {
+      verdict.reject(new Error("The relying party rejected the proof."));
+      expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");
+      expect(await view.findByRole("button", { name: "Try again" })).toBeTruthy();
+      expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+    }
+  } finally {
+    cleanup();
+    browser.setURL(originalUrl);
+    create.mockRestore();
+    configure.mockRestore();
+    verify.mockRestore();
+    log.mockRestore();
+  }
 });
 
 test("public non-Selfie requests stop before capture or wallet access", async () => {
