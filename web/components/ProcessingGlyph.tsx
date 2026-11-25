@@ -1,4 +1,8 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { actions, primaryAction } from "./styles";
+
+// The shared link style rings focus in the accent, which would vanish on the blue end screen.
+const END_LINK = "block text-center focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-white";
 
 // The World ID workboard's verifying glyph (Figma 5132:135038): a person mark inside a ring whose
 // blue arc turns as a spinner. Under reduced motion it holds still, as drawn.
@@ -88,17 +92,19 @@ function Flood({ x, y, diameter, onDone }: { x: number; y: number; diameter: num
   </div>;
 }
 
-// The close note waits until "You're all set" has landed.
-const NOTE_DELAY_MS = 1_200;
-
-/** The end screen: the whole screen blue, "You're all set", then that the user can close the tab, and a link back to the RP if it gave one. */
+/**
+ * The end screen: the whole screen blue, "You're all set" and "You can close this tab" together, and a black
+ * button back to the authenticator at the bottom (with the RP's return link under it if it gave one).
+ */
 function AllSet({ action }: { action?: EndAction }) {
-  const button = "inline-flex min-h-12 items-center justify-center rounded-full bg-white px-6 text-[16px] font-medium text-accent";
-  return <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-accent px-6 text-center text-white" data-testid="all-set">
-    <div role="status"><h2 className="text-[28px] leading-[1.2] tracking-[-0.4px] motion-safe:animate-completion-in">You’re all set</h2></div>
-    <div className="flex flex-col items-center gap-4 motion-safe:animate-completion-in" style={{ animationDelay: `${NOTE_DELAY_MS}ms` }}>
+  return <div className="fixed inset-0 z-50 flex flex-col items-center bg-accent px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))] text-center text-white" data-testid="all-set">
+    <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 motion-safe:animate-completion-in">
+      <h2 className="text-[28px] leading-[1.2] tracking-[-0.4px]">You’re all set</h2>
       <p className="text-[15px] text-white/80">You can close this tab</p>
-      {action && <a className={button} href={action.href}>{action.label}</a>}
+    </div>
+    <div className={`${actions} motion-safe:animate-completion-in`}>
+      <a className={`${primaryAction} ${END_LINK}`} href="/authenticator">Return to authenticator</a>
+      {action && <a className={`${END_LINK} min-h-11 content-center text-[15px] text-white underline underline-offset-3`} href={action.href}>{action.label}</a>}
     </div>
   </div>;
 }

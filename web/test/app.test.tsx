@@ -360,9 +360,11 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       expect(await view.findByTestId("all-set", undefined, { timeout: 3_000 })).toBeTruthy();
       expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
       expect(window.location.pathname).toBe("/verify");
-      // Then it says the user is done. The demo offers no rerun: the passkey now holds the credential.
+      // It says the user is done, and offers only the way back to the authenticator: no rerun, since the
+      // passkey now holds the credential.
       expect(view.getByText("You can close this tab")).toBeTruthy();
-      expect(view.getByTestId("all-set").querySelector("a, button")).toBeNull();
+      const links = [...view.getByTestId("all-set").querySelectorAll("a, button")];
+      expect(links.map(link => [link.textContent, link.getAttribute("href")])).toEqual([["Return to authenticator", "/authenticator"]]);
     } else {
       verdict.reject(new Error("The relying party rejected the proof."));
       expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");
