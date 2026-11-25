@@ -3,7 +3,7 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
-import { ProcessingGlyph } from "./ProcessingGlyph";
+import { ProcessingStatus } from "./ProcessingGlyph";
 import { bumperGap, PoseTargetIndicator, targetDegrees } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
 
@@ -31,6 +31,8 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   useEffect(() => { completion.current = onComplete; }, [onComplete]);
   const [state, setState] = useState<CaptureState>(INITIAL_CAPTURE_STATE);
   const [attempt, setAttempt] = useState(0);
+  // A completed PoseGuard run ends on the processing screen's flood into "You're all set".
+  const [allSet, setAllSet] = useState(false);
   const [visible, setVisible] = useState(() => !document.hidden);
   const [image, setImage] = useState<string>();
 
@@ -85,6 +87,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
       }).then(outcome => {
         if (active.signal.aborted) return;
         enrollmentFinished.current = outcome !== "pending";
+        if (outcome === "completed") { setAllSet(true); return; }
         const title = {
           captured: "PoseGuard captures accepted",
           completed: "Enrollment complete",
@@ -145,9 +148,9 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      {processing && <ProcessingGlyph />}
-      {!pill && <div role="status" aria-live="polite" aria-atomic="true" className={`w-full text-center ${processing ? "mt-4" : ""}`}>
-        <h2 className={processing ? "text-[22px] leading-[1.2] tracking-[-0.3px] text-foreground" : "text-[15px] leading-[1.3] text-foreground"} data-testid="selfie-guidance">{state.title}</h2>
+      {processing && <ProcessingStatus title={state.title} hint={state.hint} done={allSet} />}
+      {!pill && !processing && <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
+        <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
       </div>}
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">

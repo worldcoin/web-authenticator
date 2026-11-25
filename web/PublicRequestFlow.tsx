@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
+import { ProcessingStatus } from "./components/ProcessingGlyph";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
@@ -15,7 +16,7 @@ import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 // The second of two loading messages; enrollment shows "Processing liveness" before it.
 const CREDENTIAL_RECEIVED = { title: "Credential received", hint: "Generating proof" };
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed"; returnUrl?: string; enroll?: RunPoseGuard };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed" | "proving" | "all-set"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -34,7 +35,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   onDispose: () => void;
   demo?: {
     captureOnly: boolean;
-    complete: (source: DemoProofSource) => void;
+    complete: (source: DemoProofSource) => Promise<boolean>;
     captureComplete: () => void;
     back: () => void;
   };
@@ -111,7 +112,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
-  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource) => {
+  /** Proves and delivers, then resolves whether the demo verified the proof. */
+  const completeDemo = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal, source: DemoProofSource): Promise<boolean> => {
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
     checkExpiry(request.proof);
     let proof: string;
@@ -123,7 +125,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         stop();
         setFlow({ stage: "replayed", returnUrl: request.returnUrl });
         onDispose();
-        return;
+        return false;
       }
       throw new WalletOpenError("Could not create the proof. Try again.");
     }
@@ -136,7 +138,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     deadline.throwIfAborted();
     stop();
     onDispose();
-    demo?.complete(source);
+    return await demo?.complete(source) ?? false;
   }, [demo, onDispose, stop]);
 
   const start = useCallback(async () => {
@@ -165,8 +167,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           checkExpiry(incoming.proof);
           if (credentials.satisfied) {
             // A saved credential was not just received: only the proof is pending.
-            setOpenProgress(CREDENTIAL_RECEIVED.hint);
-            await completeDemo(incoming, ready.wallet, deadline, "saved");
+            setFlow({ stage: "proving", returnUrl: incoming.returnUrl });
+            if (await completeDemo(incoming, ready.wallet, deadline, "saved")) setFlow({ stage: "all-set", returnUrl: incoming.returnUrl });
             return;
           }
           if (!credentials.canEnrollSelfie) {
@@ -248,6 +250,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if (cancelling.current === controller) cancelling.current = null;
     }
   };
+
+  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
+    <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} />
+  </section>;
 
   if (opening) return <div className={requestFrame}>
     <div className={screenContent}><div className={centeredLayout}>

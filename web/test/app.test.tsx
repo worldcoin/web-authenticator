@@ -289,8 +289,8 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   }
 });
 
-test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the %s proof outcome", async result => {
-  const f = await fixture(11, result === "replayed");
+test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo shows the %s proof outcome", async result => {
+  const f = await fixture(11, result === "replayed" || result === "saved");
   f.wallet.generateProof = async () => {
     if (result === "replayed") {
       throw Object.assign(new Error("nullifier_replay"), { name: "WalletKitError", code: "NullifierReplay" });
@@ -336,14 +336,28 @@ test.each(["accepted", "rejected", "replayed"] as const)("hosted demo shows the 
       expect(create).toHaveBeenCalledTimes(1);
       return;
     }
-    expect(await view.findByRole("heading", { name: "Verifying proof…" })).toBeTruthy();
+    if (result === "saved") {
+      // A saved credential skips capture: the same spinner, then the same end screen.
+      expect(await view.findByRole("heading", { name: "Generating proof" })).toBeTruthy();
+      expect(view.getByTestId("processing-glyph")).toBeTruthy();
+      expect(configure).not.toHaveBeenCalled();
+      expect(f.calls.deliver).toEqual(["test-proof"]);
+      verdict.resolve();
+      expect((await view.findByTestId("all-set", undefined, { timeout: 3_000 })).textContent).toBe("You’re all set");
+      return;
+    }
+    // The spinner keeps running while the demo verifies the delivered proof.
+    expect(await view.findByTestId("processing-glyph")).toBeTruthy();
+    expect(view.getByRole("heading", { name: "Credential received" })).toBeTruthy();
     expect(f.calls.deliver).toEqual(["test-proof"]);
     expect(configure).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledTimes(1);
-    expect(view.queryByRole("heading", { name: "New credential verified" })).toBeNull();
+    expect(view.queryByTestId("all-set")).toBeNull();
     if (result === "accepted") {
       verdict.resolve();
-      expect(await view.findByRole("heading", { name: "New credential verified" })).toBeTruthy();
+      // A verified proof ends here, on the end screen, without returning to /demo.
+      expect((await view.findByTestId("all-set", undefined, { timeout: 3_000 })).textContent).toBe("You’re all set");
+      expect(window.location.pathname).toBe("/verify");
     } else {
       verdict.reject(new Error("The relying party rejected the proof."));
       expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");
