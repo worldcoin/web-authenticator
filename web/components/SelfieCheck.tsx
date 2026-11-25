@@ -176,14 +176,14 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   </section>;
 }
 
-/** An arrow towards a target, a spinner while the check waits or the user holds, or nothing while they frame the centre. */
+/** An arrow towards a target, a spinner only until the targets arrive, and nothing once the user is being guided. */
 function GuidanceIcon({ state }: { state: CaptureState }) {
   if (state.target) {
     return <svg className="size-4 shrink-0" data-icon="arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ transform: `rotate(${targetDegrees(state.target)}deg)` }}>
       <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>;
   }
-  if (state.phase === "framing") return null;
+  if (state.phase !== "starting" && state.phase !== "checking") return null;
   return <svg className="size-4 shrink-0 motion-safe:animate-spin" data-icon="spinner" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.3" strokeWidth="1.6" />
     <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

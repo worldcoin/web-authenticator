@@ -232,6 +232,10 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
     expect(f.calls.unlocked).toBe(1);
 
+    // Holding the centre is guidance, not loading: no spinner once the targets have arrived.
+    act(() => update({ phase: "holding", title: "Hold steady", hint: "", progress: 0.12, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } }));
+    expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Hold steady");
+    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")).toBeNull();
     act(() => {
       update({ phase: "captured", title: "Hold steady", hint: "", progress: 0.25,
         cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
