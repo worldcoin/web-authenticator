@@ -11,6 +11,7 @@
   "dependencies": {
     "@tanstack/react-router": "1.170.46",
     "@worldcoin/idkit-core": "4.6.0",
+    "@worldcoin/nucleus": "0.2.15",
     "@worldcoin/walletkit-web": "0.32.0",
     "onnxruntime-web": "1.30.0",
     "react": "19.2.8",

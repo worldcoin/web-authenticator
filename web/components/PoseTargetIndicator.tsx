@@ -6,8 +6,8 @@ const BUMPER_DEGREES = 48;
 // Each round cap reaches about 3° past the arc's ends.
 const CAP_DEGREES = 3;
 const ARC_POINTS = 16;
-// The accent at 22 % over white, opaque so no dot can show through.
-const BUMPER_TINT = "#c8e4fe";
+// The accent at 22 % over the page, opaque so no dot can show through.
+export const BUMPER_TINT = "color-mix(in srgb, var(--color-accent-blue) 22%, var(--color-background-primary))";
 
 /** A bumper on the ring with a chevron on it, pointing where the user should turn; solid once they are there. */
 export function PoseTargetIndicator({ target, aligned }: { target: PoseTarget; aligned: boolean }) {
@@ -15,13 +15,13 @@ export function PoseTargetIndicator({ target, aligned }: { target: PoseTarget; a
   const arc = Array.from({ length: ARC_POINTS + 1 }, (_, index) =>
     ringPoint(angle - BUMPER_DEGREES / 2 + index * BUMPER_DEGREES / ARC_POINTS));
   const [x, y] = ringPoint(angle);
-  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full overflow-visible text-accent"
+  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full overflow-visible text-accent-blue"
     data-testid="pose-target-indicator" data-angle={Math.round(angle)} data-aligned={aligned}
     viewBox={RING_VIEW_BOX} fill="none" aria-hidden="true">
     <path d={arc.map(([px, py], index) => `${index ? "L" : "M"}${px.toFixed(1)} ${py.toFixed(1)}`).join(" ")}
       stroke={aligned ? "currentColor" : BUMPER_TINT} strokeWidth="14" strokeLinecap="round" />
     <path transform={`translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${ringNormalDegrees(angle).toFixed(1)})`} d="M-5.5 2.75 0-3.25l5.5 6"
-      stroke={aligned ? "#fff" : "currentColor"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      stroke={aligned ? "var(--color-foreground-inverse)" : "currentColor"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
   </svg>;
 }
 

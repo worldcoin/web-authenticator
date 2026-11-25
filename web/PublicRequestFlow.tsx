@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { ProcessingStatus, type EndAction } from "./components/ProcessingGlyph";
+import { ProcessingStatus, type EndAction } from "./components/ProcessingStatus";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
@@ -11,7 +11,7 @@ import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
 import { configureDemoEnrollment } from "./lib/demo-enrollment";
 import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
-import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
+import { captureFrame, consentFrame, requestFrame } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 // The second of two loading messages; enrollment shows "Processing liveness" before it.
@@ -255,16 +255,9 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   // the credential, so another run would skip the face check.
   const endAction: EndAction | undefined = !demo && flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
 
-  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Proof of Presence">
+  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-surface-page px-6 text-center" aria-label="Proof of Presence">
     <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />
   </section>;
-
-  if (opening) return <div className={requestFrame}>
-    <div className={screenContent}><div className={centeredLayout}>
-      <p className={body} role="status">{openProgress}</p>
-    </div></div>
-    <div className={actions}><button className={secondaryAction} onClick={() => void cancel()}>Cancel request</button></div>
-  </div>;
 
   if (flow.stage === "setup-error") return <div className={requestFrame}>
     <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onReturn={demo?.back} onRetry={() => {
@@ -305,6 +298,8 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       rp={demo && incoming ? "Web Authenticator" : incoming?.label}
       reason={unsupported}
       returnUrl={incoming?.returnUrl}
+      // While the passkey sheet is up, the request stays on screen with Continue pending.
+      pending={opening ? openProgress : undefined}
       onStart={() => void start()}
       onCancel={() => void cancel()}
     />

@@ -14,7 +14,9 @@ import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
 import * as demo from "../lib/demo";
 import * as demoEnrollment from "../lib/demo-enrollment";
+import * as demoPreview from "../lib/demo-preview";
 import * as poseGuard from "../lib/poseguard/enrollment";
+import { BUMPER_TINT } from "../components/PoseTargetIndicator";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -54,6 +56,27 @@ test("unsupported presence requirements stop before passkey setup", async () => 
   expect(await view.findByText("User presence is not implemented.")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Create or unlock with passkey" })).toBeNull();
   expect(view.queryByRole("button", { name: "Start check" })).toBeNull();
+});
+
+test("while the passkey sheet is open the request stays on screen with Continue pending", async () => {
+  const f = await fixture(11);
+  let unlock!: (session: RequestWalletSession) => void;
+  f.services.unlock = () => { f.calls.unlocked++; return new Promise(resolve => { unlock = resolve; }); };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+  const pending = await view.findByRole("button", { name: "Continue" });
+  await waitFor(() => expect(pending.getAttribute("aria-busy")).toBe("true"));
+  expect((pending as HTMLButtonElement).disabled).toBe(true);
+  expect(view.getByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
+  expect(view.getByRole("status").textContent).toBe("Opening authenticator…");
+  // A second tap while pending must not open another passkey sheet.
+  fireEvent.click(pending);
+  expect(f.calls.unlocked).toBe(1);
+  const cancel = view.getByRole("button", { name: "Cancel request" }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(false);
+  fireEvent.click(cancel);
+  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+  unlock({ ready: Promise.resolve({ wallet: f.wallet }), dispose: () => f.wallet.terminate() } as RequestWalletSession);
 });
 
 test("request intro names the RP only after validation, then starts the check", async () => {
@@ -208,6 +231,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     return outcome;
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
+  const preview = spyOn(demoPreview, "isDemoPreview").mockReturnValue(false);
   const log = spyOn(console, "info").mockImplementation(() => {});
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
@@ -226,7 +250,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     // Live guidance is a pill over the camera: no text above it, no step count, no icon while framing the centre.
     const pill = await view.findByTestId("selfie-guidance-pill");
     expect(pill.textContent).toBe("Look straight");
-    expect(pill.querySelector("svg")).toBeNull();
+    expect(pill.querySelector("svg, [data-icon]")).toBeNull();
     expect(view.queryByRole("heading", { name: "Look straight" })).toBeNull();
     expect(view.queryByText(/Step \d of \d/)).toBeNull();
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
@@ -235,7 +259,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     // Holding the centre is guidance, not loading: no spinner once the targets have arrived.
     act(() => update({ phase: "holding", title: "Hold steady", hint: "", progress: 0.12, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } }));
     expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Hold steady");
-    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")).toBeNull();
+    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg, [data-icon]")).toBeNull();
     act(() => {
       update({ phase: "captured", title: "Hold steady", hint: "", progress: 0.25,
         cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
@@ -250,11 +274,11 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(ring.querySelectorAll("circle").length).toBeLessThan(64);
     // The pill's arrow points the same way as the bumper.
     expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Turn left");
-    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")!.style.transform).toBe("rotate(270deg)");
+    expect(view.getByTestId("selfie-guidance-pill").querySelector<HTMLElement>("[data-testid=guidance-arrow]")!.style.transform).toBe("rotate(270deg)");
     // A left turn puts the bumper and chevron at 270° on the ring; the bumper goes solid while the user holds.
     const indicator = view.getByTestId("pose-target-indicator");
     expect(indicator.dataset).toMatchObject({ angle: "270", aligned: "false" });
-    expect(indicator.querySelector("path")!.getAttribute("stroke")).toBe("#c8e4fe");
+    expect(indicator.querySelector("path")!.getAttribute("stroke")).toBe(BUMPER_TINT);
     expect(indicator.querySelectorAll("path")[1]!.getAttribute("transform")).toMatch(/rotate\(270\.0\)$/);
     act(() => update({ phase: "holding", title: "Turn left", hint: "", progress: 0.3, cameraReady: true,
       target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
@@ -286,6 +310,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     configure.mockRestore();
     captureMock.mockRestore();
     log.mockRestore();
+    preview.mockRestore();
   }
 });
 

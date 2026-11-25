@@ -2,9 +2,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useCallback, useEffect, useRef, useState, type ContextType, type ReactNode } from "react";
 import { DEMO_PATH } from "../config/demo";
 import { RequestIntro } from "./components/RequestIntro";
-import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, primaryAction, requestFrame, screenContent, screenTitle, secondaryAction } from "./components/styles";
+import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, requestFrame, screenContent, screenTitle } from "./components/styles";
+import { Button } from "./design/Button";
+import { buttonStyle } from "./design/buttons";
 import { currentProtocolEnvironment } from "./lib/environment";
 import { logDemoRequest, startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
+import { isDemoPreview, startDemoPreview } from "./lib/demo-preview";
 
 type DemoState =
   | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" | "cancelled" }
@@ -59,7 +62,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setAttempt(undefined);
     setState({ phase: "starting" });
     try {
-      const next = await startDemo(signal);
+      const next = isDemoPreview() ? startDemoPreview() : await startDemo(signal);
       signal.throwIfAborted();
       logDemoRequest(next.config, next.bridgeId);
       current.attempt = next;
@@ -128,7 +131,7 @@ export function DemoPage() {
           </div>
         </div>
       </div>
-      <div className={actions}><a className={primaryAction} href={localhost.href}>Open localhost demo</a></div>
+      <div className={actions}><a className={`${buttonStyle("primary48")} w-full`} href={localhost.href}>Open localhost demo</a></div>
     </section>;
   }
   return <DemoStatus demo={demo} />;
@@ -168,10 +171,10 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
       </div>
     </div>
     <div className={actions}>
-      {waiting ? <button type="button" className={secondaryAction} onClick={demo.cancel}>Cancel request</button>
-        : <button type="button" className={primaryAction} onClick={() => void create()}>
+      {waiting ? <Button buttonStyle="tertiary48" className="w-full" onClick={demo.cancel}>Cancel request</Button>
+        : <Button buttonStyle="primary48" className="w-full" onClick={() => void create()}>
           {phase === "error" ? "Try again" : "Create another request"}
-        </button>}
+        </Button>}
     </div>
   </section>;
 }
@@ -189,8 +192,8 @@ function DemoRequestDetails({ attempt }: { attempt?: DemoHandoff }) {
       ["Expires", new Date(attempt.config.rp_context.expires_at * 1000).toISOString()],
     ] : []),
   ];
-  return <details className="w-full rounded-2xl bg-background-secondary px-4 py-3 text-left text-[13px]">
-    <summary className="cursor-pointer font-medium">Request details</summary>
+  return <details className="w-full rounded-2xl bg-background-secondary px-4 py-3 text-left text-b3 text-foreground-primary">
+    <summary className="cursor-pointer text-l3">Request details</summary>
     <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
       {rows.map(([label, value]) => <div key={label} className="contents">
         <dt className="text-foreground-secondary">{label}</dt>

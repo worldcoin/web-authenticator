@@ -3,13 +3,17 @@ import { use, useEffect, useRef, useState } from "react";
 import { CompletionAnimationContext } from "./AppShell";
 import { DemoContext } from "./DemoPage";
 import { isDemoHandoff } from "./lib/demo";
+import { loadDemoPreview } from "./lib/demo-preview";
 import { DEMO_PATH } from "../config/demo";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
 import { openAuthenticator, openRequestWallet } from "./lib/wallet-session";
 import { PublicRequestFlow } from "./PublicRequestFlow";
 
-export const defaultServices = { open: openAuthenticator, load: loadIncomingRequest, unlock: openRequestWallet };
+const loadRequest: typeof loadIncomingRequest = async (href, signal, progress) =>
+  loadDemoPreview(href) ?? loadIncomingRequest(href, signal, progress);
+
+export const defaultServices = { open: openAuthenticator, load: loadRequest, unlock: openRequestWallet };
 export type Services = typeof defaultServices;
 
 /** Where request links open: loads and validates the request in the URL, then runs the flow. */
