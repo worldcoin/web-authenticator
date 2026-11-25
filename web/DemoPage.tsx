@@ -22,7 +22,8 @@ export const DemoContext = createContext<{
   attempt: DemoHandoff | undefined;
   create: () => Promise<void>;
   open: () => string | undefined;
-  complete: (source: DemoProofSource) => void;
+  /** Verifies the delivered proof; resolves whether it passed. */
+  complete: (source: DemoProofSource) => Promise<boolean>;
   captureComplete: () => void;
   cancel: () => void;
 } | null>(null);
@@ -84,19 +85,23 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     return next.query;
   }, [stop]);
 
-  const complete = (source: DemoProofSource) => {
+  const complete = async (source: DemoProofSource): Promise<boolean> => {
     const current = active.current;
-    if (!current?.attempt || current.verifying) return;
+    if (!current?.attempt || current.verifying) return false;
     current.verifying = true;
     const { signal } = current.controller;
     setState({ phase: "verifying" });
-    void verifyDemo(current.attempt, signal).then(() => {
-      if (!signal.aborted) setState({ phase: "verified", source });
-    }).catch(error => {
+    try {
+      await verifyDemo(current.attempt, signal);
+      if (signal.aborted) return false;
+      setState({ phase: "verified", source });
+      return true;
+    } catch (error) {
       if (!signal.aborted) setState({ phase: "error", message: demoError(error) });
-    }).finally(() => {
+      return false;
+    } finally {
       if (active.current === current) active.current = null;
-    });
+    }
   };
 
   const captureComplete = () => {

@@ -68,7 +68,7 @@ test.each([
     }
     directions.push(state.title);
   });
-  expect(directions).toEqual(["Look straight ahead", "Turn your head left", `Turn your head ${direction}`, "Turn your head right"]);
+  expect(directions).toEqual(["Look straight", "Turn left", `Look ${direction}`, "Turn right"]);
   expect([images.centralPng, ...images.captures].map(frame => frame[0])).toEqual([2, 5, 8, 11]);
   expect(camera.encoded).toEqual([2, 5, 8, 11]);
   expect(confirmations).toEqual([1, 2, 3, 4]);
@@ -106,7 +106,7 @@ test.each([
     const left = (1 - relativeWidth) / 2;
     return { ...frame, pose: { ...frame.pose, left, right: 1 - left }, dimensions: { png } };
   }, state => {
-    if (state.hint !== "Move closer to the camera.") return;
+    if (state.title !== "Move closer") return;
     expect(state.phase).toBe("framing");
     expect(state.poseStep?.index).toBe(step);
     expect(state.progress).toBe((step - 1) / 4);

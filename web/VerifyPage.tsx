@@ -61,9 +61,11 @@ export function VerifyPage({ services }: { services: Services }) {
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
     captureOnly: new URL(attempt.returnUrl).protocol === "http:",
-    complete: (source: Parameters<typeof demo.complete>[0]) => {
-      demo.complete(source);
-      void navigate({ to: DEMO_PATH, replace: true });
+    // A verified proof ends here on "You're all set"; a failure shows the demo's result page.
+    complete: async (source: Parameters<typeof demo.complete>[0]) => {
+      const verified = await demo.complete(source);
+      if (!verified) void navigate({ to: DEMO_PATH, replace: true });
+      return verified;
     },
     captureComplete: () => {
       demo.captureComplete();
