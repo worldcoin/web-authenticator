@@ -263,8 +263,11 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
 
     // Processing shows its message alone: no oval, ring or camera preview.
-    act(() => update({ phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false }));
+    act(() => update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false }));
     expect(view.getByRole("heading", { name: "Processing liveness" })).toBeTruthy();
+    expect(view.getByText("This might take a few seconds")).toBeTruthy();
+    expect(view.getByTestId("processing-glyph")).toBeTruthy();
+    expect(view.queryByTestId("selfie-guidance-pill")).toBeNull();
     expect(view.getByTestId("selfie-camera-stage").classList.contains("hidden")).toBe(true);
 
     finish("captured");

@@ -3,6 +3,7 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
+import { ProcessingGlyph } from "./ProcessingGlyph";
 import { bumperGap, PoseTargetIndicator, targetDegrees } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
 
@@ -133,8 +134,9 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   const complete = state.phase === "complete";
   const transitioning = complete && !!onComplete;
   const showVideo = !(complete && !transitioning) && !(transitioning && !state.cameraReady);
-  // After the last capture the camera is off; processing shows its message alone.
+  // After the last capture the camera is off; processing shows its message alone, with a spinner for PoseGuard.
   const textOnly = state.phase === "checking" && !state.cameraReady;
+  const processing = textOnly && !!enroll;
   // PoseGuard puts live guidance in a pill over the camera; results, errors and processing stay as text above it.
   const pill = !!enroll && !textOnly && ["starting", "framing", "holding", "captured", "checking"].includes(state.phase);
   return <section className="group/selfie fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col overflow-y-auto bg-white px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
@@ -143,8 +145,9 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      {!pill && <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
-        <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
+      {processing && <ProcessingGlyph />}
+      {!pill && <div role="status" aria-live="polite" aria-atomic="true" className={`w-full text-center ${processing ? "mt-4" : ""}`}>
+        <h2 className={processing ? "text-[22px] leading-[1.2] tracking-[-0.3px] text-foreground" : "text-[15px] leading-[1.3] text-foreground"} data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
       </div>}
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">

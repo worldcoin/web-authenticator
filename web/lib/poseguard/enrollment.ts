@@ -323,5 +323,5 @@ function clearImages(images: PoseGuardImages) {
 
 // Everything after capture shows one message, so the screen doesn't step through internal stages.
 function checking(): CaptureState {
-  return { phase: "checking", title: "Processing liveness", hint: "", progress: 1, cameraReady: false };
+  return { phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false };
 }
