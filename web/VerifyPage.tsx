@@ -72,6 +72,7 @@ export function VerifyPage({ services }: { services: Services }) {
       void navigate({ to: DEMO_PATH, replace: true });
     },
     back: () => { demo.cancel(); void navigate({ to: DEMO_PATH, replace: true }); },
+    again: () => { demo.restart(); void navigate({ to: DEMO_PATH, replace: true }); },
   } : undefined;
   return <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed || mismatch} expired={loadExpired || expired}
     demo={demoFlow} onTransitionChange={setCompletionAnimating} onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}

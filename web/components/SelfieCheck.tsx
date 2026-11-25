@@ -3,7 +3,7 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
-import { ProcessingStatus } from "./ProcessingGlyph";
+import { ProcessingStatus, type EndAction } from "./ProcessingGlyph";
 import { bumperGap, PoseTargetIndicator, targetDegrees } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
 
@@ -13,12 +13,14 @@ const APERTURE_INSET = "absolute inset-x-[calc(11/345.005*100%)] inset-y-[calc(1
 const CAMERA_WIDTH = "w-[min(345px,max(60px,calc((100svh_-_292px)*0.7163)))]";
 const RETRY = "min-h-12 max-w-45 flex-1 rounded-2xl bg-background-secondary p-3 text-[15px] text-foreground hover:bg-[#ededed]";
 
-export default function SelfieCheck({ onClose, onComplete, backLabel, completionHint, enroll }: {
+export default function SelfieCheck({ onClose, onComplete, backLabel, completionHint, enroll, endAction }: {
   onClose: () => void;
   onComplete?: () => void;
   backLabel: string;
   completionHint?: string;
   enroll?: RunPoseGuard;
+  /** What the PoseGuard end screen offers after "You're all set". */
+  endAction?: EndAction;
 }) {
   const setCaptureActive = use(CaptureScreenContext);
   useEffect(() => { setCaptureActive(true); return () => setCaptureActive(false); }, [setCaptureActive]);
@@ -148,7 +150,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      {processing && <ProcessingStatus title={state.title} hint={state.hint} done={allSet} />}
+      {processing && <ProcessingStatus title={state.title} hint={state.hint} done={allSet} endAction={endAction} />}
       {!pill && !processing && <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}

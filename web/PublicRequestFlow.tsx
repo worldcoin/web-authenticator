@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { ProcessingStatus } from "./components/ProcessingGlyph";
+import { ProcessingStatus, type EndAction } from "./components/ProcessingGlyph";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
@@ -38,6 +38,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     complete: (source: DemoProofSource) => Promise<boolean>;
     captureComplete: () => void;
     back: () => void;
+    again: () => void;
   };
   onTransitionChange: (active: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
@@ -176,7 +177,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
-        setFlow({ stage: "capture", enroll: async (video, signal, update) => {
+        setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: async (video, signal, update) => {
           const result = await enroll(video, signal, update);
           if (result === "captured") {
             checkExpiry(incoming.proof);
@@ -192,7 +193,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         return;
       }
       const signup = configuredPoseGuardSignup();
-      setFlow({ stage: "capture", enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
+      setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
         stop();
@@ -251,8 +252,12 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }
   };
 
+  // Where the end screen can send the user: run the demo again, or back to the RP when it gave a return link.
+  const endAction: EndAction | undefined = demo ? { label: "Run again", onClick: demo.again }
+    : flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
+
   if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
-    <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} />
+    <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />
   </section>;
 
   if (opening) return <div className={requestFrame}>
@@ -288,6 +293,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         backLabel="Cancel check"
         onComplete={flow.enroll ? undefined : () => void complete()}
         enroll={flow.enroll}
+        endAction={endAction}
         completionHint={flow.stage === "preparing" ? openProgress : undefined}
       />
     </Suspense>

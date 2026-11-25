@@ -343,7 +343,8 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual(["test-proof"]);
       verdict.resolve();
-      expect((await view.findByTestId("all-set", undefined, { timeout: 3_000 })).textContent).toBe("You’re all set");
+      expect(await view.findByTestId("all-set", undefined, { timeout: 3_000 })).toBeTruthy();
+      expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
       return;
     }
     // The spinner keeps running while the demo verifies the delivered proof.
@@ -356,8 +357,13 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
     if (result === "accepted") {
       verdict.resolve();
       // A verified proof ends here, on the end screen, without returning to /demo.
-      expect((await view.findByTestId("all-set", undefined, { timeout: 3_000 })).textContent).toBe("You’re all set");
+      expect(await view.findByTestId("all-set", undefined, { timeout: 3_000 })).toBeTruthy();
+      expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
       expect(window.location.pathname).toBe("/verify");
+      // Then it says the user is done, and the demo offers another run, which starts a new request.
+      expect(view.getByText("You can close this tab")).toBeTruthy();
+      fireEvent.click(view.getByRole("button", { name: "Run again" }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
     } else {
       verdict.reject(new Error("The relying party rejected the proof."));
       expect((await view.findByRole("alert")).textContent).toBe("The relying party rejected the proof.");

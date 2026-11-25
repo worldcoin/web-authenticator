@@ -12,11 +12,14 @@ const FLOOD_MS = 700;
 const GLYPH_PX = 88;
 const STROKE_PX = 3;
 
+/** A way on from the end screen: a callback within the app, or a link back to the RP. */
+export type EndAction = { label: string; onClick: () => void } | { label: string; href: string };
+
 /**
  * The processing screen after capture. When `done`, the arc closes and the ring floods the screen
  * blue (growing outward and filling inward at once) into the end screen, which says only "You're all set".
  */
-export function ProcessingStatus({ title, hint, done = false }: { title: string; hint?: string; done?: boolean }) {
+export function ProcessingStatus({ title, hint, done = false, endAction }: { title: string; hint?: string; done?: boolean; endAction?: EndAction }) {
   const glyph = useRef<SVGSVGElement>(null);
   const [flood, setFlood] = useState<{ x: number; y: number; diameter: number }>();
   const [allSet, setAllSet] = useState(false);
@@ -35,7 +38,7 @@ export function ProcessingStatus({ title, hint, done = false }: { title: string;
     return () => clearTimeout(timer);
   }, [done]);
 
-  if (allSet) return <AllSet />;
+  if (allSet) return <AllSet action={endAction} />;
   return <>
     <ProcessingGlyph ref={glyph} done={done} />
     <div role="status" aria-live="polite" aria-atomic="true" className={`mt-4 w-full text-center transition-opacity duration-200 ${flood ? "opacity-0" : ""}`}>
@@ -85,9 +88,19 @@ function Flood({ x, y, diameter, onDone }: { x: number; y: number; diameter: num
   </div>;
 }
 
-/** The end screen: the whole screen blue, one line of copy. */
-function AllSet() {
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-accent px-6 text-center text-white" data-testid="all-set">
-    <h2 role="status" className="text-[28px] leading-[1.2] tracking-[-0.4px] motion-safe:animate-completion-in">You’re all set</h2>
+// The close note waits until "You're all set" has landed.
+const NOTE_DELAY_MS = 1_200;
+
+/** The end screen: the whole screen blue, "You're all set", then that the user can close the tab and where else to go. */
+function AllSet({ action }: { action?: EndAction }) {
+  const button = "inline-flex min-h-12 items-center justify-center rounded-full bg-white px-6 text-[16px] font-medium text-accent";
+  return <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-accent px-6 text-center text-white" data-testid="all-set">
+    <div role="status"><h2 className="text-[28px] leading-[1.2] tracking-[-0.4px] motion-safe:animate-completion-in">You’re all set</h2></div>
+    <div className="flex flex-col items-center gap-4 motion-safe:animate-completion-in" style={{ animationDelay: `${NOTE_DELAY_MS}ms` }}>
+      <p className="text-[15px] text-white/80">You can close this tab</p>
+      {action && ("href" in action
+        ? <a className={button} href={action.href}>{action.label}</a>
+        : <button type="button" className={button} onClick={action.onClick}>{action.label}</button>)}
+    </div>
   </div>;
 }
