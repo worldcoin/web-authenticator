@@ -12,8 +12,8 @@ const FLOOD_MS = 700;
 const GLYPH_PX = 88;
 const STROKE_PX = 3;
 
-/** A way on from the end screen: a callback within the app, or a link back to the RP. */
-export type EndAction = { label: string; onClick: () => void } | { label: string; href: string };
+/** A way on from the end screen: a link back to the RP. */
+export type EndAction = { label: string; href: string };
 
 /**
  * The processing screen after capture. When `done`, the arc closes and the ring floods the screen
@@ -91,16 +91,14 @@ function Flood({ x, y, diameter, onDone }: { x: number; y: number; diameter: num
 // The close note waits until "You're all set" has landed.
 const NOTE_DELAY_MS = 1_200;
 
-/** The end screen: the whole screen blue, "You're all set", then that the user can close the tab and where else to go. */
+/** The end screen: the whole screen blue, "You're all set", then that the user can close the tab, and a link back to the RP if it gave one. */
 function AllSet({ action }: { action?: EndAction }) {
   const button = "inline-flex min-h-12 items-center justify-center rounded-full bg-white px-6 text-[16px] font-medium text-accent";
   return <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-accent px-6 text-center text-white" data-testid="all-set">
     <div role="status"><h2 className="text-[28px] leading-[1.2] tracking-[-0.4px] motion-safe:animate-completion-in">You’re all set</h2></div>
     <div className="flex flex-col items-center gap-4 motion-safe:animate-completion-in" style={{ animationDelay: `${NOTE_DELAY_MS}ms` }}>
       <p className="text-[15px] text-white/80">You can close this tab</p>
-      {action && ("href" in action
-        ? <a className={button} href={action.href}>{action.label}</a>
-        : <button type="button" className={button} onClick={action.onClick}>{action.label}</button>)}
+      {action && <a className={button} href={action.href}>{action.label}</a>}
     </div>
   </div>;
 }

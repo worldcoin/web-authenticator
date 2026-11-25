@@ -38,7 +38,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     complete: (source: DemoProofSource) => Promise<boolean>;
     captureComplete: () => void;
     back: () => void;
-    again: () => void;
   };
   onTransitionChange: (active: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
@@ -252,9 +251,9 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }
   };
 
-  // Where the end screen can send the user: run the demo again, or back to the RP when it gave a return link.
-  const endAction: EndAction | undefined = demo ? { label: "Run again", onClick: demo.again }
-    : flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
+  // A real RP that gave a return link gets one on the end screen. The demo does not: the same passkey now holds
+  // the credential, so another run would skip the face check.
+  const endAction: EndAction | undefined = !demo && flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
 
   if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
     <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />

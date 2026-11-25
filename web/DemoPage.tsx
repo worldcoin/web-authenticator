@@ -26,8 +26,6 @@ export const DemoContext = createContext<{
   complete: (source: DemoProofSource) => Promise<boolean>;
   captureComplete: () => void;
   cancel: () => void;
-  /** Back to a first visit, so /demo creates a new request. */
-  restart: () => void;
 } | null>(null);
 
 export function DemoProvider({ children }: { children: ReactNode }) {
@@ -51,12 +49,6 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setAttempt(undefined);
     // Not "idle": only the first visit creates a request without a tap.
     setState({ phase: "cancelled" });
-  };
-
-  const restart = () => {
-    stop();
-    setAttempt(undefined);
-    setState({ phase: "idle" });
   };
 
   const create = useCallback(async () => {
@@ -117,7 +109,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setState({ phase: "captured" });
   };
 
-  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel, restart }}>{children}</DemoContext>;
+  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>{children}</DemoContext>;
 }
 
 export function DemoPage() {
