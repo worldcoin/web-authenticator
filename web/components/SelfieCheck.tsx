@@ -149,7 +149,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
       <button className="absolute left-0 grid size-11 place-items-center rounded-full bg-background-secondary text-foreground hover:bg-[#ededed]" type="button" aria-label={backLabel} onClick={close}><img className="size-6" src="/assets/figma/close.svg" alt="" /></button>
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
-      <h1 className="sr-only">Selfie check</h1>
+      <h1 className="sr-only">Proof of Presence</h1>
       {processing && <ProcessingStatus title={state.title} hint={state.hint} done={allSet} endAction={endAction} />}
       {!pill && !processing && <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>

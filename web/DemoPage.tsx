@@ -135,7 +135,7 @@ export function DemoPage() {
 }
 
 /**
- * Visitors arrive knowing they are about to do a Selfie Check, so the demo creates the request
+ * Visitors arrive knowing they are about to do a Proof of Presence, so the demo creates the request
  * straight away and hands over to /verify, whose consent screen holds the tap that opens the passkey.
  */
 function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext>> }) {
@@ -152,12 +152,12 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
   }, [phase, create, open, navigate]);
 
   if (phase === "idle" || phase === "starting" || phase === "ready") {
-    return <section className={consentFrame} aria-label="Selfie Check demo">
+    return <section className={consentFrame} aria-label="Proof of Presence demo">
       <RequestIntro state="verifying" onStart={() => {}} onCancel={() => {}} />
     </section>;
   }
   const waiting = phase === "waiting" || phase === "verifying";
-  return <section className={requestFrame} aria-label="Selfie Check demo">
+  return <section className={requestFrame} aria-label="Proof of Presence demo">
     <div className={screenContent}>
       <div className={centeredLayout}>
         <div className={`${messageBlock} gap-4`}>
@@ -179,7 +179,7 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
 function DemoRequestDetails({ attempt }: { attempt?: DemoHandoff }) {
   const rows = [
     ["Environment", "Staging"],
-    ["Credential", "Selfie Check (schema 11)"],
+    ["Credential", "Proof of Presence (schema 11)"],
     ...(attempt ? [
       ["Action", attempt.config.action],
       ["App ID", attempt.config.app_id],
@@ -208,7 +208,7 @@ function demoTitle(state: DemoState): string {
   if (state.phase === "cancelled") return "Check cancelled";
   if (state.phase === "verifying") return "Verifying proof…";
   if (state.phase === "waiting") return "Check in progress";
-  return "Selfie Check";
+  return "Proof of Presence";
 }
 
 function demoError(error: unknown): string {

@@ -22,7 +22,7 @@ if (!("bun" in process.versions)) {
     expect(modelRequests).toEqual([]);
   });
 
-  test.describe("local Selfie Check", () => {
+  test.describe("local Proof of Presence", () => {
     test.beforeEach(async ({ page }) => { await installCamera(page); });
 
     test("captures from an app request without uploading and stops the camera", async ({ page }) => {

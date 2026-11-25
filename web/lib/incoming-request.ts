@@ -28,7 +28,7 @@ export type IncomingRequest = {
 export function publicRequestUnsupportedReason(request: IncomingRequest): string | undefined {
 	if (request.unsupportedReason) return request.unsupportedReason
 	if (!request.proof.proof_requests.length || request.proof.proof_requests.some(item => item.issuer_schema_id !== 11))
-		return 'This authenticator currently supports Selfie Check requests only. Return to the requesting app to choose Selfie Check.'
+		return 'This authenticator currently supports Proof of Presence requests only. Return to the requesting app to choose Proof of Presence.'
 }
 
 export async function loadIncomingRequest(

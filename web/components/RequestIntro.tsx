@@ -3,14 +3,14 @@ import { actions, body, centeredLayout, messageBlock, primaryAction, returnLink,
 export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | "unsupported";
 
 const DISCLOSURES = [
-  { label: "Proof of selfie", icon: "/assets/figma/human-emblem.svg", shared: true },
+  { label: "Proof of Presence", icon: "/assets/figma/human-emblem.svg", shared: true },
   { label: "Your selfie", icon: "/assets/figma/person-circle.svg", shared: false },
   { label: "Your passkey", icon: "/assets/figma/person-key.svg", shared: false },
 ] as const;
 const shimmer = "animate-request-shimmer bg-[linear-gradient(90deg,#ecebe8_0%,#f6f5f3_50%,#ecebe8_100%)] bg-size-[200%_100%] bg-position-[0_0]";
 
 /**
- * First screen for a request link (/verify): what the requesting app receives from the Selfie Check.
+ * First screen for a request link (/verify): what the requesting app receives from the Proof of Presence.
  * The requesting RP is shown only once the request has been fetched, its signature checked against
  * the registry and its expiry confirmed. Expired, invalid and unsupported requests end here: there
  * is no way forward, only back to the requesting app.
@@ -59,7 +59,7 @@ function RequestConsent({ rp, onStart, onCancel }: { rp?: string; onStart: () =>
           <h1 className={screenTitle}>
             Request from {ready ? rp : <span className={`inline-block h-[0.9em] w-[3.5em] rounded-md align-[-0.05em] ${shimmer}`}><span className="sr-only">an app</span></span>}
           </h1>
-          <p className={body}>Confirm you’re a real person with selfie check without sharing identity</p>
+          <p className={body}>Confirm you’re a real person with Proof of Presence without sharing identity</p>
         </div>
       </div>
       <hr className="-mx-6 my-11 border-0 border-t border-stroke-secondary min-[600px]:-mx-10" />

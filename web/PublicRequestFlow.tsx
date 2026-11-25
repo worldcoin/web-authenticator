@@ -172,7 +172,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
             return;
           }
           if (!credentials.canEnrollSelfie) {
-            throw new WalletOpenError("This authenticator can’t complete this Selfie Check.");
+            throw new WalletOpenError("This authenticator can’t complete this Proof of Presence.");
           }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
@@ -255,7 +255,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   // the credential, so another run would skip the face check.
   const endAction: EndAction | undefined = !demo && flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
 
-  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
+  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Proof of Presence">
     <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />
   </section>;
 
@@ -286,7 +286,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   </div>;
 
   if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
-    <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
+    <Suspense fallback={<p role="status">Opening Proof of Presence…</p>}>
       <SelfieCheck
         onClose={() => void cancel()}
         backLabel="Cancel check"

@@ -47,7 +47,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
     }
   };
-  if (preview) return <Suspense fallback={<p role="status">Opening Selfie Check preview…</p>}>
+  if (preview) return <Suspense fallback={<p role="status">Opening Proof of Presence preview…</p>}>
     <SelfieCheck onClose={() => setPreview(false)} backLabel="Back to authenticator" />
   </Suspense>;
 
@@ -82,12 +82,12 @@ function CredentialsPanel({ records, onPreview, onLock }: {
     <p className="sr-only">{records.length} credential{records.length === 1 ? "" : "s"} in your authenticator.</p>
     <ul>{records.map(record => <li key={record.credentialId.toString()} className="flex items-center gap-3 border-b border-[#d6dde7] py-4">
       <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full border border-[#c3cddb] text-[22px] text-brand-blue">◎</span>
-      <span className="flex-1 text-[16px]">{record.issuerSchemaId === 11n ? "Selfie Check" : record.issuerSchemaId === 1n ? "Orb" : record.issuerSchemaId === 128n ? "Faux" : "Credential"}</span>
+      <span className="flex-1 text-[16px]">{record.issuerSchemaId === 11n ? "Proof of Presence" : record.issuerSchemaId === 1n ? "Orb" : record.issuerSchemaId === 128n ? "Faux" : "Credential"}</span>
       <span className={record.isExpired ? "text-[12px] text-[#657184]" : "text-[12px] text-[#0d7a54]"}>{record.isExpired ? "Expired" : "Active"}</span>
     </li>)}</ul>
     {!hasSelfie && <><div className="flex justify-between border-b border-[#d6dde7] pt-6 pb-2 text-[13px]"><h2 className="font-medium">Add to this World ID</h2></div>
-      <div className="flex items-center gap-3 border-b border-[#d6dde7] py-4"><span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-[#b9c4d4] text-[22px] text-[#657184]">+</span><div className="flex-1"><p className="text-[16px]">Selfie Check</p><p className="text-[12px] text-[#5c6879]">Verify with a selfie</p></div><button className="min-h-11 rounded-lg border border-[#c9d2df] px-3 text-[14px]" onClick={onPreview}>Set up Selfie Check</button></div>
-      <p className="mt-3 rounded-lg bg-[#f4f7fc] p-3 text-[12px] leading-[1.45] text-[#5e6f88]">Selfie Check setup is not available yet. You can try the camera preview; it won’t issue a credential.</p></>}
+      <div className="flex items-center gap-3 border-b border-[#d6dde7] py-4"><span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-[#b9c4d4] text-[22px] text-[#657184]">+</span><div className="flex-1"><p className="text-[16px]">Proof of Presence</p><p className="text-[12px] text-[#5c6879]">Verify with a selfie</p></div><button className="min-h-11 rounded-lg border border-[#c9d2df] px-3 text-[14px]" onClick={onPreview}>Set up Proof of Presence</button></div>
+      <p className="mt-3 rounded-lg bg-[#f4f7fc] p-3 text-[12px] leading-[1.45] text-[#5e6f88]">Proof of Presence setup is not available yet. You can try the camera preview; it won’t issue a credential.</p></>}
     <button className="mt-auto self-start pt-6 text-[14px] text-[#5c6879] underline-offset-4 hover:underline" onClick={onLock}>Lock authenticator</button>
   </div>;
 }

@@ -149,7 +149,7 @@ export function credentialRequirementsLabel(request: ProofRequest): string {
 		request.proof_requests.map(item => [
 			item.identifier,
 			item.issuer_schema_id === 11
-				? 'Selfie Check'
+				? 'Proof of Presence'
 				: item.issuer_schema_id === 1
 					? 'Orb'
 					: `Schema ${item.issuer_schema_id}`,

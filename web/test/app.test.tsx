@@ -435,7 +435,7 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
-test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {
+test("standalone creation opens a passkey wallet and offers the Proof of Presence preview", async () => {
   localStorage.clear(); visit("/");
   const f = await fixture(11);
   let mode: string | undefined;
@@ -451,7 +451,7 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
     expect(mode).toBe("create");
     expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    fireEvent.click(view.getByRole("button", { name: "Set up Proof of Presence" }));
     expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   } finally { localStorage.clear(); }
 });
@@ -478,7 +478,7 @@ test("saved access requires explicit sign-in and shows credentials without start
   } finally { localStorage.clear(); }
 });
 
-test("an active Selfie Check does not offer setup", async () => {
+test("an active Proof of Presence does not offer setup", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   try {
     visit("/");
@@ -486,7 +486,7 @@ test("an active Selfie Check does not offer setup", async () => {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("1 credential in your authenticator.")).toBeTruthy();
-    expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Set up Proof of Presence" })).toBeNull();
   } finally { localStorage.clear(); }
 });
 

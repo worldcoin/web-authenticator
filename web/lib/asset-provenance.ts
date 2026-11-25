@@ -22,7 +22,7 @@ export const FIGMA_ASSET_PROVENANCE_V1 = Object.freeze([
   { localPath: "/assets/figma/simulation-progress.svg", nodeId: "5132:135038", sourceUrl: "https://www.figma.com/api/mcp/asset/4de20e04-08c1-4836-afd6-f525fbbb9b69.svg", sha256: "3ddb7b0615b908730d2d9698b11bb3230bceddeb1bbe49b673d60ad8784e664a", purpose: "Simulator pending illustration" },
   { localPath: "/assets/figma/close.svg", nodeId: "5132:135038", sourceUrl: "https://www.figma.com/api/mcp/asset/6616a081-8545-4f2c-b570-d6d114bbf8a3.svg", sha256: "10edfc1412b602997712e67ea1e01dd12f7c89f3c2da9053c6e7bddd02a42400", purpose: "Top-left close glyph" },
   { localPath: "/assets/figma/verification-complete.svg", nodeId: "5132:135071", sourceUrl: "https://www.figma.com/api/mcp/asset/6ece6628-e2d6-4b43-9573-03acda2dfd61.svg", sha256: "da55efa462ccd970f7ca4b9e1f3682f6e69cb57a582a480fd53b5b8f9f1f9e7b", purpose: "Verification-complete illustration (ring fully blue)" },
-  { localPath: "/assets/figma/success-emblem.svg", nodeId: "5132:135104", sourceUrl: "https://www.figma.com/api/mcp/asset/8d5d519c-4cec-449e-85b9-b2054d417f20.svg", sha256: "30b39383c0f2a68fc1a439adcae7f482bb089b9a5262663f90fc3a14580af8b0", purpose: "Selfie check success illustration" },
+  { localPath: "/assets/figma/success-emblem.svg", nodeId: "5132:135104", sourceUrl: "https://www.figma.com/api/mcp/asset/8d5d519c-4cec-449e-85b9-b2054d417f20.svg", sha256: "30b39383c0f2a68fc1a439adcae7f482bb089b9a5262663f90fc3a14580af8b0", purpose: "Proof of Presence success illustration" },
 ] as const satisfies readonly FigmaAssetProvenanceV1[]);
 
 export const FIGMA_ASSET_PATHS_V1 = Object.freeze({
