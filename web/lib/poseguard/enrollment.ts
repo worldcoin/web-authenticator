@@ -198,7 +198,7 @@ async function capturePoseGuard(
   indexerSyncDelays: readonly number[],
 ) {
   signal.throwIfAborted();
-  update({ ...INITIAL_CAPTURE_STATE, title: "Preparing enrollment", hint: "" });
+  update({ ...INITIAL_CAPTURE_STATE, title: "Getting ready", hint: "" });
   const wallet = await logPoseGuardStep("wallet_ready", async () => {
     const state = await abortable(session.ready, signal);
     if ("error" in state) throw state.error;
@@ -211,7 +211,7 @@ async function capturePoseGuard(
   const publicKey = new Uint8Array(await abortable(crypto.subtle.exportKey("raw", custody.publicKey), signal));
 
   // Bound permission and model startup separately from the enclave's capture window.
-  update(INITIAL_CAPTURE_STATE);
+  update({ ...INITIAL_CAPTURE_STATE, title: "Getting ready", hint: "" });
   const start = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   const cameraScope = new AbortController();
   const camera = await abortable(prepareCamera(video, AbortSignal.any([signal, cameraScope.signal]), update), start).catch(error => {
@@ -221,7 +221,7 @@ async function capturePoseGuard(
   let images: PoseGuardImages | undefined;
   const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   try {
-    update({ phase: "checking", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true });
+    update({ phase: "checking", title: "Getting ready", hint: "", progress: 0, cameraReady: true });
     const requestedAt = performance.now();
     const operation = wallet.enrollSelfieWithPoseGuard(
       JSON.stringify({ endpoint: policy.endpoint, releases: policy.releases }),

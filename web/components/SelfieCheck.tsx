@@ -3,7 +3,7 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { CAPTURE_TIMEOUT_MS, captureFailure, captureSelfie, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
-import { bumperGap, PoseTargetIndicator } from "./PoseTargetIndicator";
+import { bumperGap, PoseTargetIndicator, targetDegrees } from "./PoseTargetIndicator";
 import { logCaptureFailure, logCaptureTiming } from "../lib/flow-logging";
 
 // 11 units inside the ring viewBox, scaling with the aperture on narrow screens.
@@ -135,17 +135,18 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   const showVideo = !(complete && !transitioning) && !(transitioning && !state.cameraReady);
   // After the last capture the camera is off; processing shows its message alone.
   const textOnly = state.phase === "checking" && !state.cameraReady;
+  // PoseGuard puts live guidance in a pill over the camera; results, errors and processing stay as text above it.
+  const pill = !!enroll && !textOnly && ["starting", "framing", "holding", "captured", "checking"].includes(state.phase);
   return <section className="group/selfie fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col overflow-y-auto bg-white px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]" data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
     <header className="relative flex min-h-11 items-center justify-center" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <button className="absolute left-0 grid size-11 place-items-center rounded-full bg-background-secondary text-foreground hover:bg-[#ededed]" type="button" aria-label={backLabel} onClick={close}><img className="size-6" src="/assets/figma/close.svg" alt="" /></button>
     </header>
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-2 text-center">
       <h1 className="sr-only">Selfie check</h1>
-      <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
-        {state.poseStep && <p className="mb-1 text-xs text-foreground-secondary">Step {state.poseStep.index} of {state.poseStep.total}</p>}
+      {!pill && <div role="status" aria-live="polite" aria-atomic="true" className="w-full text-center">
         <h2 className="text-[15px] leading-[1.3] text-foreground" data-testid="selfie-guidance">{state.title}</h2>
         {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-[14px] leading-[1.35] text-foreground-secondary">{completionHint || state.hint}</p>}
-      </div>
+      </div>}
       <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""}`} data-testid="selfie-camera-stage">
         <div className={`${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
           <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
@@ -155,6 +156,11 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         <svg className="hidden" viewBox="0 0 280 350" fill="none" aria-hidden="true"><ellipse className="stroke-[#e3e3e3] stroke-2" cx="140" cy="175" rx="133" ry="168" /><path className="stroke-accent stroke-[2.5] transition-[stroke-dashoffset] duration-120 ease-linear" data-testid="selfie-ring-progress" d="M140 7a133 168 0 1 1 0 336a133 168 0 1 1 0-336" pathLength="100" strokeLinecap="round" strokeDasharray="100" style={{ strokeDashoffset: 100 - state.progress * 100 }} /></svg>
         <CaptureProgressRing progress={state.progress} gap={state.target ? bumperGap(state.target) : undefined} />
         {state.target && <PoseTargetIndicator target={state.target} aligned={state.phase === "holding"} />}
+        {pill && <div role="status" aria-live="polite" aria-atomic="true" data-testid="selfie-guidance-pill"
+          className="absolute top-[17%] left-1/2 flex max-w-[86%] -translate-x-1/2 items-center gap-2 rounded-xl bg-[rgb(31_31_31/78%)] px-3.5 py-[9px] text-[15px] leading-[1.3] text-white">
+          <GuidanceIcon state={state} />
+          <span data-testid="selfie-guidance">{state.title}</span>
+        </div>}
       </div>
       {(!transitioning && (complete || state.phase === "error" || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
         {(!enroll || !complete) && <button className={RETRY} type="button" onClick={restart}>
@@ -168,4 +174,18 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
       <details><summary className="inline-flex min-h-11 cursor-pointer list-none items-center underline underline-offset-3 [&::-webkit-details-marker]:hidden">About this check</summary><p className="mx-auto mt-[3px] mb-3 max-w-[310px] leading-[1.6]">This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
     </footer>}
   </section>;
+}
+
+/** An arrow towards a target, a spinner while the check waits or the user holds, or nothing while they frame the centre. */
+function GuidanceIcon({ state }: { state: CaptureState }) {
+  if (state.target) {
+    return <svg className="size-4 shrink-0" data-icon="arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ transform: `rotate(${targetDegrees(state.target)}deg)` }}>
+      <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>;
+  }
+  if (state.phase === "framing") return null;
+  return <svg className="size-4 shrink-0 motion-safe:animate-spin" data-icon="spinner" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.3" strokeWidth="1.6" />
+    <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>;
 }

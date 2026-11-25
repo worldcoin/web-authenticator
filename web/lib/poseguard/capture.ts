@@ -61,7 +61,7 @@ export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: Ab
         }
         await abortable(video.play(), active);
         update({
-          phase: "framing", title: "Preparing your selfie check", hint: "Keep your face in the oval.", progress: 0, cameraReady: true,
+          phase: "framing", title: "Getting ready", hint: "", progress: 0, cameraReady: true,
         });
       }), active)),
     ]);
@@ -124,12 +124,12 @@ export async function collectPoseGuardImages(
       active.throwIfAborted();
       // Positive pitch points up in FaceEngine and down in the browser estimate.
       const target = issuedTarget && { pitch: -issuedTarget.targetPitch, yaw: issuedTarget.targetYaw };
-      const title = target ? `Turn your head ${poseDirection(target).label}` : "Look straight ahead";
+      const title = target ? turnInstruction(target) : "Look straight";
       const requiredMs = target ? 300 : CAPTURE_HOLD_DURATION_MS_V1;
       const completed = accepted.length;
       const phase = { title, target, cameraReady: true, poseStep: { index: completed + 1, total: steps.length } };
       const shownAt = performance.now();
-      update({ ...phase, phase: "framing", hint: "Keep your face in the oval.", progress: completed / steps.length });
+      update({ ...phase, phase: "framing", hint: "", progress: completed / steps.length });
       logPoseGuardEvent("poseguard_target", {
         status: "shown", step: phase.poseStep.index, title,
         targetPitch: issuedTarget?.targetPitch ?? 0, targetYaw: issuedTarget?.targetYaw ?? 0,
@@ -162,12 +162,14 @@ export async function collectPoseGuardImages(
           if (aligned) {
             const progress = Math.min(1, heldMs / requiredMs);
             if (progress < 1) {
-              update({ ...phase, phase: "holding", hint: "Hold still.", progress: (completed + progress) / steps.length });
+              // A reached target keeps its instruction; the centre frame asks the user to hold.
+              update({ ...phase, title: target ? title : "Hold steady", phase: "holding", hint: "", progress: (completed + progress) / steps.length });
             } else {
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
               accepted.push(bytes);
-              update({ ...phase, phase: "captured", hint: "", progress: accepted.length / steps.length });
+              // Unchanged copy: nothing on screen marks the moment a frame is taken.
+              update({ ...phase, title: target ? title : "Hold steady", phase: "captured", hint: "", progress: accepted.length / steps.length });
               logPoseGuardEvent("poseguard_target", {
                 status: "captured", step: phase.poseStep.index,
                 durationMs: Math.round(performance.now() - shownAt),
@@ -176,8 +178,7 @@ export async function collectPoseGuardImages(
               });
             }
           } else {
-            const hint = gate === "too_small" ? "Move closer to the camera." : "Keep your face in the oval.";
-            update({ ...phase, phase: "framing", hint, progress: completed / steps.length });
+            update({ ...phase, title: gate === "too_small" ? "Move closer" : title, phase: "framing", hint: "", progress: completed / steps.length });
           }
         } finally {
           frame.release();
@@ -190,6 +191,12 @@ export async function collectPoseGuardImages(
     for (const image of accepted) image.fill(0);
     throw error;
   }
+}
+
+/** "Turn left" for a pure yaw target; "Look up", "Look down and right" and so on otherwise. */
+export function turnInstruction(target: PoseTarget): string {
+  const { label } = poseDirection(target);
+  return label === "left" || label === "right" ? `Turn ${label}` : `Look ${label}`;
 }
 
 export function poseDirection(target: PoseTarget): { degrees: number; label: string } {

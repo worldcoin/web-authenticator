@@ -204,7 +204,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
   const configure = spyOn(demoEnrollment, "configureDemoEnrollment").mockReturnValue(async (_video, _signal, report) => {
     update = report;
-    update({ phase: "framing", title: "Look straight ahead", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+    update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
     return outcome;
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
@@ -223,15 +223,19 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     ]);
     expect(f.calls.unlocked).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Continue" }));
-    expect(await view.findByRole("heading", { name: "Look straight ahead" })).toBeTruthy();
-    expect(view.getByText("Step 1 of 4")).toBeTruthy();
+    // Live guidance is a pill over the camera: no text above it, no step count, no icon while framing the centre.
+    const pill = await view.findByTestId("selfie-guidance-pill");
+    expect(pill.textContent).toBe("Look straight");
+    expect(pill.querySelector("svg")).toBeNull();
+    expect(view.queryByRole("heading", { name: "Look straight" })).toBeNull();
+    expect(view.queryByText(/Step \d of \d/)).toBeNull();
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
     expect(f.calls.unlocked).toBe(1);
 
     act(() => {
-      update({ phase: "captured", title: "Look straight ahead", hint: "", progress: 0.25,
+      update({ phase: "captured", title: "Hold steady", hint: "", progress: 0.25,
         cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
-      update({ phase: "framing", title: "Turn your head left", hint: "", progress: 0.25, cameraReady: true,
+      update({ phase: "framing", title: "Turn left", hint: "", progress: 0.25, cameraReady: true,
         target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } });
     });
     // Nothing marks the moment a frame is taken.
@@ -240,14 +244,15 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     const ring = view.getByTestId("selfie-design-ring");
     expect(ring.querySelectorAll('[data-filled="true"]')).toHaveLength(16);
     expect(ring.querySelectorAll("circle").length).toBeLessThan(64);
-    expect(view.getByText("Turn your head left")).toBeTruthy();
-    expect(view.getByText("Step 2 of 4")).toBeTruthy();
+    // The pill's arrow points the same way as the bumper.
+    expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Turn left");
+    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")!.style.transform).toBe("rotate(270deg)");
     // A left turn puts the bumper and chevron at 270° on the ring; the bumper goes solid while the user holds.
     const indicator = view.getByTestId("pose-target-indicator");
     expect(indicator.dataset).toMatchObject({ angle: "270", aligned: "false" });
     expect(indicator.querySelector("path")!.getAttribute("stroke")).toBe("#c8e4fe");
     expect(indicator.querySelectorAll("path")[1]!.getAttribute("transform")).toMatch(/rotate\(270\.0\)$/);
-    act(() => update({ phase: "holding", title: "Turn your head left", hint: "Hold still.", progress: 0.3, cameraReady: true,
+    act(() => update({ phase: "holding", title: "Turn left", hint: "", progress: 0.3, cameraReady: true,
       target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
     expect(view.getByTestId("pose-target-indicator").dataset.aligned).toBe("true");
     expect(view.getByTestId("pose-target-indicator").querySelector("path")!.getAttribute("stroke")).toBe("currentColor");

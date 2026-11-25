@@ -31,6 +31,6 @@ export function bumperGap(target: PoseTarget): { degrees: number; span: number }
 }
 
 /** Ring degrees, clockwise from the top; poseDirection measures counterclockwise from the right. */
-function targetDegrees(target: PoseTarget): number {
+export function targetDegrees(target: PoseTarget): number {
   return (90 - poseDirection(target).degrees + 360) % 360;
 }
