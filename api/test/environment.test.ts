@@ -41,6 +41,7 @@ test("each environment's CSP allows exactly its own services", () => {
     const csp = securityHeaders(environment)["Content-Security-Policy"];
     const connectSrc = csp.split("; ").find(directive => directive.startsWith("connect-src "))!.split(" ").slice(1);
     expect(connectSrc).toEqual(["'self'", ...connectSources(environment)]);
+    expect(connectSrc).not.toContain("https://developer.world.org");
     for (const url of ENVIRONMENTS[other].connectSrc) expect(connectSrc).not.toContain(url);
     const signupOrigin = ENVIRONMENTS[environment].signupServiceOrigin;
     expect(signupOrigin).toBe(new URL(signupOrigin).origin);

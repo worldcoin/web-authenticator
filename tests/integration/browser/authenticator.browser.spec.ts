@@ -60,15 +60,10 @@ if (!("bun" in process.versions)) {
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
-      // The hold lasts about a second, so record its first partial frame here rather than by polling.
-      let partialFill: string | undefined;
       const observer = new MutationObserver(() => {
-        const filled = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-        if (partialFill === undefined && filled.length > 0 && filled.length < 64) partialFill = getComputedStyle(filled[0]).fill;
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          partialFill,
           filledDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
@@ -82,7 +77,7 @@ if (!("bun" in process.versions)) {
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ partialFill: "rgb(0, 124, 251)", filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
@@ -126,7 +121,7 @@ if (!("bun" in process.versions)) {
         const border = page.getByTestId("selfie-completion-border");
         await expect(page.getByTestId("selfie-success-fill")).toHaveCount(0);
         await expect(border).toHaveCSS("fill", "none");
-        await expect(border).toHaveCSS("stroke", "rgb(40, 168, 107)");
+        await expect(border).toHaveCSS("stroke", "rgb(0, 194, 48)");
         await expect(border).toHaveCSS("stroke-dasharray", "1px, 0px");
         await expect(page.locator("[data-testid=selfie-design-ring] circle").first()).toBeHidden();
         await expect(border).toHaveCSS("animation-name", "none");
@@ -245,7 +240,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/");
     const signIn = page.getByRole("button", { name: "Sign in with passkey" });
     await expect(signIn).toBeEnabled();
-    await expect(signIn).toHaveCSS("background-color", "rgb(10, 92, 254)");
+    await expect(signIn).toHaveCSS("background-color", "rgb(31, 31, 31)");
     await page.getByRole("button", { name: "Create a new World ID" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
     await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");

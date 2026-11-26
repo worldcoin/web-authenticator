@@ -16,8 +16,9 @@
   --color-surface-overlay: var(--nucleus-surface-overlay);
 
   --color-foreground-primary: var(--nucleus-foreground-primary);
-  --color-foreground-secondary: var(--nucleus-foreground-secondary);
-  --color-foreground-tertiary: var(--nucleus-foreground-tertiary);
+  /* The light secondary token falls below 4.5:1 for body text on the page surface. */
+  --color-foreground-secondary: var(--nucleus-grey-800);
+  --color-foreground-tertiary: var(--nucleus-grey-700);
   --color-foreground-inverse: var(--nucleus-foreground-inverse);
   --color-foreground-disabled: var(--nucleus-foreground-disabled);
 
@@ -38,6 +39,8 @@
   --color-status-success: var(--nucleus-status-success);
   --color-status-info: var(--nucleus-status-info);
   --color-status-neutral: var(--nucleus-status-neutral);
+  --text-color-status-success: var(--nucleus-green-800);
+  --text-color-status-error: var(--nucleus-red-700);
 
   --color-accent-orange: var(--nucleus-accent-orange);
   --color-accent-purple: var(--nucleus-accent-purple);

@@ -11,19 +11,20 @@ export type RequestIntroState = "verifying" | "ready" | "expired" | "invalid" | 
  * the registry and its expiry confirmed. Expired, invalid and unsupported requests end here: there
  * is no way forward, only back to the requesting app.
  */
-export function RequestIntro({ state, rp, reason, returnUrl, pending, onStart, onCancel, onReturn }: {
+export function RequestIntro({ state, rp, reason, returnUrl, pending, error, onStart, onCancel, onReturn }: {
   state: RequestIntroState;
   rp?: string;
   reason?: string;
   returnUrl?: string;
   /** Progress while the passkey opens: Continue shows as pending. */
   pending?: string;
+  error?: string;
   onStart: () => void;
   onCancel: () => void;
   onReturn?: () => void;
 }) {
   if (state === "verifying" || state === "ready") {
-    return <RequestConsent rp={state === "ready" ? rp : undefined} pending={pending} onStart={onStart} onCancel={onCancel} />;
+    return <RequestConsent rp={state === "ready" ? rp : undefined} pending={pending} error={error} onStart={onStart} onCancel={onCancel} />;
   }
   const title = state === "expired" ? "This request has expired"
     : state === "unsupported" ? "This request isn’t supported here"

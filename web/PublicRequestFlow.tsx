@@ -27,7 +27,7 @@ const COMPLETION_STEPS = {
 const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
 /** App requests hold a temporary capture; saved authenticator access lives on its own route. */
-export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onTransitionChange, demo }: {
+export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onControlsHiddenChange, demo }: {
   incoming: IncomingRequest | null;
   loading: boolean;
   failed: boolean;
@@ -39,7 +39,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     captureComplete: () => void;
     back: () => void;
   };
-  onTransitionChange: (active: boolean) => void;
+  onControlsHiddenChange: (hidden: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
   const [flow, setFlow] = useState<Flow>({ stage: "intro" });
@@ -65,11 +65,12 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   }, [stop]);
   useEffect(() => { if (expired) stop(); }, [expired, stop]);
 
-  const automatic = flow.stage in COMPLETION_STEPS;
+  const proving = flow.stage === "proving" || flow.stage === "all-set";
+  const hideControls = proving || flow.stage in COMPLETION_STEPS;
   useLayoutEffect(() => {
-    onTransitionChange(automatic);
-    return () => onTransitionChange(false);
-  }, [automatic, onTransitionChange]);
+    onControlsHiddenChange(hideControls);
+    return () => onControlsHiddenChange(false);
+  }, [hideControls, onControlsHiddenChange]);
 
   // One clock owns the sequence. Hidden tabs retain the remaining visible time.
   useEffect(() => {
@@ -207,14 +208,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       });
     } catch (cause) {
       if (!controller.signal.aborted) {
-        const dismissed = !session.current && cause instanceof Error && cause.name === "NotAllowedError";
+        const passkeyUnavailable = !session.current && cause instanceof Error && cause.name === "NotAllowedError";
         stop();
-        if (dismissed) return;
         if (cause instanceof RequestExpiredError) {
           setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose();
         } else {
           setOpenError(walletOpenErrorMessage(cause));
-          setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
+          if (!passkeyUnavailable) setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
         }
       }
     } finally { setOpening(false); }
@@ -283,7 +283,6 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   </div>;
 
   const intro = flow.stage === "intro";
-  const proving = flow.stage === "proving" || flow.stage === "all-set";
   const requester = demo && incoming ? "Web Authenticator" : incoming?.label;
   return <div className={captureFrame}>
     {proving ? <section data-request-destination className={`${captureFrame} items-center justify-center px-6 text-center`} aria-label="Proof of Presence">
@@ -304,7 +303,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       <RequestIntro onReturn={demo?.back}
         state={!intro ? "ready" : loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
         rp={intro ? requester : departingRequester} reason={unsupported} returnUrl={incoming?.returnUrl}
-        pending={opening || !intro ? openProgress : undefined}
+        pending={opening || !intro ? openProgress : undefined} error={intro ? openError : undefined}
         onStart={() => void start()} onCancel={() => void cancel()} />
     </div>}
   </div>;

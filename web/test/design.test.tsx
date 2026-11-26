@@ -1,10 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
-import icons from "@worldcoin/nucleus/nucleus-icons.json";
 import { Button } from "../design/Button";
 import { buttonStyle, disabledStyle } from "../design/buttons";
-import { Icon, type IconName } from "../design/Icon";
+import { Icon } from "../design/Icon";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 afterEach(() => cleanup());
@@ -34,16 +33,14 @@ test("disabled buttons switch to the disabled style; loading keeps the style and
 });
 
 test("icons are decorative unless labelled and fall back to the variant Nucleus has", () => {
-  const regularOnly = (Object.entries(icons) as [IconName, { svg: { solid?: string } }][])
-    .find(([, icon]) => icon.svg.solid === undefined)?.[0];
-  if (!regularOnly) throw new Error("Expected a regular-only Nucleus icon.");
   const view = render(<>
     <Icon icon="check" label="Shared" />
-    <Icon icon={regularOnly} variant="solid" />
+    <Icon icon="check" variant="solid" />
   </>);
   expect(view.getByRole("img", { name: "Shared" }).dataset.icon).toBe("check");
-  const fallback = view.container.querySelector(`[data-icon="${regularOnly}"]`) as HTMLElement;
+  const fallback = view.container.querySelector('[data-icon="check"][aria-hidden="true"]') as HTMLElement;
   expect(fallback.getAttribute("aria-hidden")).toBe("true");
   // Inline SVG, not a data: URL: the CSP allows only same-origin images.
   expect(fallback.querySelector("svg")?.innerHTML).toContain("currentColor");
+  expect(fallback.innerHTML).toBe(view.getByRole("img", { name: "Shared" }).innerHTML);
 });

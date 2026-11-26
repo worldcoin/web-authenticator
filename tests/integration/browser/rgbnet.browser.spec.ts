@@ -38,16 +38,34 @@ if (!("bun" in process.versions)) {
     });
 
     test("losing alignment resets the hold", async ({ page }) => {
-      await openSelfie(page);
-      await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      await expect.poll(() => page.getByTestId("selfie-ring-progress").getAttribute("style")).not.toBe("stroke-dashoffset: 100;");
-      await page.evaluate(() => { (window as any).cameraTest.aligned = false; });
-      await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible();
-      await expect(page.getByTestId("selfie-ring-progress")).toHaveAttribute("style", "stroke-dashoffset: 100;");
-      await expect(page.locator('[data-testid=selfie-design-ring] circle[data-filled="true"]')).toHaveCount(0);
-      await page.evaluate(() => { (window as any).cameraTest.aligned = true; });
-      await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
-      expect(await page.getByTestId("selfie-ring-progress").evaluate(el => Number((el as SVGElement).style.strokeDashoffset))).toBeGreaterThan(70);
+      await page.clock.install();
+      await openSelfie(page, "?unaligned");
+      const framing = page.getByRole("heading", { name: "Let's see you" });
+      const holding = page.getByRole("heading", { name: "Looking good. Hold still" });
+      const filledDots = page.getByTestId("selfie-design-ring").locator('circle[data-filled="true"]');
+      await expect(framing).toBeVisible();
+      await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 500)));
+
+      const setAlignment = async (aligned: boolean) => {
+        await page.evaluate(value => { (window as any).cameraTest.aligned = value; }, aligned);
+        const heading = aligned ? holding : framing;
+        await expect.poll(async () => {
+          // Advance the detector and animation together while the real video produces frames.
+          await page.clock.runFor(50);
+          return heading.isVisible();
+        }, { intervals: [50] }).toBe(true);
+      };
+      await setAlignment(true);
+      await page.clock.runFor(400);
+      const initialDots = await filledDots.count();
+      expect(initialDots).toBeGreaterThan(0);
+      expect(initialDots).toBeLessThan(64);
+      await expect(filledDots.first()).toHaveCSS("fill", "rgb(0, 124, 251)");
+      await setAlignment(false);
+      await expect(filledDots).toHaveCount(0);
+      await setAlignment(true);
+      expect(await filledDots.count()).toBeLessThan(initialDots);
+      await page.clock.resume();
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
@@ -107,6 +125,33 @@ if (!("bun" in process.versions)) {
       await expect(page.locator(".camera-aperture")).toHaveCSS("animation-name", "camera-open");
       await expect(loader).toHaveCount(0);
       await expect(page.locator("video")).toBeVisible();
+    });
+
+    test("the signed-in preview reveals a delayed camera before automatic capture", async ({ page }) => {
+      await page.clock.install();
+      await page.goto("/authenticator?hang");
+      await page.getByRole("button", { name: "Sign in with passkey" }).click();
+      await page.getByRole("button", { name: "Set up Proof of Presence" }).click();
+      const capture = page.getByRole("region", { name: "Selfie capture" });
+      await expect(capture.getByTestId("camera-loading")).toBeVisible();
+      await expect.poll(() => page.evaluate(() => typeof (window as any).cameraTest.releasePending)).toBe("function");
+      await page.clock.fastForward(2_000);
+
+      const firstReady = await capture.evaluate(region => new Promise(resolve => {
+        const observer = new MutationObserver(() => {
+          if (region.getAttribute("data-camera-ready") !== "true") return;
+          observer.disconnect();
+          resolve({
+            loading: !!region.querySelector('[data-testid="camera-loading"]'),
+            live: !!region.querySelector("video")?.srcObject,
+            captured: !!region.querySelector('[data-testid="selfie-photo"]'),
+          });
+        });
+        observer.observe(region, { attributes: true, attributeFilter: ["data-camera-ready"] });
+        (window as any).cameraTest.releasePending();
+      }));
+      expect(firstReady).toEqual({ loading: false, live: true, captured: false });
+      await expect(capture.getByAltText("Your captured selfie")).toBeVisible();
     });
 
     test("reduced motion holds the dots still and opens the camera directly", async ({ page }) => {

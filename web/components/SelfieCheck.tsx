@@ -32,7 +32,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   const setCaptureActive = use(CaptureScreenContext);
   useEffect(() => { setCaptureActive(true); return () => setCaptureActive(false); }, [setCaptureActive]);
   const video = useRef<HTMLVideoElement>(null);
-  const aperture = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | null>(null);
   const completion = useRef(onComplete);
   const publicCompleted = useRef(false);
@@ -157,7 +156,7 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
   const handoff = processing && !!departingRing;
   const ringState = handoff ? departingRing : state;
   // PoseGuard puts live guidance in a pill over the camera.
-  const pill = !!enroll && !textOnly && ["starting", "framing", "holding", "captured", "checking"].includes(state.phase);
+  const pill = !!enroll && state.cameraReady && !textOnly && ["framing", "holding", "captured", "checking"].includes(state.phase);
   return <section data-request-camera={fromRequest || undefined} className="group/selfie relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-surface-page pb-[max(20px,env(safe-area-inset-bottom))]" data-camera-handoff={handoff} data-state={state.phase} data-camera-ready={state.cameraReady} data-transitioning={transitioning} aria-label="Selfie capture">
     <header className="relative z-10 flex shrink-0 [--close-inset:max(20px,env(safe-area-inset-top),env(safe-area-inset-left))] pt-(--close-inset) pl-(--close-inset)" inert={transitioning} aria-hidden={transitioning || undefined} style={transitioning ? { visibility: "hidden" } : undefined}>
       <button className={iconButtonStyle("secondary40")} type="button" aria-label={backLabel} onClick={close}><Icon icon="xmark" className="size-5" /></button>
@@ -177,14 +176,15 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
           {(completionHint || state.hint) && <p className="mx-auto mt-1 max-w-[330px] text-b2 text-foreground-primary/70">{completionHint || state.hint}</p>}
         </div>}
         <div className={`relative aspect-[345.005/481.637] ${CAMERA_WIDTH} max-w-full ${textOnly ? "hidden" : ""} ${handoff ? "motion-safe:block motion-safe:animate-oval-exit" : ""}`} data-testid="selfie-camera-stage">
-          <div ref={aperture} hidden={textOnly} className={`camera-aperture ${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
+          <div hidden={textOnly} className={`camera-aperture ${APERTURE_INSET} overflow-hidden rounded-[50%] bg-background-secondary`}>
             <video className={`size-full object-cover -scale-x-100 transition-opacity duration-250 ease-[ease] ${state.cameraReady ? "opacity-100" : "opacity-0"} ${showVideo ? "" : "hidden"}`} ref={video} autoPlay playsInline muted aria-label="Your camera preview" />
             {image && <img className="size-full object-cover -scale-x-100" data-testid="selfie-photo" src={image} alt="Your captured selfie" />}
             {complete && !transitioning && !enroll && <div className="absolute inset-0 grid place-items-center bg-background-inverse/16" data-testid="selfie-complete" aria-hidden="true"><span className="grid size-14 place-items-center rounded-full bg-accent-blue"><Icon icon="check" className="size-8 text-foreground-inverse" /></span></div>}
           </div>
           <CaptureProgressRing progress={ringState.progress} gap={ringState.target ? bumperGap(ringState.target) : undefined} />
           {state.target && <PoseTargetIndicator target={state.target} aligned={state.phase === "holding"} />}
-          {pill && (!fromRequest || !!state.poseStep) && <PoseGuidance state={state} />}
+          {pill && <PoseGuidance state={state} />}
+          {state.phase === "starting" && !state.cameraReady && <CameraLoading key={attempt} />}
         </div>
         {(!transitioning && (complete || state.phase === "pending")) && <div className="flex w-full justify-center gap-2">
           {(!enroll || !complete) && <Button buttonStyle="secondary48" className={RETRY} onClick={restart}>
@@ -197,7 +197,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         <p className="flex items-center justify-center gap-1.5"><Icon icon="lock" className="size-4" />Your selfie stays on this device.</p>
         <details><summary className="inline-flex min-h-11 cursor-pointer list-none items-center underline underline-offset-3 [&::-webkit-details-marker]:hidden">About this check</summary><p className="mx-auto mt-[3px] mb-3 max-w-[310px]">This preview captures your selfie in your browser. Nothing is uploaded or saved to storage. It does not submit enrollment or verify your identity. Images are cleared when you leave.</p></details>
       </footer>}
-      {(state.phase === "starting" || state.cameraReady) && !(fromRequest && state.cameraReady) && <CameraLoading key={attempt} ready={state.cameraReady} aperture={aperture} />}
     </>}
   </section>;
 }

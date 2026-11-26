@@ -39,10 +39,11 @@ const shimmer = "animate-request-shimmer bg-[linear-gradient(90deg,var(--color-b
  * like the iOS proof request sheet. Without an `rp` the request is still being verified, so the app stays
  * anonymous and the check cannot start.
  */
-export function RequestConsent({ rp, pending, onStart, onCancel }: {
+export function RequestConsent({ rp, pending, error, onStart, onCancel }: {
   rp?: string;
   /** Progress while the passkey opens: Continue shows as pending and announces it. */
   pending?: string;
+  error?: string;
   onStart: () => void;
   onCancel: () => void;
 }) {
@@ -79,12 +80,13 @@ export function RequestConsent({ rp, pending, onStart, onCancel }: {
     </div></div>
     <div className={`${actions} min-h-26`} data-intro-state={entrance}
       onFocusCapture={() => setInteracted(true)} onClickCapture={() => setInteracted(true)}>
+      {error && <p className="rounded-xl bg-status-error-background px-4 py-3 text-b2 text-foreground-primary" role="alert">{error}</p>}
+      {pending !== undefined && <p className="text-center text-b2 text-foreground-secondary" role="status">{pending}</p>}
       <div className="intro-beat intro-action flex" style={beat(TIMING.continue)}>
         <Button buttonStyle="primary48" className="request-continue w-full" disabled={!ready} loading={pending !== undefined} onClick={onStart}>
           <span aria-live="polite">{ready ? "Continue" : "Verifying request…"}</span>
         </Button>
       </div>
-      {pending !== undefined && <p className="sr-only" role="status">{pending}</p>}
       {ready && <div className="intro-beat intro-action flex" style={beat(TIMING.cancel)}>
         <Button buttonStyle="tertiary48" className="w-full" onClick={onCancel}>Cancel request</Button>
       </div>}

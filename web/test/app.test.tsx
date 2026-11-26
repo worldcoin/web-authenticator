@@ -8,13 +8,13 @@ import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
+import * as protocol from "../lib/environment";
 import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
 import * as demo from "../lib/demo";
 import * as demoEnrollment from "../lib/demo-enrollment";
-import * as demoPreview from "../lib/demo-preview";
 import * as poseGuard from "../lib/poseguard/enrollment";
 import { BUMPER_TINT } from "../components/PoseTargetIndicator";
 
@@ -79,12 +79,13 @@ test("while the passkey sheet is open the request stays on screen with Continue 
   unlock({ ready: Promise.resolve({ wallet: f.wallet }), dispose: () => f.wallet.terminate() } as RequestWalletSession);
 });
 
-test("dismissing the passkey restores Continue on the same request", async () => {
+test("an unavailable passkey shows retry guidance on the same request", async () => {
   const f = await fixture(11);
   f.services.unlock = async () => { throw new DOMException("Dismissed", "NotAllowedError"); };
   const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
   const button = await view.findByRole("button", { name: "Continue" });
   fireEvent.click(button);
+  expect((await view.findByRole("alert")).textContent).toContain("timed out");
   await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
   expect(view.getByRole("button", { name: "Continue" })).toBe(button);
   expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
@@ -110,21 +111,32 @@ test("request intro names the RP only after validation, then starts the check", 
   expect(opened).toBe(0);
   expect(f.calls.unlocked).toBe(1);
 });
-test("consent keeps the W when the verified requester name loads", async () => {
+test("production consent stays actionable while the verified requester name loads from the authenticator", async () => {
   const f = await fixture(11);
   const appId = `app_${"a".repeat(32)}`;
   f.incoming.appId = appId;
   const response = Promise.withResolvers<Response>();
   const lookup = spyOn(globalThis, "fetch").mockReturnValue(response.promise);
+  const environment = spyOn(protocol, "currentProtocolEnvironment").mockReturnValue("production");
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     const start = await view.findByRole("button", { name: "Continue" });
     expect((start as HTMLButtonElement).disabled).toBe(false);
-    const logo = `https://world-id-assets.com/${appId}/brand.png`;
-    response.resolve(Response.json({ rp_id: f.incoming.proof.rp_id, app_id: appId, is_verified: true, name: "Example", verified_app_logo: logo }));
+    expect(view.getByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
+    expect(lookup.mock.calls[0]?.[0]).toBe(`/api/requester-name?rp_id=rp_1&app_id=${appId}`);
+    response.resolve(Response.json({ name: "Example" }));
     await view.findByRole("heading", { name: "Request from Example" });
-    expect(view.getByText("W")).toBeTruthy();
-    expect(view.container.querySelector(`img[src="${logo}"]`)).toBeNull();
+  } finally { lookup.mockRestore(); environment.mockRestore(); }
+});
+
+test("staging consent uses the validated RP ID without a metadata request", async () => {
+  const f = await fixture(11);
+  f.incoming.appId = `app_${"a".repeat(32)}`;
+  const lookup = spyOn(globalThis, "fetch");
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    await view.findByRole("heading", { name: "Request from rp_1" });
+    expect(lookup).not.toHaveBeenCalled();
   } finally { lookup.mockRestore(); }
 });
 
@@ -257,11 +269,10 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
   const configure = spyOn(demoEnrollment, "configureDemoEnrollment").mockReturnValue(async (_video, _signal, report) => {
     update = report;
-    update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+    update({ phase: "starting", title: "Waiting for your World ID to sync", hint: "", progress: 0, cameraReady: false });
     return outcome;
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
-  const preview = spyOn(demoPreview, "isDemoPreview").mockReturnValue(false);
   const log = spyOn(console, "info").mockImplementation(() => {});
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
@@ -277,6 +288,13 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     ]);
     expect(f.calls.unlocked).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Continue" }));
+    const syncing = await view.findByRole("heading", { name: "Waiting for your World ID to sync" });
+    expect(syncing.closest('[role="status"]')).toBeTruthy();
+    expect(view.getByTestId("camera-loading")).toBeTruthy();
+    act(() => update({ phase: "framing", title: "Getting ready", hint: "", progress: 0, cameraReady: true }));
+    expect(view.queryByTestId("camera-loading")).toBeNull();
+    expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Getting ready");
+    act(() => update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } }));
     // Live guidance is a pill over the camera: no text above it, no step count, no icon while framing the centre.
     const pill = await view.findByTestId("selfie-guidance-pill");
     expect(pill.textContent).toBe("Look straight");
@@ -348,7 +366,6 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     configure.mockRestore();
     captureMock.mockRestore();
     log.mockRestore();
-    preview.mockRestore();
   }
 });
 
@@ -403,11 +420,13 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       // A saved credential skips capture: the same badge opening, then the same end screen.
       expect(await view.findByRole("heading", { name: "Generating proof" })).toBeTruthy();
       expect(view.getByTestId("presence-badge").dataset.result).toBe("pending");
+      expect(view.queryByRole("button", { name: "Menu" })).toBeNull();
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual(["test-proof"]);
       verdict.resolve();
       expect(await view.findByTestId("all-set", undefined, { timeout: 3_000 })).toBeTruthy();
       expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Menu" })).toBeNull();
       return;
     }
     // The badge opening loops while the demo verifies the delivered proof.

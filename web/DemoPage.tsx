@@ -8,7 +8,6 @@ import { Button } from "./design/Button";
 import { buttonStyle } from "./design/buttons";
 import { currentProtocolEnvironment } from "./lib/environment";
 import { logDemoRequest, startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
-import { isDemoPreview, startDemoPreview } from "./lib/demo-preview";
 
 type DemoState =
   | { phase: "idle" | "starting" | "ready" | "waiting" | "verifying" | "captured" | "cancelled" }
@@ -65,7 +64,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setAttempt(undefined);
     setState({ phase: "starting" });
     try {
-      const next = isDemoPreview() ? startDemoPreview() : await startDemo(signal);
+      const next = await startDemo(signal);
       signal.throwIfAborted();
       logDemoRequest(next.config, next.bridgeId);
       current.attempt = next;
