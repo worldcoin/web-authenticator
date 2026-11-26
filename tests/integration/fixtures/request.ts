@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
-import { keccak256, stringToHex, hexToBytes, type Hex } from "viem";
+import { encodeFunctionResult, keccak256, parseAbi, stringToHex, hexToBytes, zeroAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { WORLD_CHAIN_RPC_URL } from "../../../config/environment";
 import type { Payload } from "../../../web/lib/proof-request";
 
 // Public, deterministic test-only signing key. Never used against an actual registry.
@@ -21,9 +22,36 @@ export async function signedRequest(schema = 11, { age = 0, ttl = 600 } = {}) {
       created_at: now, expires_at: now + ttl, action, session_id: null, signature: await signer.signMessage({ message: { raw: bytes } }),
       proof_requests: [{ identifier: "credential", issuer_schema_id: schema }], constraints: "credential" },
   };
-  return { payload, registry: { signer: signer.address, oprfKeyId: "0x1" } };
+  return { payload, registry: { signer: signer.address, oprfKeyId: "0x1", active: true } };
 }
-export const bridgeId = "00000000-0000-4000-8000-000000000001";
+export type RegistryEntry = Awaited<ReturnType<typeof signedRequest>>["registry"];
+
+const rpRegistryAbi = parseAbi([
+  "function getRp(uint64 rpId) view returns ((bool initialized, bool active, address manager, address signer, uint160 oprfKeyId, string unverifiedWellKnownDomain))",
+]);
+/** Answers the page's RP registry reads; resolves to the registry contracts it queried. */
+export async function routeRpRegistry(page: Page, entry: RegistryEntry) {
+  const queried: Hex[] = [];
+  const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
+  await page.route(WORLD_CHAIN_RPC_URL, async route => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+    const reply = rpRegistryReply(route.request().postData() ?? "", entry);
+    queried.push(reply.registry);
+    await route.fulfill({ json: reply.body, headers });
+  });
+  return queried;
+}
+/** What World Chain answers to the `getRp` call in `rpcRequest`, and the registry contract it was sent to. */
+export function rpRegistryReply(rpcRequest: string, entry: RegistryEntry) {
+  const { id, method, params } = JSON.parse(rpcRequest) as { id: number; method: string; params: [{ to: Hex }] };
+  if (method !== "eth_call") throw new Error(`Unexpected RPC method ${method}`);
+  const result = encodeFunctionResult({ abi: rpRegistryAbi, functionName: "getRp", result: {
+    initialized: true, active: entry.active, manager: zeroAddress, signer: entry.signer,
+    oprfKeyId: BigInt(entry.oprfKeyId), unverifiedWellKnownDomain: "",
+  } });
+  return { registry: params[0].to, body: { jsonrpc: "2.0", id, result } };
+}
+const bridgeId = "00000000-0000-4000-8000-000000000001";
 export async function encryptedRequest(payload: Payload) {
   const raw = new Uint8Array(32).fill(3);
   const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
@@ -42,13 +70,19 @@ export async function openSelfieRequest(page: Page, query = "", origin = "") {
   const encrypted = await encryptedRequest(payload);
   await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
   await page.route("https://staging-bridge.worldcoin.org/response/*", route => route.fulfill({ json: {}, headers: { "access-control-allow-origin": "*" } }));
-  await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+  await routeRpRegistry(page, registry);
   await page.goto(origin + "/verify" + encrypted.query + (query ? "&" + query.replace(/^\?/, "") : ""));
   await page.getByRole("button", { name: "Continue" }).click();
 }
 
 /** Isolates capture/UI checks from passkey providers and live account services. */
 export async function installRequestWallet(page: Page) {
+  await installFixturePasskey(page);
+  await installFixtureWalletWorker(page);
+}
+
+/** A passkey provider that always succeeds with a fixed PRF output. */
+export async function installFixturePasskey(page: Page) {
   await page.addInitScript(() => {
     class FixtureCredential {
       static async getClientCapabilities() { return {}; }
@@ -60,6 +94,11 @@ export async function installRequestWallet(page: Page) {
     Object.defineProperty(navigator, "credentials", { configurable: true, value: {
       create: async () => new FixtureCredential(), get: async () => new FixtureCredential(),
     } });
+  });
+}
+
+async function installFixtureWalletWorker(page: Page) {
+  await page.addInitScript(() => {
     class WalletWorker {
       onmessage?: (event: { data: unknown }) => void;
       private nextHandle = 0;

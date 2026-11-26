@@ -15,12 +15,10 @@ export default tseslint.config(
       "**/dist-server/**",
       "**/dist-static/**",
       "**/node_modules/**",
-      ".artifacts/**",
       ".runtime/**",
       "playwright-report/**",
       "test-results/**",
       "**/.wrangler/**",
-      "worker-configuration.d.ts",
     ],
   },
   js.configs.recommended,
@@ -38,7 +36,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["web/**/*.{ts,tsx}", "api/**/*.{ts,tsx}"],
+    files: ["web/**/*.{ts,tsx}"],
     plugins: {
       "jsx-a11y": jsxA11y,
       "react-hooks": reactHooks,
@@ -60,7 +58,7 @@ export default tseslint.config(
   },
   {
     files: ["web/**/*.{ts,tsx}"],
-    ignores: ["web/test/**", "web/vite.config.ts"],
+    ignores: ["web/test/**", "web/build/**", "web/vite.config.ts"],
     languageOptions: {
       globals: globals.browser,
     },
@@ -97,29 +95,6 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      "api/*.{ts,tsx}",
-      "api/{lib,routes}/**/*.{ts,tsx}",
-    ],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        Bun: "readonly",
-      },
-    },
-    rules: {
-      "no-restricted-globals": [
-        "error",
-        "window",
-        "document",
-        "navigator",
-        "localStorage",
-        "sessionStorage",
-        "indexedDB",
-      ],
-    },
-  },
-  {
     files: ["packages/**/src/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", {
@@ -129,23 +104,12 @@ export default tseslint.config(
   },
   {
     files: ["web/**/*.{ts,tsx}"],
-    ignores: ["web/test/**", "web/vite.config.ts"],
+    ignores: ["web/test/**", "web/build/**", "web/vite.config.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         paths: ["bun", "fs", "path", "crypto", "http", "https", "net", "tls", "child_process"],
         patterns: [
-          { group: ["node:*", "bun:*", "@web-authenticator/api", "@web-authenticator/api/*", "**/api/**", "**/*.server", "**/*.server.*"], message: "Browser code must not import server modules." },
-          { group: ["**/experiments/**", "**/test/**", "**/fixtures/**"], message: "Product code must not import experiments or tests." },
-        ],
-      }],
-    },
-  },
-  {
-    files: ["api/*.ts", "api/{lib,routes}/**/*.ts"],
-    rules: {
-      "no-restricted-imports": ["error", {
-        patterns: [
-          { group: ["@web-authenticator/web", "@web-authenticator/web/*", "**/web/**"], message: "API code must not import browser implementation modules." },
+          { group: ["node:*", "bun:*", "**/build/**", "**/*.server", "**/*.server.*"], message: "Browser code must not import build or server modules." },
           { group: ["**/experiments/**", "**/test/**", "**/fixtures/**"], message: "Product code must not import experiments or tests." },
         ],
       }],

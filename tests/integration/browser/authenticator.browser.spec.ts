@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 import { installCamera } from "../fixtures/camera";
-import { signedRequest, encryptedRequest, openSelfieRequest, installRequestWallet } from "../fixtures/request";
+import { signedRequest, encryptedRequest, openSelfieRequest, installRequestWallet, routeRpRegistry } from "../fixtures/request";
 
 // Pause when React commits the stage, before polling can skip a short animation.
 async function hideAtStage(page: Page, stage: string) {
@@ -46,7 +46,7 @@ if (!("bun" in process.versions)) {
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await routeRpRegistry(page, registry);
     await page.goto("/verify" + encrypted.query + "&deny");
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
@@ -100,7 +100,7 @@ if (!("bun" in process.versions)) {
       const { payload, registry } = await signedRequest(11);
       const encrypted = await encryptedRequest(payload);
       await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-      await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+      await routeRpRegistry(page, registry);
       await page.goto("/verify" + encrypted.query);
     });
 
@@ -255,7 +255,7 @@ if (!("bun" in process.versions)) {
     const encrypted = await encryptedRequest(payload);
     let rejected: unknown;
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await routeRpRegistry(page, registry);
     await page.route("https://staging-bridge.worldcoin.org/response/*", async route => {
       if (route.request().method() === "OPTIONS") { await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "PUT", "access-control-allow-headers": "content-type" } }); return; }
       const body = route.request().postDataJSON();
@@ -281,7 +281,7 @@ if (!("bun" in process.versions)) {
     registry.signer = `0x${"2".repeat(40)}`;
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await routeRpRegistry(page, registry);
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
@@ -292,7 +292,7 @@ if (!("bun" in process.versions)) {
     const { payload, registry } = await signedRequest(1, { age: 700, ttl: 600 });
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-    await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+    await routeRpRegistry(page, registry);
     await page.goto("/verify" + encrypted.query);
     await expect(page.getByRole("heading", { name: "This request has expired" })).toBeVisible();
     await expect(page.getByText("Close this tab and return to the app to start again.")).toBeVisible();
@@ -327,7 +327,7 @@ if (!("bun" in process.versions)) {
       const { payload, registry } = await signedRequest(11);
       const encrypted = await encryptedRequest(payload);
       await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
-      await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
+      await routeRpRegistry(page, registry);
       await page.goto("/verify" + encrypted.query);
       await expect(page.getByRole("heading", { name: "Help improve World ID" })).toBeVisible();
       await page.getByRole("button", { name: "Decline" }).click();

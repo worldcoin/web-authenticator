@@ -1,7 +1,7 @@
 # Authenticator web app
 
 React UI for passkey wallet access and proof requests. Run `bun run dev` from the
-repo root; Bun serves the app at `http://localhost:4173`.
+repo root; Vite serves the app at `http://localhost:4173`.
 
 ## App requests
 
@@ -43,7 +43,7 @@ query parameter alone does not enable a return link.
 
 ## Routing
 
-`web/App.tsx` mounts a TanStack Router with three routes. No server change is needed: both servers answer every path that is not `/api/*` or a file (a last segment with a dot) with `index.html` (`api/lib/client-routes.ts`), so a reload on any route works.
+`web/App.tsx` mounts a TanStack Router with three routes. The host answers every path that is not an existing file with `index.html` (`not_found_handling: "single-page-application"` in `wrangler.jsonc`; Vite does the same locally), so a reload on any route works.
 
 | Path | Screen |
 | ---- | ------ |
@@ -54,3 +54,9 @@ query parameter alone does not enable a return link.
 After successful sign-in or creation, the app replaces the current URL with `/authenticator` and keeps the wallet open. Reloading requires sign-in again.
 
 The request flow's stages (capture, confirmation, save) stay in memory rather than in the URL: a reload already drops the request. After saving, the flow navigates to `/authenticator` with `replace`, because the spent `/verify` URL is not worth returning to. The router keeps the query string opaque (`parseSearch`/`stringifySearch`), because `/verify` reads the request from the raw URL and the default JSON codec would re-encode the bridge key.
+
+## Hosting notes
+
+`walletkit.wasm` (44.5 MB) exceeds Cloudflare's 25 MiB static asset limit, so the build emits `assets/walletkit-<hash>.wasm.gzip.bin` (`web/build/static-hosting.ts`).
+`web/lib/walletkit-wasm.ts` fetches the asset, decompresses it with `DecompressionStream("gzip")`, verifies its byte length and SHA-256 against the build manifest, and passes a `blob:` URL to the WalletKit worker.
+`web/lib/rp-registry.ts` reads each request's RP directly from the browser by calling `getRp` on the World Chain `RpRegistry` contract via the public Alchemy RPC (5 s timeout per attempt, up to 3 attempts with jittered backoff).

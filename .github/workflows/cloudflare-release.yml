@@ -65,12 +65,12 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
-      - run: bun run build:cf
+      - run: bun run build
         env:
           VITE_APP_ENV: production
       - name: Deploy the approved and tested commit
         run: bunx wrangler deploy --env production --tag "$RELEASE_COMMIT"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
-      - name: Check production origin, assets, and release commit
+      - name: Check production origin, headers, assets, and release commit
         run: bun scripts/smoke-cloudflare.ts production "$RELEASE_COMMIT"

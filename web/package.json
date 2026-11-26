@@ -4,13 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch",
+    "dev": "vite",
+    "preview": "vite preview",
     "test": "bun test ./test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.46",
-    "@worldcoin/idkit-core": "4.6.0",
     "@worldcoin/walletkit-web": "0.32.0",
     "onnxruntime-web": "1.30.0",
     "react": "19.2.8",

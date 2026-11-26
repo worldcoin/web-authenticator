@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { connectSources, ENVIRONMENTS, parsePoseGuardTestMode, SHARED_CONNECT_SRC, type ProtocolEnvironment } from "../../config/environment";
-import { securityHeaders } from "../lib/security-headers";
+import { renderHeadersFile, securityHeaders } from "../../config/security-headers";
 
 const environments = Object.keys(ENVIRONMENTS) as ProtocolEnvironment[];
 
-/** Every URL an environment's build or Worker may contact. */
+/** Every URL an environment's build may contact. */
 function urls(environment: ProtocolEnvironment): string[] {
   const config = ENVIRONMENTS[environment];
   return [config.appOrigin, config.signupServiceOrigin, ...config.connectSrc, ...(config.selfieEnrollment ? [config.selfieEnrollment.endpoint] : [])];
@@ -40,7 +40,7 @@ test("each environment's CSP allows exactly its own services", () => {
     const other = environments.find(candidate => candidate !== environment)!;
     const csp = securityHeaders(environment)["Content-Security-Policy"];
     const connectSrc = csp.split("; ").find(directive => directive.startsWith("connect-src "))!.split(" ").slice(1);
-    expect(connectSrc).toEqual(["'self'", ...connectSources(environment)]);
+    expect(connectSrc).toEqual(["'self'", "blob:", ...connectSources(environment)]);
     for (const url of ENVIRONMENTS[other].connectSrc) expect(connectSrc).not.toContain(url);
     const signupOrigin = ENVIRONMENTS[environment].signupServiceOrigin;
     expect(signupOrigin).toBe(new URL(signupOrigin).origin);
@@ -68,5 +68,24 @@ test("TEE policies, when enabled, use wss and full SHA-384 measurements", () => 
     for (const release of policy.releases) {
       for (const pcr of [release.pcr0, release.pcr1, release.pcr2]) expect(pcr).toMatch(/^[0-9a-f]{96}$/);
     }
+  }
+});
+
+test("the generated _headers file applies every security header within Cloudflare's line limit", () => {
+  for (const environment of environments) {
+    const lines = renderHeadersFile(environment).trimEnd().split("\n");
+    expect(lines).toEqual([
+      "/*",
+      ...Object.entries(securityHeaders(environment)).map(([name, value]) => `  ${name}: ${value}`),
+      // A request link's query holds the bridge key, and any path can serve the app.
+      "  Cache-Control: no-store",
+      "/assets/*",
+      "  ! Cache-Control",
+      "  Cache-Control: public, max-age=0, must-revalidate",
+      "/fonts/*",
+      "  ! Cache-Control",
+      "  Cache-Control: public, max-age=0, must-revalidate",
+    ]);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(2_000);
   }
 });

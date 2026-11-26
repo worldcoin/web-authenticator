@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
+import { WORLD_CHAIN_RPC_URL } from "../../../config/environment";
 import { installCamera } from "../fixtures/camera";
 import { openSelfieRequest, installRequestWallet } from "../fixtures/request";
 
@@ -27,7 +28,10 @@ if (!("bun" in process.versions)) {
 
     test("captures from an app request without uploading and stops the camera", async ({ page }) => {
       const uploads: string[] = [];
-      page.on("request", request => { if (["POST", "PUT"].includes(request.method())) uploads.push(request.url()); });
+      // The RP registry read is a JSON-RPC POST; every other POST or PUT would carry capture data.
+      page.on("request", request => {
+        if (["POST", "PUT"].includes(request.method()) && request.url() !== WORLD_CHAIN_RPC_URL) uploads.push(request.url());
+      });
       await openSelfie(page);
       await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
       await expect(page.getByText("You can close this page.")).toBeVisible();

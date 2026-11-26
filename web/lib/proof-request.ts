@@ -1,6 +1,8 @@
 import type { CredentialMetadata } from './walletkit'
 import { acceptsRequestEnvironment, type ProtocolEnvironment } from '../../config/environment'
 import { currentProtocolEnvironment } from './environment'
+import { logRpLookupFailure } from './flow-logging'
+import { readRegisteredRp } from './rp-registry'
 import { hexToBytes, keccak256, stringToHex, verifyMessage, type Hex } from 'viem'
 
 export type Requirement = {
@@ -122,18 +124,15 @@ export function parsePayload(json: string, environment = currentProtocolEnvironm
 }
 export async function validateSignature(request: ProofRequest, signal: AbortSignal, environment: ProtocolEnvironment = currentProtocolEnvironment()) {
 	checkExpiry(request)
-	const endpoint = environment === "production" ? "/api/rp" : "/api/staging-rp"
-	const response = await fetch(`${endpoint}?id=${encodeURIComponent(request.rp_id)}`, {
-		signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-		cache: 'no-store',
-	})
-	if (!response.ok)
+	const rp = await readRegisteredRp(request.rp_id, environment, AbortSignal.any([signal, AbortSignal.timeout(20000)])).catch(cause => {
+		signal.throwIfAborted()
+		logRpLookupFailure(cause, environment)
 		throw new Error(
-			`Could not validate this RP against the ${environment} registry. It may be unregistered, inactive, or temporarily unavailable.`
+			`Could not validate this RP against the ${environment} registry. It may be unregistered, inactive, or temporarily unavailable.`,
+			{ cause }
 		)
-	const rp = (await response.json()) as { signer: Hex; oprfKeyId: string }
-	if (!rp || !hex(rp.signer, 20) || typeof rp.oprfKeyId !== 'string' || !/^0x[0-9a-f]{1,40}$/i.test(rp.oprfKeyId)) throw new Error('Invalid RP registry response.')
-	if (BigInt(rp.oprfKeyId) !== BigInt(request.oprf_key_id))
+	})
+	if (rp.oprfKeyId !== BigInt(request.oprf_key_id))
 		throw new Error('Request OPRF key does not match the registered RP.')
 	const message = new Uint8Array(81)
 	message[0] = 1

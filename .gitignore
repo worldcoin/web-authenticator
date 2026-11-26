@@ -1,9 +1,7 @@
 node_modules/
 web/dist/
-api/dist/
 web/dist-server/
 web/dist-static/
-.artifacts/
 .runtime/
 playwright-report/
 test-results/
@@ -25,4 +23,3 @@ public/models/
 **/target/
 .codex-visualizations/
 
-worker-configuration.d.ts

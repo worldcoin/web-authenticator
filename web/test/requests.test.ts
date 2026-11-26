@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
+import { ENVIRONMENTS, WORLD_CHAIN_RPC_URL } from "../../config/environment";
+import { signedRequest, encryptedRequest, rpRegistryReply } from "../../tests/integration/fixtures/request";
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload, validateSignature } from "../lib/proof-request";
@@ -17,7 +18,7 @@ async function fixture(returnToUrl?: string) {
   const requests: string[] = [];
   const mock = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); requests.push(url);
-    if (url.startsWith("/api/staging-rp")) return Response.json(registry);
+    if (url === WORLD_CHAIN_RPC_URL) return Response.json(rpRegistryReply(String(init?.body), registry).body);
     if (url.includes("/request/")) return Response.json(encrypted.body);
     if (url.includes("/response/")) {
       const wrapper = JSON.parse(String(init?.body));
@@ -88,7 +89,7 @@ test("proof generation revalidates the request and passes its constraints unchan
   } as unknown as WalletKit;
   await createProof(incoming, wallet, signal(), () => {});
   expect(JSON.parse(serialized)).toEqual(incoming.proof);
-  expect(f.requests.filter(url => url.startsWith("/api/staging-rp"))).toHaveLength(2);
+  expect(f.requests.filter(url => url === WORLD_CHAIN_RPC_URL)).toHaveLength(2);
   incoming.unsupportedReason = "User presence required";
   serialized = "";
   await expect(createProof(incoming, wallet, signal(), () => {})).rejects.toThrow("Proof generation failed");
@@ -115,7 +116,100 @@ test("payload validation rejects expiry, misleading action and malformed nested 
 });
 
 
-test("production accepts only production payloads and verifies the production RP endpoint", async () => {
+/** Scripted World Chain RPC answers for one signed request. */
+async function registryFixture() {
+  const f = await fixture();
+  const answer = spyOn(globalThis, "fetch");
+  const registries: string[] = [];
+  const found = (async (_input, init) => {
+    const { registry, body } = rpRegistryReply(String(init?.body), f.registry);
+    registries.push(registry);
+    return Response.json(body);
+  }) as typeof fetch;
+  const failing = (response: () => Response) => (async _input => response()) as typeof fetch;
+  const validate = (cancel = signal()) => validateSignature(f.payload.proof_request, cancel, "staging");
+  return { f, answer, registries, found, failing, validate };
+}
+
+test("an RP is read from the environment's registry, retrying only transient failures", async () => {
+  const { f, answer, registries, found, failing, validate } = await registryFixture();
+  const unavailable = failing(() => new Response("unavailable", { status: 503 }));
+
+  answer.mockImplementationOnce(unavailable)
+    .mockImplementationOnce((async (_input): Promise<Response> => { throw new TypeError("network down"); }) as typeof fetch)
+    .mockImplementation(found);
+  await validate();
+  expect(answer).toHaveBeenCalledTimes(3);
+  expect(registries).toEqual([ENVIRONMENTS.staging.rpRegistry]);
+
+  // JSON-RPC "limit exceeded" is transient; a rejected request and an inactive RP are not.
+  answer.mockClear();
+  answer.mockImplementationOnce(failing(() => Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32005, message: "limit exceeded" } })))
+    .mockImplementation(found);
+  await validate();
+  expect(answer).toHaveBeenCalledTimes(2);
+  for (const permanent of [
+    failing(() => new Response("bad request", { status: 400 })),
+    failing(() => Response.json({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "execution reverted" } })),
+    failing(() => Response.json({ jsonrpc: "2.0", id: 1, result: "not hex" })),
+  ]) {
+    answer.mockClear();
+    answer.mockImplementation(permanent);
+    await expect(validate()).rejects.toThrow("Could not validate this RP");
+    expect(answer).toHaveBeenCalledTimes(1);
+  }
+  answer.mockClear();
+  f.registry.active = false;
+  answer.mockImplementation(found);
+  await expect(validate()).rejects.toThrow("Could not validate this RP");
+  expect(answer).toHaveBeenCalledTimes(1);
+
+  answer.mockClear();
+  answer.mockImplementation(unavailable);
+  await expect(validate()).rejects.toThrow("Could not validate this RP");
+  expect(answer).toHaveBeenCalledTimes(3);
+});
+
+test("a rate-limited registry read waits before it retries", async () => {
+  const { answer, found, failing, validate } = await registryFixture();
+
+  // The browser cannot read Retry-After from the public RPC, so the wait is fixed.
+  answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 429 }))).mockImplementation(found);
+  const limited = performance.now();
+  await validate();
+  expect(performance.now() - limited).toBeGreaterThanOrEqual(1_000);
+  expect(answer).toHaveBeenCalledTimes(2);
+
+  // Where the header is readable, the retry comes no sooner than the server allows.
+  answer.mockClear();
+  const retryAt = new Date(Math.ceil(Date.now() / 1_000) * 1_000 + 1_000);
+  answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 503, headers: { "Retry-After": retryAt.toUTCString() } })))
+    .mockImplementation(found);
+  await validate();
+  expect(Date.now()).toBeGreaterThanOrEqual(retryAt.getTime());
+  expect(answer).toHaveBeenCalledTimes(2);
+}, 15_000);
+
+test("a cancelled registry read never starts, and one in flight is aborted", async () => {
+  const { answer, validate } = await registryFixture();
+  const cancelled = new AbortController();
+  cancelled.abort(new DOMException("left the page", "AbortError"));
+  await expect(validate(cancelled.signal)).rejects.toThrow("left the page");
+  expect(answer).not.toHaveBeenCalled();
+
+  const leaving = new AbortController();
+  let fetchSignal: AbortSignal | undefined;
+  answer.mockImplementation(((_input, init) => new Promise<Response>((_resolve, reject) => {
+    fetchSignal = init?.signal ?? undefined;
+    fetchSignal?.addEventListener("abort", () => reject(fetchSignal!.reason));
+    leaving.abort(new DOMException("left the page", "AbortError"));
+  })) as typeof fetch);
+  await expect(validate(leaving.signal)).rejects.toThrow("left the page");
+  expect(fetchSignal?.aborted).toBe(true);
+  expect(answer).toHaveBeenCalledTimes(1);
+});
+
+test("production accepts only production payloads and verifies the RP in the production registry", async () => {
   const { payload, registry } = await signedRequest();
   const json = (environment: string) => JSON.stringify({ ...payload, environment });
   expect(() => parsePayload(json("production"), "production")).not.toThrow();
@@ -124,9 +218,11 @@ test("production accepts only production payloads and verifies the production RP
   }
   expect(() => parsePayload(json("sandbox"), "staging")).not.toThrow();
   expect(() => parsePayload(json("production"), "staging")).toThrow("staging requests only");
-  const mock = spyOn(globalThis, "fetch").mockImplementation((async input => {
-    expect(String(input)).toBe("/api/rp?id=rp_1");
-    return Response.json(registry);
+  const mock = spyOn(globalThis, "fetch").mockImplementation((async (input, init) => {
+    expect(String(input)).toBe(WORLD_CHAIN_RPC_URL);
+    const reply = rpRegistryReply(String(init?.body), registry);
+    expect(reply.registry).toBe(ENVIRONMENTS.production.rpRegistry);
+    return Response.json(reply.body);
   }) as typeof fetch);
   restore = () => mock.mockRestore();
   await validateSignature(payload.proof_request, signal(), "production");
