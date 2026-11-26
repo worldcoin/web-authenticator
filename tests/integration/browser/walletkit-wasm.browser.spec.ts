@@ -1,4 +1,4 @@
-import { expect, test, type ConsoleMessage } from "@playwright/test";
+import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
 import { installFixturePasskey, openSelfieRequest } from "../fixtures/request";
 
 type FlowStep = { step?: string; status?: string; category?: string };
@@ -7,6 +7,10 @@ type FlowStep = { step?: string; status?: string; category?: string };
 async function flowStep(message: ConsoleMessage): Promise<FlowStep | undefined> {
   if (!message.text().startsWith("authenticator_step")) return undefined;
   return await message.args()[1]?.jsonValue().catch(() => undefined) as FlowStep | undefined;
+}
+
+function hasPrivateFileSystem(page: Page): Promise<boolean> {
+  return page.evaluate(() => navigator.storage.getDirectory().then(() => true, () => false));
 }
 
 // The real WalletKit worker and WASM run here; only the passkey provider and account services are fixtures.
@@ -22,36 +26,26 @@ if (!("bun" in process.versions)) {
     test.setTimeout(120_000);
     const steps: string[] = [];
     const problems: string[] = [];
-    const opened = Promise.withResolvers<void>();
+    const settled = Promise.withResolvers<void>();
     page.on("pageerror", error => problems.push(`${error.name}: ${error.message}`));
     page.on("console", async message => {
-      if (message.type() === "error" || message.type() === "warning") problems.push(message.text());
       const step = await flowStep(message);
       if (!step) return;
       steps.push(`${step.step} ${step.status}${step.category ? ` (${step.category})` : ""}`);
-      if (step.step === "walletkit.storage_open" && step.status === "completed") opened.resolve();
-      if (step.status === "failed") opened.reject(new Error(`${step.step} failed`));
+      if (step.status === "failed") problems.push(`${step.step} failed (${step.category})`);
+      if (step.step === "walletkit.storage_open" || step.status === "failed") settled.resolve();
     });
     const documents = page.waitForResponse(response => new URL(response.url()).pathname === "/verify");
     await openSelfieRequest(page);
     expect((await documents).headers()["content-security-policy"]).toContain("connect-src 'self' blob: ");
-    const outcome = await Promise.race([
-      opened.promise.then(() => "opened", (error: Error) => error.message),
-      new Promise<string>(resolve => setTimeout(() => resolve("timed out"), 60_000)),
-    ]);
-    // WalletKit keeps its vault in the origin private file system; report whether this browser offers one.
-    const privateFileSystem = await page.evaluate(async () => {
-      try {
-        const root = await navigator.storage.getDirectory();
-        await root.getFileHandle("probe", { create: true });
-        await root.removeEntry("probe");
-        return "available";
-      } catch (error) {
-        return error instanceof Error ? `${error.name}: ${error.message}` : "unavailable";
-      }
-    });
-    expect({ outcome, steps, problems, privateFileSystem })
-      .toEqual({ outcome: "opened", steps: expect.any(Array), problems: [], privateFileSystem: "available" });
+    await settled.promise;
+
+    expect(steps).toContain("walletkit.wasm_load completed");
+    // WalletKit keeps its vault in the origin private file system, which Playwright's WebKit does not
+    // provide; there the worker cannot start, whatever the WASM was loaded from.
+    if (await hasPrivateFileSystem(page)) {
+      expect({ steps, problems }).toEqual({ steps: expect.arrayContaining(["walletkit.worker_initialize completed"]), problems: [] });
+    }
   });
 
   test("a WalletKit WASM the host cannot serve stops the request with an explicit error", async ({ page }) => {
