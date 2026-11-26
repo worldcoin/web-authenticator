@@ -1,17 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import type { EndAction } from "./components/ProcessingGlyph";
-import { publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
+import { ProcessingStatus, type EndAction } from "./components/ProcessingGlyph";
+import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
-import { walletOpenErrorMessage } from "./lib/wallet-errors";
+import { WalletOpenError, walletOpenErrorMessage } from "./lib/wallet-errors";
+import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
-import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { configuredPoseGuardSignup, createPoseGuardEnrollment, storesCredential, type PoseGuardSignup, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { ProofReplayedError, proveAndDeliver } from "./lib/prove";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
-type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired"; returnUrl?: string; enroll?: RunPoseGuard };
+// Shown once a credential is in the wallet, while the proof is created and sent.
+const PROVING = { title: "Credential received", hint: "Generating proof" };
+type Flow = { stage: "intro" | "capture" | "preparing" | "setup-error" | "capture-border" | "capture-complete" | "confirmation" | "confirmation-exit" | "finished" | "cancelled" | "expired" | "replayed" | "proving" | "all-set"; returnUrl?: string; enroll?: RunPoseGuard };
 const COMPLETION_STEPS = {
   "capture-border": { duration: 300, next: "capture-complete", motion: true },
   "capture-complete": { duration: 500, next: "confirmation", motion: false },
@@ -101,6 +105,45 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     setFlow({ stage, returnUrl: incoming?.returnUrl });
     onDispose();
   };
+  /** Sends the app its proof and ends the request. Resolves false when this action was proved before. */
+  const answer = useCallback(async (request: IncomingRequest, wallet: WalletKit, signal: AbortSignal): Promise<boolean> => {
+    try {
+      await proveAndDeliver(request, wallet, signal);
+    } catch (cause) {
+      if (!(cause instanceof ProofReplayedError)) throw cause;
+      stop();
+      setFlow({ stage: "replayed", returnUrl: request.returnUrl });
+      onDispose();
+      return false;
+    }
+    stop();
+    onDispose();
+    return true;
+  }, [onDispose, stop]);
+
+  /** Answers from a saved credential, or enrolls a Selfie Check first when the request allows it. */
+  const fulfil = useCallback(async (request: IncomingRequest, current: RequestWalletSession, signup: PoseGuardSignup, controller: AbortController, deadline: AbortSignal) => {
+    const ready = await abortable(current.ready, deadline);
+    if ("error" in ready) throw ready.error;
+    const credentials = await checkRequestCredentials(request, ready.wallet, deadline);
+    checkExpiry(request.proof);
+    if (credentials.satisfied) {
+      setFlow({ stage: "proving", returnUrl: request.returnUrl });
+      if (await answer(request, ready.wallet, deadline)) setFlow({ stage: "all-set", returnUrl: request.returnUrl });
+      return;
+    }
+    if (!credentials.canEnrollSelfie) throw new WalletOpenError("This authenticator can’t complete this Selfie Check.");
+    const enroll = createPoseGuardEnrollment(current, signup, controller.signal);
+    setFlow({ stage: "capture", returnUrl: request.returnUrl, enroll: async (video, signal, update) => {
+      const outcome = await enroll(video, signal, update);
+      if (outcome !== "completed") return outcome;
+      update({ phase: "checking", ...PROVING, progress: 1, cameraReady: false });
+      // A replayed action replaces the capture screen, so its outcome is never shown.
+      await answer(request, ready.wallet, AbortSignal.any([signal, controller.signal]));
+      return outcome;
+    } });
+  }, [answer]);
+
   const start = useCallback(async () => {
     // The request screen's Continue tap is the gesture that opens the passkey.
     if (loading || !incoming || failed || expired || unsupported || flow.stage !== "intro" || operation.current) return;
@@ -120,6 +163,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
       const signup = configuredPoseGuardSignup();
+      if (signup && storesCredential(signup)) {
+        await fulfil(incoming, current, signup, controller, deadline);
+        return;
+      }
       setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
@@ -138,7 +185,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         }
       }
     } finally { setOpening(false); }
-  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop]);
+  }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, fulfil]);
 
   const complete = async () => {
     const current = session.current;
@@ -152,7 +199,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       if ("error" in result) throw result.error;
       if (incoming) checkExpiry(incoming.proof);
       stop();
-      // Real attested enrollment and proof delivery are connected separately.
+      // Without an issuer for this origin the check is a preview: nothing is proved or sent.
       setFlow({ stage: "capture-border", returnUrl: incoming?.returnUrl });
       onDispose();
     } catch (cause) {
@@ -181,6 +228,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
   const endAction: EndAction | undefined = flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
 
+  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
+    <ProcessingStatus title={PROVING.hint} done={flow.stage === "all-set"} endAction={endAction} />
+  </section>;
+
   if (opening) return <div className={requestFrame}>
     <div className={screenContent}><div className={centeredLayout}>
       <p className={body} role="status">{openProgress}</p>
@@ -194,7 +245,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     }} />
   </div>;
 
-  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired") return <div className={requestFrame}>
+  if (flow.stage === "finished" || flow.stage === "cancelled" || flow.stage === "expired" || flow.stage === "replayed") return <div className={requestFrame}>
     <RequestCompletion state={flow.stage === "finished" ? "complete" : flow.stage} returnUrl={flow.returnUrl} detail={cancelError} />
   </div>;
 

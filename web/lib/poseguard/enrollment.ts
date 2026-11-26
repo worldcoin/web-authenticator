@@ -53,11 +53,17 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   }
 
   const path = policy.authorizationPath;
-  if (!path) return;
+  // Without an authorization provider, the staging issuer accepts the attested capture on its own.
+  if (!path) return { policy, endpoint, mode: "staging" };
   return {
     policy, endpoint, mode: "production",
     authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
   };
+}
+
+/** Whether a completed enrollment leaves the issued credential in the wallet. */
+export function storesCredential(signup: PoseGuardSignup): boolean {
+  return signup.mode === "staging" || (signup.mode === "production" && signup.saveCredential === true);
 }
 
 export function createPoseGuardEnrollment(
@@ -99,9 +105,7 @@ export function createPoseGuardEnrollment(
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
           receipt = identity;
-          if (signup.mode === "staging" || (signup.mode === "production" && signup.saveCredential)) {
-            owner = { wallet, factor: blindingFactor };
-          }
+          if (storesCredential(signup)) owner = { wallet, factor: blindingFactor };
           const evidence = signup.mode === "test" ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
           receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
         } catch (error) {

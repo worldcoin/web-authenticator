@@ -4,7 +4,7 @@ import { signedRequest, encryptedRequest, rpRegistryReply } from "../../tests/in
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload, validateSignature } from "../lib/proof-request";
-import { createProof } from "../lib/prove";
+import { proveAndDeliver } from "../lib/prove";
 import type { WalletKit } from "../lib/walletkit";
 
 let restore: (() => void) | undefined;
@@ -87,13 +87,16 @@ test("proof generation revalidates the request and passes its constraints unchan
     generateProof: async (json: string) => { serialized = json; return JSON.stringify({ id: incoming.proof.id, responses: [{}] }); },
     terminate: () => {},
   } as unknown as WalletKit;
-  await createProof(incoming, wallet, signal(), () => {});
+  await proveAndDeliver(incoming, wallet, signal());
   expect(JSON.parse(serialized)).toEqual(incoming.proof);
   expect(f.requests.filter(url => url === WORLD_CHAIN_RPC_URL)).toHaveLength(2);
+  // The app receives the proof through the bridge, encrypted with the request's key.
+  expect(f.sent).toEqual([{ proof_response: { id: incoming.proof.id, responses: [{}] } }]);
   incoming.unsupportedReason = "User presence required";
   serialized = "";
-  await expect(createProof(incoming, wallet, signal(), () => {})).rejects.toThrow("Proof generation failed");
+  await expect(proveAndDeliver(incoming, wallet, signal())).rejects.toThrow("User presence required");
   expect(serialized).toBe("");
+  expect(f.sent).toHaveLength(1);
 });
 test("connector rejects unofficial bridges, duplicates, malformed keys and unsafe callbacks", async () => {
   const { payload } = await signedRequest(); const f = await encryptedRequest(payload);
