@@ -26,6 +26,7 @@ export async function loadWalletKitWasm(signal: AbortSignal, expected = __WALLET
     if (!response.ok || !response.body) throw new Error(`WalletKit WASM request failed (${response.status}).`);
     const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
     wasm = await new Response(decompressed).blob();
+    signal.throwIfAborted();
     digest = await sha256Hex(await wasm.arrayBuffer());
   } catch (cause) {
     signal.throwIfAborted();
