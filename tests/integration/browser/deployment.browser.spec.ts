@@ -26,10 +26,15 @@ if (!("bun" in process.versions)) {
       payload.environment = environment;
       const encrypted = await encryptedRequest(payload);
       const lookups = await routeRpRegistry(page, registry);
+      // Removing routes at teardown resolves requests still being proxied, and their fulfill then
+      // fails with "Route is already handled", so the test ends only once none is in flight.
+      const proxying = new Set<Promise<void>>();
       await page.route(origin + "/**", async route => {
         const url = new URL(route.request().url());
-        const response = await route.fetch({ url: "http://127.0.0.1:4194" + url.pathname + url.search });
-        await route.fulfill({ response });
+        const proxied = route.fetch({ url: "http://127.0.0.1:4194" + url.pathname + url.search })
+          .then(response => route.fulfill({ response }));
+        proxying.add(proxied);
+        await proxied.finally(() => proxying.delete(proxied));
       });
       await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({
         json: encrypted.body, headers: { "access-control-allow-origin": "*" },
@@ -43,6 +48,7 @@ if (!("bun" in process.versions)) {
         await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
         expect(lookups).toEqual([]);
       }
+      while (proxying.size > 0) await Promise.all(proxying);
     });
   }
 }
