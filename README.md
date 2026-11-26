@@ -24,13 +24,12 @@ By default, IDKit requests route to `<base_url>/verify`. To test the full IDKit 
 ## Repository Structure
 
 ```text
-web/         React UI, browser logic and public assets
-api/         Bun HTTP server and API routes
+web/         React UI, browser logic, public assets and Vite build plugins (web/build/)
+config/      Per-environment services and security headers
 packages/    Shared contracts and browser admission policy
-tests/       Browser tests and integration fixtures
+scripts/     Production deployment smoke check
+tests/       Browser tests, deployment tests and integration fixtures
 ```
-
-`web/` and `api/` own their dependencies. Bun serves both from one origin.
 
 ## 🧑‍💻 Developing locally
 
@@ -53,13 +52,24 @@ bun run typecheck
 
 ```bash
 bun run build
-bun run start
+bun run preview
 ```
+
+`bun run build` writes the static bundle to `web/dist`. `bun run preview` serves `web/dist` at `http://localhost:4173` with the production security headers.
 
 ## 🚢 Deployment
 
-`VITE_APP_ENV` configures the browser build and `APP_ENV` configures the API/Worker.
-Both accept `staging` or `production`; the browser origin must match the selected environment.
+The app deploys to Cloudflare Workers static assets (`web-authenticator-dev` and `web-authenticator-prod`) with no Worker script. Deep links such as `/verify` and `/authenticator` resolve to `index.html` via `not_found_handling: "single-page-application"` in `wrangler.jsonc`.
+
+`VITE_APP_ENV` (`staging` or `production`) is read at build time and selects the environment's service endpoints and CSP `connect-src`. The browser origin must match the selected environment.
+
+`bun run build` writes the complete deployable to `web/dist`, including:
+
+- `_headers` — CSP, COOP, CORP, `Permissions-Policy`, `Referrer-Policy` and `X-Content-Type-Options: nosniff` from `config/security-headers.ts`. No `Cache-Control` header is set, so Cloudflare's default ETag revalidation applies.
+- `release.json` — the target environment and `RELEASE_COMMIT`, checked after production deploys by `scripts/smoke-cloudflare.ts`.
+- `assets/walletkit-<hash>.wasm.gzip.bin` — `walletkit.wasm` gzipped to stay under Cloudflare's 25 MiB per-file limit (the build fails if any asset exceeds 25 MiB).
+
+Workflows:
 
 - **Staging:** When configured, the [staging workflow](.github/workflows/cloudflare-staging.yml) tests and deploys `main` to [authenticator.toolsforhumanity.dev](https://authenticator.toolsforhumanity.dev).
 - **Production:** The [production workflow](.github/workflows/cloudflare-release.yml) promotes a staging-reviewed `main` commit to [web.world.org](https://web.world.org) after CI and environment approval.
@@ -72,4 +82,3 @@ Both accept `staging` or `production`; the browser origin must match the selecte
 ## 📄 Documentation
 
 - [Web app and request format](web/README.md)
-- [API and container](api/README.md)
