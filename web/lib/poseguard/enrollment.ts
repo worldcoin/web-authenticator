@@ -29,7 +29,6 @@ export type PoseGuardSignup = {
   | { mode: "test" | "staging" }
   | {
     mode: "production"; // Names the flow, not environment.
-    saveCredential?: true;
     authorize: PoseGuardAuthorize;
   }
 );
@@ -61,11 +60,6 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   };
 }
 
-/** Whether a completed enrollment leaves the issued credential in the wallet. */
-export function storesCredential(signup: PoseGuardSignup): boolean {
-  return signup.mode === "staging" || (signup.mode === "production" && signup.saveCredential === true);
-}
-
 export function createPoseGuardEnrollment(
   session: RequestWalletSession,
   signup: PoseGuardSignup,
@@ -73,8 +67,8 @@ export function createPoseGuardEnrollment(
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
 ): RunPoseGuard {
-  let receipt: EnrollmentReceipt | undefined;
-  let owner: { wallet: WalletKit; factor: string } | undefined;
+  // A submitted capture and the wallet that will hold its credential.
+  let enrollment: { receipt: EnrollmentReceipt; wallet: WalletKit; factor: string } | undefined;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
@@ -90,7 +84,7 @@ export function createPoseGuardEnrollment(
         update(checking());
         return await waitForSave(savePromise, signal);
       }
-      if (!receipt) {
+      if (!enrollment) {
         const { capture, identity, wallet, blindingFactor } =
           await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera, indexerSyncDelays);
         let authorization: EnrollmentAuthorization | "staging" = "staging";
@@ -104,14 +98,13 @@ export function createPoseGuardEnrollment(
           signal.throwIfAborted();
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
-          receipt = identity;
-          if (storesCredential(signup)) owner = { wallet, factor: blindingFactor };
+          const submitted = enrollment = { receipt: identity, wallet, factor: blindingFactor };
           const evidence = signup.mode === "test" ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
-          receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
+          submitted.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
             (error instanceof SignupServiceError && error.status !== undefined &&
-              error.status >= 400 && error.status < 500 && error.status !== 408))) receipt = undefined;
+              error.status >= 400 && error.status < 500 && error.status !== 408))) enrollment = undefined;
           throw error;
         } finally {
           if (authorization !== "staging") authorization.proofCbor.fill(0);
@@ -120,14 +113,10 @@ export function createPoseGuardEnrollment(
 
       update(checking());
       try {
+        const { receipt, wallet, factor } = enrollment;
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state !== "completed") return result.state;
         const { credential } = result;
-        if (!owner) {
-          credential.fill(0);
-          return "completed";
-        }
-        const { wallet, factor } = owner;
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
           try {
@@ -135,7 +124,6 @@ export function createPoseGuardEnrollment(
             signal.throwIfAborted();
             await wallet.storeCredential(credential, factor, undefined, 11n);
             saved = true;
-            owner = undefined;
             savePromise = undefined;
           } finally {
             credential.fill(0);

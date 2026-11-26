@@ -116,11 +116,10 @@ test.each([
 });
 
 test.each([
-  { label: "production", mode: "production", saveCredential: false },
-  { label: "test", mode: "test", saveCredential: false },
-  { label: "production with saved credential", mode: "production", saveCredential: true },
-  { label: "staging", mode: "staging", saveCredential: true },
-] as const)("submits $label evidence once and resumes from the matching receipt", async ({ mode, saveCredential }) => {
+  { mode: "production" },
+  { mode: "test" },
+  { mode: "staging" },
+] as const)("submits $mode evidence once, resumes from the matching receipt and stores the credential", async ({ mode }) => {
   const capture = enrollmentCapture();
   const camera = cameraFrames();
   const request = new AbortController();
@@ -188,7 +187,7 @@ test.each([
       expect(identity).toEqual({ sub: "0x1f", captureId: CAPTURE_ID });
       return { challengeId: CHALLENGE_ID, proofCbor: proof };
     };
-    const signup = mode === "production" ? { mode, authorize, saveCredential: saveCredential ? true as const : undefined } : { mode };
+    const signup = mode === "production" ? { mode, authorize } : { mode };
     const run = createPoseGuardEnrollment(session, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
@@ -202,11 +201,11 @@ test.each([
     // The resumed run polls and saves; neither step is named on screen.
     expect([...checkingTitles]).toEqual(["Processing liveness"]);
     expect({ puts, polls, sdkCalls, authorizationCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1, authorizationCalls: mode === "production" ? 1 : 0 });
-    expect(stored).toBe(saveCredential ? 1 : 0);
-    if (saveCredential) await expect(run(video, signal, () => {})).resolves.toBe("completed");
+    expect(stored).toBe(1);
+    await expect(run(video, signal, () => {})).resolves.toBe("completed");
     expect(puts).toBe(1);
     expect(polls).toBe(2);
-    expect(stored).toBe(saveCredential ? 1 : 0);
+    expect(stored).toBe(1);
     expect(polledSubjects).toEqual(["0x1f", "0x1f"]);
     // The preview is off before anything is submitted: users never watch themselves while it processes.
     expect(closesAtSubmit).toBeGreaterThan(0);

@@ -8,7 +8,7 @@ import type { RequestWalletSession } from "./lib/wallet-session";
 import { WalletOpenError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable } from "./lib/async";
-import { configuredPoseGuardSignup, createPoseGuardEnrollment, storesCredential, type PoseGuardSignup, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { configuredPoseGuardSignup, createPoseGuardEnrollment, type PoseGuardSignup, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { ProofReplayedError, proveAndDeliver } from "./lib/prove";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
@@ -163,11 +163,11 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       deadline.throwIfAborted();
       checkExpiry(incoming.proof);
       const signup = configuredPoseGuardSignup();
-      if (signup && storesCredential(signup)) {
+      if (signup) {
         await fulfil(incoming, current, signup, controller, deadline);
         return;
       }
-      setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
+      setFlow({ stage: "capture", returnUrl: incoming.returnUrl });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
         stop();

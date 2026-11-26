@@ -273,13 +273,10 @@ test("only the staging origin enrolls, through the staging issuer", () => {
   expect(poseGuard.configuredPoseGuardSignup()).toBeUndefined();
   try {
     browser.setURL(new URL("/verify", ENVIRONMENTS.staging.appOrigin).href);
-    const signup = poseGuard.configuredPoseGuardSignup()!;
-    expect(signup).toEqual({
+    expect(poseGuard.configuredPoseGuardSignup()).toEqual({
       mode: "staging", policy: ENVIRONMENTS.staging.selfieEnrollment!,
       endpoint: "https://app.stage.face.worldcoin.org/api/v2/identity",
     });
-    expect(poseGuard.storesCredential(signup)).toBe(true);
-    expect(poseGuard.storesCredential({ ...signup, mode: "test" })).toBe(false);
   } finally {
     browser.setURL(originalUrl);
   }
