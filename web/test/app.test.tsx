@@ -197,9 +197,9 @@ test("a request with configured enrollment follows PoseGuard directions to the e
     expect(f.calls.unlocked).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Continue" }));
     // Live guidance is a pill over the camera: no text above it, no step count, no icon while framing the centre.
-    const pill = await view.findByTestId("selfie-guidance-pill");
-    expect(pill.textContent).toBe("Look straight");
-    expect(pill.querySelector("svg")).toBeNull();
+    // The pill first shows the camera starting; the enrollment's first report replaces it.
+    await waitFor(() => expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Look straight"));
+    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")).toBeNull();
     expect(view.queryByRole("heading", { name: "Look straight" })).toBeNull();
     expect(view.queryByText(/Step \d of \d/)).toBeNull();
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
