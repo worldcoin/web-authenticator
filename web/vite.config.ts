@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-import { parseAppEnvironment, parsePoseGuardTestMode } from "../config/environment";
+import { parseAppEnvironment } from "../config/environment";
 import { cloudflareStaticHosting, compressedWalletKitWasm } from "./build/static-hosting";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -39,7 +39,6 @@ function rejectNonProductModulesFromBrowser(): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, appRoot, "VITE_");
   const environment = parseAppEnvironment(env.VITE_APP_ENV ?? "staging");
-  parsePoseGuardTestMode(env.VITE_POSEGUARD_TEST_MODE, environment);
   return {
     root: appRoot,
     plugins: [

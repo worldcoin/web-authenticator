@@ -4,10 +4,6 @@ export type ProtocolEnvironment = "staging" | "production";
 export interface SelfieEnrollmentPolicy {
   /** `wss://` endpoint of the attested enrollment service. */
   readonly endpoint: string;
-  /** Same-origin ownership proof provider for verified submission. */
-  readonly authorizationPath?: `/${string}`;
-  /** Browser-accessible PVS enrollment challenge endpoint for verified enrollment. */
-  readonly ownershipChallengeUrl?: string;
   /** Accepted Nitro measurements; more than one entry only while a release rolls out. */
   readonly releases: readonly Readonly<{ pcr0: string; pcr1: string; pcr2: string }>[];
 }
@@ -89,22 +85,12 @@ export function connectSources(environment: ProtocolEnvironment): readonly strin
   const config = ENVIRONMENTS[environment];
   const endpoint = config.selfieEnrollment ? new URL(config.selfieEnrollment.endpoint) : undefined;
   const tee = endpoint ? [`${endpoint.protocol}//${endpoint.host}`] : [];
-  const challengeUrl = environment === "staging" ? config.selfieEnrollment?.ownershipChallengeUrl : undefined;
-  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee,
-    ...(challengeUrl ? [new URL(challengeUrl).href] : []),
-  ];
+  return [...SHARED_CONNECT_SRC, ...config.connectSrc, config.signupServiceOrigin, ...tee];
 }
 
 export function parseAppEnvironment(value: unknown): ProtocolEnvironment {
   if (value === "staging" || value === "production") return value;
   throw new Error("APP_ENV must be staging or production.");
-}
-
-export function parsePoseGuardTestMode(value: unknown, environment: ProtocolEnvironment): boolean {
-  if (value === undefined || value === "false") return false;
-  if (value !== "true") throw new Error("VITE_POSEGUARD_TEST_MODE must be true or false.");
-  if (environment !== "staging") throw new Error("PoseGuard test mode requires a staging build.");
-  return true;
 }
 
 /** Validate where the configured build is served; the hostname never selects its network. */

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { connectSources, ENVIRONMENTS, parsePoseGuardTestMode, SHARED_CONNECT_SRC, type ProtocolEnvironment } from "../../config/environment";
+import { connectSources, ENVIRONMENTS, SHARED_CONNECT_SRC, type ProtocolEnvironment } from "../../config/environment";
 import { renderHeadersFile, securityHeaders } from "../../config/security-headers";
 
 const environments = Object.keys(ENVIRONMENTS) as ProtocolEnvironment[];
@@ -47,16 +47,6 @@ test("each environment's CSP allows exactly its own services", () => {
     expect(connectSrc).toContain(signupOrigin);
     expect(connectSrc).not.toContain(ENVIRONMENTS[other].signupServiceOrigin);
   }
-});
-
-test("PoseGuard test mode requires an explicit staging build flag", () => {
-  for (const environment of environments) {
-    expect(parsePoseGuardTestMode(undefined, environment)).toBe(false);
-    expect(parsePoseGuardTestMode("false", environment)).toBe(false);
-  }
-  expect(parsePoseGuardTestMode("true", "staging")).toBe(true);
-  expect(() => parsePoseGuardTestMode("true", "production")).toThrow("requires a staging build");
-  expect(() => parsePoseGuardTestMode("1", "staging")).toThrow("must be true or false");
 });
 
 test("TEE policies, when enabled, use wss and full SHA-384 measurements", () => {

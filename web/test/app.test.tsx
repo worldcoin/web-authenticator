@@ -151,40 +151,10 @@ test("unreadable consent storage asks again rather than assuming a choice", asyn
   expect(await view.findByRole("heading", { name: "Help improve World ID" })).toBeTruthy();
 });
 
-test("public Selfie capture reuses the unlocked session without another save prompt or a proof", async () => {
-  const f = await fixture(11);
-  let opened = 0;
-  f.services.open = async () => { opened++; throw new Error("Public capture must not open a wallet"); };
-  const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
-    image: new Blob(["test"], { type: "image/jpeg" }),
-    timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
-  });
-  try {
-    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-    fireEvent.click(await view.findByRole("button", { name: "Continue" }));
-    // Browser lifecycle tests inspect transient animation states with a controlled clock.
-    await waitFor(() => expect(f.calls.terminated).toBe(1), { timeout: 4000 });
-    await waitFor(() => expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true), { timeout: 4000 });
-    expect(f.calls.unlocked).toBe(1);
-    expect(f.calls.terminated).toBe(1);
-    expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
-    expect(await view.findByRole("heading", { name: "Selfie captured" })).toBeTruthy();
-    expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
-    expect(view.queryByRole("button", { name: /Approve|Set up|Retake|passkey|Go to authenticator/ })).toBeNull();
-    expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
-    expect(opened).toBe(0);
-    expect(f.calls.prove).toBe(0);
-    expect(f.calls.deliver).toHaveLength(0);
-    expect(view.queryByRole("switch", { name: "Dev mode" })).toBeNull();
-  } finally { captureMock.mockRestore(); }
-});
-
-test("a request with configured enrollment follows PoseGuard directions to the end screen", async () => {
+test("a request the wallet cannot answer enrolls a Selfie Check, then proves and delivers", async () => {
   const f = await fixture(11);
   f.incoming.returnUrl = "https://rp.example/done";
-  const policy = ENVIRONMENTS.staging.selfieEnrollment!;
-  const signup: poseGuard.PoseGuardSignup = { mode: "staging", policy, endpoint: new URL("/api/v2/identity", ENVIRONMENTS.staging.signupServiceOrigin).href };
-  const configured = spyOn(poseGuard, "configuredPoseGuardSignup").mockReturnValue(signup);
+  const issuer = poseGuard.selfieIssuer("staging")!;
   let update!: Parameters<poseGuard.RunPoseGuard>[2];
   let finish!: (result: poseGuard.PoseGuardOutcome) => void;
   const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
@@ -254,71 +224,69 @@ test("a request with configured enrollment follows PoseGuard directions to the e
     expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
     expect([...allSet.querySelectorAll("a")].map(link => link.getAttribute("href"))).toContain("https://rp.example/done");
     expect(enrollment).toHaveBeenCalledTimes(1);
-    expect(enrollment.mock.calls[0]![1]).toBe(signup);
+    expect(enrollment.mock.calls[0]![1]).toEqual(issuer);
     expect(captureMock).not.toHaveBeenCalled();
     expect(f.calls.deliver).toEqual([JSON.stringify({ id: "test-request", responses: [{}] })]);
     expect(f.calls.terminated).toBe(1);
   } finally {
-    configured.mockRestore();
     enrollment.mockRestore();
     captureMock.mockRestore();
   }
 });
 
-test("only the staging origin enrolls, through the staging issuer", () => {
-  const browser = (window as typeof window & { happyDOM?: { setURL(url: string): void } }).happyDOM;
-  if (!browser) throw new Error("Expected a detached browser fixture.");
-  const originalUrl = window.location.href;
-  // Elsewhere, such as local development, the issuer would refuse the origin, so the check is a preview.
-  expect(poseGuard.configuredPoseGuardSignup()).toBeUndefined();
-  try {
-    browser.setURL(new URL("/verify", ENVIRONMENTS.staging.appOrigin).href);
-    expect(poseGuard.configuredPoseGuardSignup()).toEqual({
-      mode: "staging", policy: ENVIRONMENTS.staging.selfieEnrollment!,
-      endpoint: "https://app.stage.face.worldcoin.org/api/v2/identity",
-    });
-  } finally {
-    browser.setURL(originalUrl);
-  }
+test("an environment issues Selfie Checks only when its configuration names an issuer", () => {
+  expect(poseGuard.selfieIssuer("staging")).toEqual({
+    policy: ENVIRONMENTS.staging.selfieEnrollment!, endpoint: "https://app.stage.face.worldcoin.org/api/v2/identity",
+  });
+  expect(ENVIRONMENTS.production.selfieEnrollment).toBeNull();
+  expect(poseGuard.selfieIssuer("production")).toBeUndefined();
 });
 
-test.each(["saved", "replayed", "undelivered", "ineligible"] as const)("a request answered from the wallet ends as %s", async outcome => {
-  const f = await fixture(11, outcome !== "ineligible");
+test.each(["saved", "replayed", "undelivered", "no issuer", "ineligible", "wallet failure"] as const)("a request answered without the camera: %s", async outcome => {
+  const f = await fixture(11, outcome === "saved" || outcome === "replayed" || outcome === "undelivered");
   f.incoming.returnUrl = "https://rp.example/done";
+  let declined = 0;
+  f.incoming.cancel = async () => { declined++; };
   if (outcome === "replayed") {
     f.wallet.generateProof = async () => { throw Object.assign(new Error("nullifier_replay"), { name: "WalletKitError", code: "NullifierReplay" }); };
   }
   if (outcome === "undelivered") f.calls.failDelivery = true;
-  // An expired Selfie credential cannot be replaced by enrolling again.
+  // A Selfie credential outside the request's date bounds cannot be replaced by enrolling again.
   if (outcome === "ineligible") f.wallet.listCredentials = async () => [{ credentialId: 2n, issuerSchemaId: 11n, isExpired: false, expiresAt: 1n, genesisIssuedAt: 0n } as CredentialMetadata];
-  const policy = ENVIRONMENTS.staging.selfieEnrollment!;
-  const configured = spyOn(poseGuard, "configuredPoseGuardSignup").mockReturnValue(
-    { mode: "staging", policy, endpoint: new URL("/api/v2/identity", ENVIRONMENTS.staging.signupServiceOrigin).href });
+  if (outcome === "wallet failure") {
+    f.services.unlock = async () => ({ ready: Promise.resolve({ error: new WalletOpenError("Registration is unavailable.") }), dispose: () => f.wallet.terminate() });
+  }
+  const issuer = spyOn(poseGuard, "selfieIssuer");
+  if (outcome === "no issuer") issuer.mockReturnValue(undefined);
   const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment");
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Continue" }));
     if (outcome === "saved") {
-      // A saved credential skips the camera: only the proof is pending, then the end screen.
       const allSet = await view.findByTestId("all-set", undefined, { timeout: 3_000 });
       expect([...allSet.querySelectorAll("a")].map(link => link.getAttribute("href"))).toContain("https://rp.example/done");
       expect(f.calls.deliver).toEqual([JSON.stringify({ id: "test-request", responses: [{}] })]);
     } else if (outcome === "replayed") {
       expect(await view.findByRole("heading", { name: "Proof already created" })).toBeTruthy();
-      expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
       expect(f.calls.deliver).toEqual([]);
     } else if (outcome === "undelivered") {
       expect(await view.findByText("Could not send the proof. Try again.")).toBeTruthy();
       expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+    } else if (outcome === "wallet failure") {
+      expect(await view.findByText("Registration is unavailable.")).toBeTruthy();
+      expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
     } else {
-      expect(await view.findByText("This authenticator can’t complete this Selfie Check.")).toBeTruthy();
+      // Nothing can satisfy the request, so the app is told not to wait.
+      expect(await view.findByRole("heading", { name: "This check can’t be completed here" })).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Try again" })).toBeNull();
+      await waitFor(() => expect(declined).toBe(1));
       expect(f.calls.prove).toBe(0);
     }
     expect(enrollment).not.toHaveBeenCalled();
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     expect(f.calls.terminated).toBe(1);
   } finally {
-    configured.mockRestore();
+    issuer.mockRestore();
     enrollment.mockRestore();
   }
 });
@@ -332,39 +300,6 @@ test("public non-Selfie requests stop before capture or wallet access", async ()
   expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true);
   expect(f.calls.listed).toBe(0);
 });
-
-for (const fails of [false, true]) {
-  test(`background account preparation ${fails ? "surfaces failure" : "waits after capture without another passkey"}`, async () => {
-    const f = await fixture(11);
-    const ready = Promise.withResolvers<{ wallet: WalletKit } | { error: unknown }>();
-    f.services.unlock = async () => {
-      f.calls.unlocked++;
-      return { ready: ready.promise, dispose: () => f.wallet.terminate() };
-    };
-    const captureMock = spyOn(capture, "captureSelfie").mockResolvedValue({
-      image: new Blob(["test"], { type: "image/jpeg" }),
-      timing: { guidanceMs: 1, totalMs: 1, width: 640, height: 480 },
-    });
-    try {
-      const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
-      fireEvent.click(await view.findByRole("button", { name: "Continue" }));
-      await waitFor(() => expect(view.getByTestId("request-frame").getAttribute("data-stage")).toBe("preparing"));
-      expect(f.calls.unlocked).toBe(1);
-      expect(f.calls.terminated).toBe(0);
-      expect(view.queryByRole("button", { name: "Save with passkey" })).toBeNull();
-      await act(async () => { ready.resolve(fails ? { error: new WalletOpenError("Registration is unavailable.") } : { wallet: f.wallet }); });
-      if (fails) {
-        await view.findByRole("heading", { name: "Something went wrong" });
-        expect(view.getByText("Registration is unavailable.")).toBeTruthy();
-      } else {
-        await waitFor(() => expect(view.queryByRole("region", { name: "Selfie capture" }) === null).toBe(true), { timeout: 4000 });
-        expect(captureMock).toHaveBeenCalledTimes(1);
-      }
-      expect(f.calls.terminated).toBe(1);
-      expect(f.calls.unlocked).toBe(1);
-    } finally { captureMock.mockRestore(); }
-  });
-}
 
 test("public cancellation closes the request even when the bridge is unavailable", async () => {
   const f = await fixture(11);
