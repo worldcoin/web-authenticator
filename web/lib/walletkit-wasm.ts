@@ -1,4 +1,5 @@
 import { initializeWalletKit, type WalletKit } from "@worldcoin/walletkit-web";
+import { logFlowStep } from "./flow-logging";
 import { WalletOpenError } from "./wallet-errors";
 
 const LOAD_FAILED = "The authenticator could not load its wallet engine. Check your connection and try again.";
@@ -8,9 +9,9 @@ const LOAD_FAILED = "The authenticator could not load its wallet engine. Check y
  * host's file size limit, so the page decompresses it and hands the worker a blob URL.
  */
 export async function initializeWalletKitFromCompressedWasm(signal: AbortSignal): Promise<WalletKit> {
-  const wasmUrl = await loadWalletKitWasm(signal);
+  const wasmUrl = await logFlowStep("walletkit.wasm_load", () => loadWalletKitWasm(signal));
   try {
-    return await initializeWalletKit({ signal, wasmUrl });
+    return await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal, wasmUrl }));
   } finally {
     URL.revokeObjectURL(wasmUrl);
   }

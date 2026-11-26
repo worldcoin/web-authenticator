@@ -248,7 +248,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
   try {
     signal.throwIfAborted();
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
-    client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKitFromCompressedWasm(opening.signal));
+    client = await initializeWalletKitFromCompressedWasm(opening.signal);
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : actualId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");
