@@ -4,17 +4,21 @@
 @import "./design/typography.css";
 
 @theme {
+  --ease-handoff: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-oval-exit: oval-exit 140ms var(--ease-handoff) forwards;
+  --animate-arrow-focus: arrow-focus 100ms var(--ease-handoff);
   --animate-request-shimmer: request-shimmer 1.2s linear infinite;
-  --animate-completion-in: completion-in 250ms ease-out both;
   --animate-completion-out: completion-out 250ms ease-in both;
   --animate-selfie-border-complete: selfie-border-complete 300ms ease-in-out both;
 
+  @keyframes oval-exit {
+    to { opacity: 0; filter: blur(4px); visibility: hidden; }
+  }
+  @keyframes arrow-focus {
+    from { opacity: 0.5; filter: blur(2px); }
+  }
   @keyframes request-shimmer {
     to { background-position: -200% 0; }
-  }
-  @keyframes completion-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
   }
   @keyframes completion-out {
     to { opacity: 0; }
@@ -26,9 +30,129 @@
   }
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .intro-beat {
+    --intro-y: -10px;
+    --intro-alpha: .60;
+    --intro-scale: 1;
+    --intro-filter: none;
+    --intro-duration: 220ms;
+  }
+  .intro-mark {
+    --intro-y: -16px;
+    --intro-alpha: 0;
+    --intro-scale: .92;
+    --intro-filter: blur(3px);
+    --intro-duration: 300ms;
+  }
+  .intro-heading {
+    --intro-y: -13px;
+    --intro-duration: 250ms;
+  }
+  .intro-divider {
+    --intro-y: -4px;
+    --intro-alpha: .4;
+    --intro-scale: .93;
+  }
+  .intro-row {
+    --intro-duration: 260ms;
+    --intro-easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .intro-action {
+    --intro-y: 0px;
+    --intro-alpha: .65;
+    --intro-duration: 175ms;
+  }
+  [data-intro-state=verifying] .intro-beat {
+    opacity: var(--intro-alpha);
+    transform: translateY(var(--intro-y)) scale(var(--intro-scale));
+  }
+  [data-intro-state=entering] .intro-beat {
+    animation: request-intro-in var(--intro-duration) var(--intro-easing, var(--ease-handoff)) backwards;
+  }
+  @keyframes request-intro-in {
+    from {
+      opacity: var(--intro-alpha);
+      transform: translateY(var(--intro-y)) scale(var(--intro-scale));
+      filter: var(--intro-filter);
+    }
+    to { opacity: 1; transform: none; filter: none; }
+  }
+}
+
+/* The outgoing consent stays in place until the lazy camera or saved-proof view commits. */
+.departing-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+[data-request-destination] ~ .departing-intro {
+  animation: consent-exit 120ms var(--ease-handoff) both;
+}
+
+@keyframes consent-exit {
+  to { opacity: 0; }
+}
+
+@keyframes consent-soften {
+  to { filter: blur(3px); }
+}
+
+@keyframes camera-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes camera-open {
+  from { clip-path: ellipse(48% 48%); }
+  to { clip-path: ellipse(50% 50%); }
+}
+
+.request-continue > span, .request-continue > svg {
+  transition: opacity 80ms ease-out;
+}
+
+@starting-style {
+  .request-continue[aria-busy=true] > svg { opacity: 0; }
+}
+
+[data-request-camera] > header,
+[data-request-camera] .pose-guidance {
+  animation: camera-fade-in 100ms ease-out both;
+}
+
+[data-request-camera][data-camera-ready=true] .camera-aperture > video {
+  transition-duration: 180ms;
+}
+
+[data-request-camera][data-camera-ready=true] .camera-aperture + svg {
+  animation: camera-fade-in 180ms var(--ease-handoff) both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-request-destination] ~ .departing-intro > :first-child {
+    animation: consent-soften 120ms var(--ease-handoff) both;
+  }
+
+  [data-request-camera][data-camera-ready=true] .camera-aperture {
+    animation: camera-open 180ms var(--ease-handoff);
+  }
+}
+
+.experience-frame {
+  --experience-height: 100svh;
+  height: var(--experience-height);
+}
+
+@media (min-width: 600px) {
+  .experience-frame {
+    --experience-height: min(760px, calc(100svh - 48px));
+  }
+}
+
 @layer base {
   :root {
-    --request-frame-min-height: min(720px, 100svh);
     color: var(--color-foreground-primary);
     background: var(--color-surface-page);
     line-height: normal;
@@ -65,6 +189,16 @@
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
+    }
+
+    [data-request-destination] ~ .departing-intro,
+    [data-request-camera] > header,
+    [data-request-camera] .pose-guidance,
+    [data-request-camera][data-camera-ready=true] .camera-aperture + svg {
+      animation-duration: 80ms !important;
+    }
+    [data-request-camera][data-camera-ready=true] .camera-aperture > video {
+      transition-duration: 80ms !important;
     }
   }
 }

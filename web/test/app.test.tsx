@@ -79,6 +79,18 @@ test("while the passkey sheet is open the request stays on screen with Continue 
   unlock({ ready: Promise.resolve({ wallet: f.wallet }), dispose: () => f.wallet.terminate() } as RequestWalletSession);
 });
 
+test("dismissing the passkey restores Continue on the same request", async () => {
+  const f = await fixture(11);
+  f.services.unlock = async () => { throw new DOMException("Dismissed", "NotAllowedError"); };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  const button = await view.findByRole("button", { name: "Continue" });
+  fireEvent.click(button);
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  expect(view.getByRole("button", { name: "Continue" })).toBe(button);
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(view.queryByText("Something went wrong")).toBeNull();
+});
+
 test("request intro names the RP only after validation, then starts the check", async () => {
   const f = await fixture(11); let opened = 0; let resolve!: (request: IncomingRequest) => void;
   f.services.load = () => new Promise(done => { resolve = done; });
@@ -98,6 +110,24 @@ test("request intro names the RP only after validation, then starts the check", 
   expect(opened).toBe(0);
   expect(f.calls.unlocked).toBe(1);
 });
+test("consent keeps the W when the verified requester name loads", async () => {
+  const f = await fixture(11);
+  const appId = `app_${"a".repeat(32)}`;
+  f.incoming.appId = appId;
+  const response = Promise.withResolvers<Response>();
+  const lookup = spyOn(globalThis, "fetch").mockReturnValue(response.promise);
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    const start = await view.findByRole("button", { name: "Continue" });
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+    const logo = `https://world-id-assets.com/${appId}/brand.png`;
+    response.resolve(Response.json({ rp_id: f.incoming.proof.rp_id, app_id: appId, is_verified: true, name: "Example", verified_app_logo: logo }));
+    await view.findByRole("heading", { name: "Request from Example" });
+    expect(view.getByText("W")).toBeTruthy();
+    expect(view.container.querySelector(`img[src="${logo}"]`)).toBeNull();
+  } finally { lookup.mockRestore(); }
+});
+
 for (const [name, failure, title] of [
   ["expired", new RequestExpiredError("expired"), "This request has expired"],
   ["invalid", new Error("The RP request signature is invalid."), "This request can’t be verified"],
@@ -286,16 +316,24 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.getByTestId("pose-target-indicator").querySelector("path")!.getAttribute("stroke")).toBe("currentColor");
     expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
 
-    // Processing shows its message alone: no oval, ring or camera preview.
+    // The live aperture disappears immediately; only the last dotted outline can dissolve.
     act(() => update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false }));
     expect(view.getByRole("heading", { name: "Processing liveness" })).toBeTruthy();
     expect(view.getByText("This might take a few seconds")).toBeTruthy();
-    expect(view.getByTestId("processing-glyph")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").dataset.result).toBe("pending");
+    expect(view.getByTestId("presence-badge").querySelector("svg circle")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").querySelector("svg g")).toBeNull();
+    expect(view.getByTestId("presence-badge").textContent).toBe("");
     expect(view.queryByTestId("selfie-guidance-pill")).toBeNull();
-    expect(view.getByTestId("selfie-camera-stage").classList.contains("hidden")).toBe(true);
+    expect(view.getByTestId("selfie-camera-stage").querySelector("video")!.parentElement!.hidden).toBe(true);
+    expect(view.getByRole("region", { name: "Selfie capture" }).getAttribute("data-camera-handoff")).toBe("true");
+    expect(view.getByTestId("selfie-design-ring").querySelectorAll('[data-filled="true"]')).toHaveLength(19);
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
+    expect(view.getByTestId("presence-badge").dataset.result).toBe("accepted");
+    expect(view.getByTestId("presence-badge").querySelector("svg g path")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").textContent).toBe("W");
     expect(view.getByText(demoAction)).toBeTruthy();
     expect(view.queryByText("Use the staging demo to test signup-service.")).toBeNull();
     expect(view.queryByText("Beta", { exact: true })).toBeNull();
@@ -362,9 +400,9 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       return;
     }
     if (result === "saved") {
-      // A saved credential skips capture: the same spinner, then the same end screen.
+      // A saved credential skips capture: the same badge opening, then the same end screen.
       expect(await view.findByRole("heading", { name: "Generating proof" })).toBeTruthy();
-      expect(view.getByTestId("processing-glyph")).toBeTruthy();
+      expect(view.getByTestId("presence-badge").dataset.result).toBe("pending");
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual(["test-proof"]);
       verdict.resolve();
@@ -372,8 +410,8 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
       return;
     }
-    // The spinner keeps running while the demo verifies the delivered proof.
-    expect(await view.findByTestId("processing-glyph")).toBeTruthy();
+    // The badge opening loops while the demo verifies the delivered proof.
+    expect((await view.findByTestId("presence-badge")).dataset.result).toBe("pending");
     expect(view.getByRole("heading", { name: "Credential received" })).toBeTruthy();
     expect(f.calls.deliver).toEqual(["test-proof"]);
     expect(configure).toHaveBeenCalledTimes(1);

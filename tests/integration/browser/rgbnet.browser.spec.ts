@@ -51,6 +51,31 @@ if (!("bun" in process.versions)) {
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     });
 
+    test("the circular close control accepts taps at the edge while the camera is opening", async ({ page }) => {
+      await openSelfie(page, "?hang");
+      await expect(page.getByTestId("camera-loading")).toBeVisible();
+      await expect.poll(() => page.evaluate(() => typeof (window as any).cameraTest.releasePending)).toBe("function");
+      const close = page.getByRole("button", { name: "Cancel check" });
+      for (const width of [393, 1280]) {
+        await page.setViewportSize({ width, height: 852 });
+        const frame = await page.getByRole("region", { name: "Selfie capture" }).boundingBox();
+        const box = await close.boundingBox();
+        if (!frame || !box) throw new Error("Missing camera close button or capture frame");
+        expect(box.width).toBe(40);
+        expect(box.height).toBe(box.width);
+        expect(box.x - frame.x).toBe(20);
+        expect(box.y - frame.y).toBe(20);
+        const icon = (await close.locator("svg").boundingBox())!;
+        expect(icon.x + icon.width / 2).toBe(box.x + box.width / 2);
+        expect(icon.y + icon.height / 2).toBe(box.y + box.height / 2);
+      }
+      // The 44 px target extends two pixels past the visible circle on either side.
+      await close.click({ position: { x: 41, y: 20 } });
+      await expect(page.getByRole("heading", { name: "Check cancelled" })).toBeVisible();
+      await page.evaluate(() => { (window as any).cameraTest.releasePending(); });
+      await expect.poll(() => page.evaluate(() => (window as any).cameraTest.stopped)).toBeGreaterThan(0);
+    });
+
     test("closing capture stops the camera and reopening starts fresh", async ({ page }) => {
       await openSelfie(page, "?unaligned");
       await expect(page.getByRole("heading", { name: "Let's see you" })).toBeVisible();
@@ -68,6 +93,55 @@ if (!("bun" in process.versions)) {
       await page.evaluate(() => { (window as any).cameraTest.deny = false; });
       await page.getByRole("button", { name: "Try again" }).click();
       await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
+    });
+
+    test("camera loading loops until the stream opens, then reveals the live preview", async ({ page }) => {
+      await page.clock.install();
+      await openSelfie(page, "?hang&unaligned");
+      const loader = page.getByTestId("camera-loading");
+      await expect(loader.locator("circle")).toHaveCount(13);
+      await page.clock.fastForward(12_000);
+      await expect(loader.locator("circle")).toHaveCount(13);
+      await page.evaluate(() => { (window as any).cameraTest.releasePending(); });
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toHaveAttribute("data-camera-ready", "true");
+      await expect(page.locator(".camera-aperture")).toHaveCSS("animation-name", "camera-open");
+      await expect(loader).toHaveCount(0);
+      await expect(page.locator("video")).toBeVisible();
+    });
+
+    test("reduced motion holds the dots still and opens the camera directly", async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.clock.install();
+      await openSelfie(page, "?hang&unaligned");
+      const loader = page.getByTestId("camera-loading");
+      const dot = loader.locator("circle").first();
+      const initial = await dot.getAttribute("cx");
+      await page.clock.fastForward(1_500);
+      expect(await dot.getAttribute("cx")).toBe(initial);
+      await page.evaluate(() => { (window as any).cameraTest.releasePending(); });
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toHaveAttribute("data-camera-ready", "true");
+      expect(await loader.count()).toBe(0);
+      await expect(page.locator(".camera-aperture")).toHaveCSS("animation-name", "none");
+      await expect(page.locator(".camera-aperture > video")).toHaveCSS("transition-duration", "0.08s");
+    });
+
+    test("consent fades over a warm camera in the same card", async ({ page }) => {
+      await page.addInitScript(() => {
+        document.addEventListener("animationstart", event => {
+          if (event.animationName !== "consent-exit" || !(event.target instanceof HTMLElement)) return;
+          const intro = event.target;
+          const card = intro.closest("main")!;
+          card.dataset.consentOverlap = String(intro.inert && card.querySelector("video") !== null);
+          card.dataset.consentExitDuration = getComputedStyle(intro).animationDuration;
+        });
+      });
+      await openSelfie(page, "?unaligned");
+      await expect(page.getByRole("region", { name: "Selfie capture" })).toHaveAttribute("data-camera-ready", "true");
+      expect(await page.getByTestId("camera-loading").count()).toBe(0);
+      await expect(page.getByRole("main")).toHaveAttribute("data-consent-overlap", "true");
+      await expect(page.getByRole("main")).toHaveAttribute("data-consent-exit-duration", "0.12s");
+      await expect(page.locator(".departing-intro")).toHaveCount(0);
+      await expect(page.locator(".camera-aperture")).toHaveCSS("animation-duration", "0.18s");
     });
 
     test("permission deadline stops a stream that arrives late", async ({ page }) => {
@@ -104,14 +178,25 @@ if (!("bun" in process.versions)) {
       await page.getByRole("button", { name: "Cancel check" }).click();
     });
 
-    test("capture uses the page background, is responsive, and accessible", async ({ page }, info) => {
+    test("capture errors show the close control and bottom retry action across viewport sizes", async ({ page }, info) => {
       await page.addInitScript({ content: axe.source });
       await openSelfie(page, "?deny");
       await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
       for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 1280, height: 900 }]) {
         await page.setViewportSize(viewport);
         await expect(page.getByTestId("request-frame")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+        const card = page.getByRole("main");
+        const border = viewport.width < 600 ? 0 : 1;
+        const frame = (await card.boundingBox())!;
+        expect(frame.width).toBe(viewport.width < 600 ? viewport.width : 480);
+        expect(await page.getByRole("region", { name: "Selfie capture" }).boundingBox()).toEqual({
+          x: frame.x + border, y: frame.y + border, width: frame.width - 2 * border, height: frame.height - 2 * border,
+        });
+        await expect(page.getByTestId("selfie-camera-stage")).toHaveCount(0);
+        const retry = (await page.getByRole("button", { name: "Try again" }).boundingBox())!;
+        const close = (await page.getByRole("button", { name: "Cancel check" }).boundingBox())!;
+        expect(close.y - frame.y - border).toBe(20);
+        expect(frame.y + frame.height - border - retry.y - retry.height).toBe(20);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
         expect(await page.getByRole("region", { name: "Selfie capture" }).evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(0);

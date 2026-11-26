@@ -34,24 +34,28 @@ if (!("bun" in process.versions)) {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
-      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+      expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width < 600 ? viewport.width : 480);
+      await expect(page.getByRole("main")).toHaveCSS("border-radius", viewport.width < 600 ? "0px" : "28px");
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
     }
   });
 
   test("public capture retries failure and completes with its already unlocked wallet", async ({ page }, info) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await installCamera(page);
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query + "&deny");
+    const frame = page.getByRole("main");
+    const introBounds = await frame.boundingBox();
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
+    expect(await frame.boundingBox()).toEqual(introBounds);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
@@ -90,6 +94,7 @@ if (!("bun" in process.versions)) {
     await expect(page.getByText("You can close this page.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+    expect(await frame.boundingBox()).toEqual(introBounds);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-finished.png`, fullPage: true });
   });
 
