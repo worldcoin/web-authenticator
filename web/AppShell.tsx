@@ -1,4 +1,4 @@
-import { Outlet, useRouterState } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
 import { createContext, useEffect, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
@@ -12,7 +12,6 @@ export const CompletionAnimationContext = createContext<(active: boolean) => voi
 
 /** Chrome and cookie consent around every route. */
 export function AppShell({ consent }: { consent: ConsentClient }) {
-  const isAuthenticator = useRouterState({ select: state => state.location.pathname === "/" || state.location.pathname === "/authenticator" });
   const [completionAnimating, setCompletionAnimating] = useState(false);
   const [captureActive, setCaptureActive] = useState(false);
   // null until the stored choice is read; analytics stays off unless the state is "granted".
@@ -50,7 +49,7 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
     ? () => { setConsentError(null); setConsentOpen(true); }
     : undefined;
 
-  return <AppLayout onCookieSettings={onCookieSettings} hideControls={completionAnimating || captureActive} tintedBackground={isAuthenticator && !consentScreen && !captureActive}>
+  return <AppLayout onCookieSettings={onCookieSettings} hideControls={completionAnimating || captureActive}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
       <CompletionAnimationContext value={setCompletionAnimating}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></CompletionAnimationContext>

@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useCallback, useEffect, useRef, useState, type ContextType, type ReactNode } from "react";
 import { DEMO_PATH } from "../config/demo";
+import { DemoBadgeStart, PresenceBadge } from "./components/PresenceBadge";
 import { RequestIntro } from "./components/RequestIntro";
-import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, requestFrame, screenContent, screenTitle } from "./components/styles";
+import { actions, body, centeredLayout, errorCopy, messageBlock, requestFrame, screenContent, screenTitle } from "./components/styles";
 import { Button } from "./design/Button";
 import { buttonStyle } from "./design/buttons";
 import { currentProtocolEnvironment } from "./lib/environment";
@@ -32,6 +33,7 @@ export const DemoContext = createContext<{
 } | null>(null);
 
 export function DemoProvider({ children }: { children: ReactNode }) {
+  const badgeStart = useRef<number | null>(null);
   const active = useRef<ActiveDemoAttempt | null>(null);
   const [state, setState] = useState<DemoState>({ phase: "idle" });
   const [attempt, setAttempt] = useState<DemoHandoff>();
@@ -56,6 +58,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   const create = useCallback(async () => {
     if (active.current) return;
+    badgeStart.current = null;
     const current: ActiveDemoAttempt = { controller: new AbortController() };
     const { signal } = current.controller;
     active.current = current;
@@ -112,7 +115,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setState({ phase: "captured" });
   };
 
-  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>{children}</DemoContext>;
+  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>
+    <DemoBadgeStart value={attempt ? badgeStart : null}>{children}</DemoBadgeStart>
+  </DemoContext>;
 }
 
 export function DemoPage() {
@@ -155,16 +160,18 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
   }, [phase, create, open, navigate]);
 
   if (phase === "idle" || phase === "starting" || phase === "ready") {
-    return <section className={consentFrame} aria-label="Proof of Presence demo">
+    return <section className={requestFrame} aria-label="Proof of Presence demo">
       <RequestIntro state="verifying" onStart={() => {}} onCancel={() => {}} />
     </section>;
   }
   const waiting = phase === "waiting" || phase === "verifying";
+  const captured = phase === "captured";
   return <section className={requestFrame} aria-label="Proof of Presence demo">
-    <div className={screenContent}>
+    {captured && <PresenceBadge done title={demoTitle(demo.state)} />}
+    <div className={captured ? "flex flex-1 justify-center pt-4 pb-6" : screenContent}>
       <div className={centeredLayout}>
         <div className={`${messageBlock} gap-4`}>
-          <h1 className={screenTitle} aria-live="polite">{demoTitle(demo.state)}</h1>
+          {!captured && <h1 className={screenTitle} aria-live="polite">{demoTitle(demo.state)}</h1>}
           {demo.state.phase === "error" && <p className={errorCopy} role="alert">{demo.state.message}</p>}
           <DemoRequestDetails attempt={demo.attempt} />
         </div>

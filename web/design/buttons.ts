@@ -43,7 +43,9 @@ export function buttonStyle(style: ButtonStyle): string {
 /** A circular button holding only an `Icon`; give it an `aria-label`. */
 export function iconButtonStyle(style: ButtonStyle): string {
   const [variant, size] = parse(style);
-  return `${base} ${variants[variant]} ${iconSizes[size]}`;
+  // Keep the visible circle at its token size and center a minimum 44 px hit area on it.
+  const hitArea = "after:absolute after:top-1/2 after:left-1/2 after:size-full after:min-h-11 after:min-w-11 after:-translate-1/2";
+  return `${base} ${variants[variant]} ${iconSizes[size]} relative min-h-0 shrink-0 ${hitArea}`;
 }
 
 function parse(style: ButtonStyle): [Variant, Size] {

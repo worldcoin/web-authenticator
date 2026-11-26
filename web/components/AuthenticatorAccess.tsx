@@ -50,20 +50,18 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
     }
   };
-  if (preview) return <Suspense fallback={<p role="status">Opening Proof of Presence preview…</p>}>
+  if (preview) return <Suspense fallback={<p className="sr-only" role="status">Opening Proof of Presence preview…</p>}>
     <SelfieCheck onClose={() => setPreview(false)} backLabel="Back to authenticator" />
   </Suspense>;
 
-  return <div className="mx-auto my-6 w-[calc(100%-28px)] max-w-[470px] text-foreground-primary sm:my-10">
-    <article className={`relative flex min-h-[606px] flex-col overflow-hidden rounded border border-stroke-secondary border-t-3 bg-background-primary p-6 ${records ? "border-t-accent-blue" : "border-t-stroke-primary"}`}>
-      <div className="flex items-center justify-between border-b border-stroke-secondary pb-4 text-l3">
-        <span className="flex items-center gap-2"><Icon icon="human-emblem" variant="solid" className="size-5 text-accent-blue" />World ID</span>
-        <span className={records ? "rounded bg-status-success-background px-2 py-1 text-status-success" : "text-foreground-secondary"}>{records ? "●  Signed in" : "Signed out"}</span>
-      </div>
-      {records
-        ? <CredentialsPanel records={records} onPreview={() => setPreview(true)} onLock={lock} />
-        : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
-      {error && <p className="mt-4 rounded-lg bg-status-error-background p-3 text-b2 text-status-error" role="alert">{error}</p>}
-    </article>
-  </div>;
+  return <article className="flex min-h-full flex-col p-6 text-foreground-primary min-[600px]:p-10">
+    <div className="flex items-center justify-between border-b border-stroke-secondary pb-4 text-l3">
+      <span className="flex items-center gap-2"><Icon icon="human-emblem" variant="solid" className="size-5 text-accent-blue" />World ID</span>
+      <span className={records ? "rounded bg-status-success-background px-2 py-1 text-status-success" : "text-foreground-secondary"}>{records ? "●  Signed in" : "Signed out"}</span>
+    </div>
+    {records
+      ? <CredentialsPanel records={records} onPreview={() => setPreview(true)} onLock={lock} />
+      : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
+    {error && <p className="mt-4 rounded-lg bg-status-error-background p-3 text-b2 text-status-error" role="alert">{error}</p>}
+  </article>;
 }

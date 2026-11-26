@@ -28,8 +28,11 @@ export interface EnvironmentConfig {
 const oprfNodes = (domain: string) =>
   [0, 1, 2, 3, 4].flatMap(node => [`https://node${node}.us.${domain}`, `wss://node${node}.us.${domain}`]);
 
+export const PROOF_CONTEXT_ORIGIN = "https://developer.world.org";
+
 /** Services that are the same for every environment. */
 export const SHARED_CONNECT_SRC: readonly string[] = Object.freeze([
+  PROOF_CONTEXT_ORIGIN,
   "https://wld-ml-face-engine-public.worldcoin.org", // Public face-engine model CDN.
   // Requests may arrive through either bridge; payloads are end-to-end encrypted.
   "https://bridge.worldcoin.org",

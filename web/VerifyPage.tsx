@@ -9,6 +9,8 @@ import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-reques
 import { RequestExpiredError } from "./lib/proof-request";
 import { openAuthenticator, openRequestWallet } from "./lib/wallet-session";
 import { PublicRequestFlow } from "./PublicRequestFlow";
+import { loadRequesterName } from "./lib/requester-name";
+import { currentProtocolEnvironment } from "./lib/environment";
 
 const loadRequest: typeof loadIncomingRequest = async (href, signal, progress) =>
   loadDemoPreview(href) ?? loadIncomingRequest(href, signal, progress);
@@ -24,6 +26,8 @@ export function VerifyPage({ services }: { services: Services }) {
   const [bridgeId] = useState(() => new URL(window.location.href).searchParams.get("i"));
   const setCompletionAnimating = use(CompletionAnimationContext);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
+  const attempt = demo?.attempt;
+  const [initialAttempt] = useState(attempt);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -38,7 +42,15 @@ export function VerifyPage({ services }: { services: Services }) {
     // Through the router's history so its location state drops the key too.
     if (url.searchParams.has("k")) history.replace(window.location.pathname);
     void services.load(source.current, controller.signal, () => {}).then(request => {
-      if (!controller.signal.aborted) { source.current = null; setIncoming(request); setLoading(false); }
+      if (controller.signal.aborted) return;
+      source.current = null;
+      setIncoming(request);
+      setLoading(false);
+      if (!request?.appId || (initialAttempt && isDemoHandoff(initialAttempt, request))) return;
+      void loadRequesterName(request.proof.rp_id, request.appId, currentProtocolEnvironment(),
+        AbortSignal.any([controller.signal, AbortSignal.timeout(5000)])).then(label => {
+        if (label && !controller.signal.aborted) setIncoming(current => current === request ? { ...current, label } : current);
+      }).catch(() => { /* Keep the validated RP ID when display metadata is unavailable. */ });
     }).catch(cause => {
       if (!controller.signal.aborted) {
         source.current = null;
@@ -52,7 +64,7 @@ export function VerifyPage({ services }: { services: Services }) {
     window.addEventListener("pagehide", stop);
     window.addEventListener("pageshow", restore);
     return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
-  }, [services, history]);
+  }, [services, history, initialAttempt]);
 
   useEffect(() => {
     if (!incoming) return;
@@ -60,7 +72,6 @@ export function VerifyPage({ services }: { services: Services }) {
     return () => clearTimeout(timer);
   }, [incoming]);
 
-  const attempt = demo?.attempt;
   const fromDemo = attempt !== undefined && attempt.bridgeId === bridgeId;
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
