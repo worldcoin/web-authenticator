@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 
@@ -45,13 +46,18 @@ export function cloudflareStaticHosting(environment: ProtocolEnvironment, commit
   return {
     name: "cloudflare-static-hosting",
     config: () => ({ preview: { headers: { ...securityHeaders(environment) } } }),
-    generateBundle(_options, bundle) {
+    generateBundle() {
       const release: ReleaseManifest = { environment, commit: commit ?? null };
       this.emitFile({ type: "asset", fileName: "_headers", source: renderHeadersFile(environment) });
       this.emitFile({ type: "asset", fileName: RELEASE_FILE, source: JSON.stringify(release) });
-      for (const [name, file] of Object.entries(bundle)) {
-        const size = file.type === "asset" ? Buffer.byteLength(file.source) : Buffer.byteLength(file.code);
-        if (size > ASSET_SIZE_LIMIT) this.error(`${name} exceeds Cloudflare's 25 MiB static asset limit.`);
+    },
+    // Checked on disk so that files copied from web/public are covered too.
+    writeBundle(options) {
+      if (!options.dir) return;
+      for (const entry of readdirSync(options.dir, { recursive: true, withFileTypes: true })) {
+        if (entry.isFile() && statSync(join(entry.parentPath, entry.name)).size > ASSET_SIZE_LIMIT) {
+          this.error(`${entry.name} exceeds Cloudflare's 25 MiB static asset limit.`);
+        }
       }
     },
   };

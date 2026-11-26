@@ -19,7 +19,10 @@ export async function smokeDeployment(environment: "production", commit: string,
   };
   const release = await (await get(`/${RELEASE_FILE}`, /^application\/json\b/)).json() as Partial<ReleaseManifest>;
   if (release.environment !== environment || release.commit !== commit) throw new Error("Live deployment does not match the release");
-  const html = await (await get("/verify", /^text\/html\b/)).text();
+  const page = await get("/verify", /^text\/html\b/);
+  // Request links carry the bridge key in their query.
+  if (page.headers.get("cache-control") !== "no-store") throw new Error("Request page may be stored by caches");
+  const html = await page.text();
   const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"#]+)"/g)].map(match => match[1]!);
   if (!scripts.length) throw new Error("Missing browser entry script");
   for (const script of scripts) {

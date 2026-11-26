@@ -27,7 +27,7 @@ async function fixture(schema: number, available = false) {
   let records = available ? [{ credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata] : [];
   const calls = { unlocked: 0, prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
   const incoming: IncomingRequest = {
-    proof: payload.proof_request, label: "rp_1", actionLabel: payload.action,
+    proof: payload.proof_request, label: "rp_1",
     validate: async () => {}, cancel: async () => {},
     deliver: async proof => { calls.deliver.push(proof); if (calls.failDelivery) throw new Error("Transport unavailable"); },
   };

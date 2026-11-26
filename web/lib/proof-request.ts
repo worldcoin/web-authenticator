@@ -124,7 +124,7 @@ export function parsePayload(json: string, environment = currentProtocolEnvironm
 }
 export async function validateSignature(request: ProofRequest, signal: AbortSignal, environment: ProtocolEnvironment = currentProtocolEnvironment()) {
 	checkExpiry(request)
-	const rp = await readRegisteredRp(request.rp_id, environment, AbortSignal.any([signal, AbortSignal.timeout(15000)])).catch(cause => {
+	const rp = await readRegisteredRp(request.rp_id, environment, AbortSignal.any([signal, AbortSignal.timeout(20000)])).catch(cause => {
 		signal.throwIfAborted()
 		logRpLookupFailure(cause, environment)
 		throw new Error(

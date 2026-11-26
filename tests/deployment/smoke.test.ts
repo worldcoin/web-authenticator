@@ -37,7 +37,9 @@ function deployment({ release = {}, headers = {}, missingScript = false, missing
       return respond(JSON.stringify({ environment: "production", commit, ...release }), "application/json");
     }
     if (url.pathname === "/assets/main.js" && !missingScript) return respond("app()", "text/javascript; charset=utf-8");
-    return respond(index, "text/html; charset=utf-8");
+    return new Response(index, { headers: {
+      ...securityHeaders("production"), "cache-control": "no-store", ...headers, "content-type": "text/html; charset=utf-8",
+    } });
   }) as typeof fetch;
   return { calls, fetcher };
 }
@@ -58,4 +60,6 @@ test("promotion checks the deployed commit, environment, headers and browser ass
     .rejects.toThrow("Unexpected content type for /assets/main.js");
   await expect(smokeDeployment("production", commit, deployment({ headers: { "content-security-policy": "default-src *" } }).fetcher))
     .rejects.toThrow("Unexpected Content-Security-Policy header");
+  await expect(smokeDeployment("production", commit, deployment({ headers: { "cache-control": "public, max-age=0, must-revalidate" } }).fetcher))
+    .rejects.toThrow("Request page may be stored by caches");
 });

@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Static assets only: there is no Worker script, so every request is answered from web/dist.
-  // Security and cache headers come from the generated web/dist/_headers file.
+  // Response headers come from the generated web/dist/_headers file.
   "name": "web-authenticator-dev",
   "account_id": "ae97c44fcd31b9289a7455120d2698b2",
   "compatibility_date": "2026-10-26",
