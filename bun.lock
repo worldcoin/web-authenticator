@@ -4,9 +4,6 @@
   "workspaces": {
     "": {
       "name": "@worldcoin/web-authenticator",
-      "dependencies": {
-        "zod": "4.5.4",
-      },
       "devDependencies": {
         "@eslint/js": "9.39.4",
         "@happy-dom/global-registrator": "20.13.2",

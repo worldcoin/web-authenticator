@@ -73,9 +73,14 @@ test("TEE policies, when enabled, use wss and full SHA-384 measurements", () => 
 
 test("the generated _headers file applies every security header within Cloudflare's line limit", () => {
   for (const environment of environments) {
-    const [path, ...headers] = renderHeadersFile(environment).trimEnd().split("\n");
-    expect(path).toBe("/*");
-    expect(headers).toEqual(Object.entries(securityHeaders(environment)).map(([name, value]) => `  ${name}: ${value}`));
-    for (const line of headers) expect(line.length).toBeLessThanOrEqual(2_000);
+    const lines = renderHeadersFile(environment).trimEnd().split("\n");
+    expect(lines).toEqual([
+      "/*",
+      ...Object.entries(securityHeaders(environment)).map(([name, value]) => `  ${name}: ${value}`),
+      // The request link's query holds the bridge key.
+      "/verify",
+      "  Cache-Control: no-store",
+    ]);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(2_000);
   }
 });

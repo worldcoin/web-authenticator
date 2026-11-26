@@ -116,7 +116,7 @@ test("payload validation rejects expiry, misleading action and malformed nested 
 });
 
 
-test("an RP is read from the environment's registry, retrying only transport failures", async () => {
+test("an RP is read from the environment's registry, retrying only transient failures", async () => {
   const f = await fixture();
   const answer = spyOn(globalThis, "fetch");
   const registries: string[] = [];
@@ -125,26 +125,69 @@ test("an RP is read from the environment's registry, retrying only transport fai
     registries.push(registry);
     return Response.json(body);
   };
-  answer.mockImplementationOnce((async _input => new Response("unavailable", { status: 503 })) as typeof fetch)
+  const failing = (response: () => Response) => (async _input => response()) as typeof fetch;
+  const unavailable = failing(() => new Response("unavailable", { status: 503 }));
+  const validate = () => validateSignature(f.payload.proof_request, signal(), "staging");
+
+  answer.mockImplementationOnce(unavailable)
     .mockImplementationOnce((async (_input): Promise<Response> => { throw new TypeError("network down"); }) as typeof fetch)
     .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
-  await validateSignature(f.payload.proof_request, signal(), "staging");
+  await validate();
   expect(answer).toHaveBeenCalledTimes(3);
   expect(registries).toEqual([ENVIRONMENTS.staging.rpRegistry]);
 
+  // A rate limit is retried no sooner than the server allows.
+  answer.mockClear();
+  answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 429, headers: { "Retry-After": "1" } })))
+    .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  const started = performance.now();
+  await validate();
+  expect(performance.now() - started).toBeGreaterThanOrEqual(1_000);
+  expect(answer).toHaveBeenCalledTimes(2);
+
+  // JSON-RPC "limit exceeded" is transient; a rejected request and an inactive RP are not.
+  answer.mockClear();
+  answer.mockImplementationOnce(failing(() => Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32005, message: "limit exceeded" } })))
+    .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  await validate();
+  expect(answer).toHaveBeenCalledTimes(2);
+  for (const permanent of [
+    failing(() => new Response("bad request", { status: 400 })),
+    failing(() => Response.json({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "execution reverted" } })),
+    failing(() => Response.json({ jsonrpc: "2.0", id: 1, result: "not hex" })),
+  ]) {
+    answer.mockClear();
+    answer.mockImplementation(permanent);
+    await expect(validate()).rejects.toThrow("Could not validate this RP");
+    expect(answer).toHaveBeenCalledTimes(1);
+  }
   answer.mockClear();
   f.registry.active = false;
-  await expect(validateSignature(f.payload.proof_request, signal(), "staging")).rejects.toThrow("Could not validate this RP");
+  answer.mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  await expect(validate()).rejects.toThrow("Could not validate this RP");
   expect(answer).toHaveBeenCalledTimes(1);
 
   answer.mockClear();
-  answer.mockImplementation((async _input => new Response("unavailable", { status: 503 })) as typeof fetch);
-  await expect(validateSignature(f.payload.proof_request, signal(), "staging")).rejects.toThrow("Could not validate this RP");
+  answer.mockImplementation(unavailable);
+  await expect(validate()).rejects.toThrow("Could not validate this RP");
   expect(answer).toHaveBeenCalledTimes(3);
 
-  const aborted = new AbortController();
-  aborted.abort(new DOMException("left the page", "AbortError"));
-  await expect(validateSignature(f.payload.proof_request, aborted.signal, "staging")).rejects.toThrow("left the page");
+  // A cancelled request never reaches the network, and a cancellation mid-flight aborts the fetch.
+  answer.mockClear();
+  const cancelled = new AbortController();
+  cancelled.abort(new DOMException("left the page", "AbortError"));
+  await expect(validateSignature(f.payload.proof_request, cancelled.signal, "staging")).rejects.toThrow("left the page");
+  expect(answer).not.toHaveBeenCalled();
+  const leaving = new AbortController();
+  let fetchSignal: AbortSignal | undefined;
+  answer.mockImplementation(((_input, init) => new Promise<Response>((_resolve, reject) => {
+    fetchSignal = init?.signal ?? undefined;
+    fetchSignal?.addEventListener("abort", () => reject(fetchSignal!.reason));
+    leaving.abort(new DOMException("left the page", "AbortError"));
+  })) as typeof fetch);
+  await expect(validateSignature(f.payload.proof_request, leaving.signal, "staging")).rejects.toThrow("left the page");
+  expect(fetchSignal?.aborted).toBe(true);
+  expect(answer).toHaveBeenCalledTimes(1);
 });
 
 test("production accepts only production payloads and verifies the RP in the production registry", async () => {

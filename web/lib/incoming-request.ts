@@ -13,7 +13,6 @@ import {
 
 export type IncomingRequest = {
 	proof: ProofRequest
-	bridgeRequestId?: string
 	label: string
 	appId?: string
 	actionLabel: string
@@ -50,7 +49,6 @@ export async function loadIncomingRequest(
 		throw new Error('Connector and encrypted request return URLs disagree.')
 	return {
 		proof: payload.proof_request,
-		bridgeRequestId: connector.requestId,
 		label: payload.proof_request.rp_id,
 		appId: payload.app_id,
 		actionLabel: payload.action,

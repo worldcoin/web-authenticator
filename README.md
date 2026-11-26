@@ -65,7 +65,7 @@ The app deploys to Cloudflare Workers static assets (`web-authenticator-dev` and
 
 `bun run build` writes the complete deployable to `web/dist`, including:
 
-- `_headers` — CSP, COOP, CORP, `Permissions-Policy`, `Referrer-Policy` and `X-Content-Type-Options: nosniff` from `config/security-headers.ts`. No `Cache-Control` header is set, so Cloudflare's default ETag revalidation applies.
+- `_headers` — CSP, COOP, CORP, `Permissions-Policy`, `Referrer-Policy` and `X-Content-Type-Options: nosniff` from `config/security-headers.ts`. `/verify` is served with `Cache-Control: no-store` because request links carry the bridge key; every other path keeps Cloudflare's default ETag revalidation.
 - `release.json` — the target environment and `RELEASE_COMMIT`, checked after production deploys by `scripts/smoke-cloudflare.ts`.
 - `assets/walletkit-<hash>.wasm.gzip.bin` — `walletkit.wasm` gzipped to stay under Cloudflare's 25 MiB per-file limit (the build fails if any asset exceeds 25 MiB).
 

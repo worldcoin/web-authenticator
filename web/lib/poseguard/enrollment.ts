@@ -2,8 +2,7 @@ import type { SelfieCaptureFailure } from "@worldcoin/walletkit-web";
 import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
 import { abortable, pause } from "../async";
 import { currentProtocolEnvironment } from "../environment";
-import { ENROLLMENT_CONTEXT, EnrollmentCaptureSchema, parseEnrollmentChallenge, validateEnrollmentCapture } from "../enrollment-contract";
-import { fetchEnrollmentChallenge } from "../enrollment-challenge";
+import { EnrollmentCaptureSchema, validateEnrollmentCapture } from "../enrollment-contract";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
 import {
@@ -58,24 +57,6 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   return {
     policy, endpoint, mode: "production",
     authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
-  };
-}
-
-/** Authorizes a submission with a signup-service ownership challenge that the wallet signs. */
-export function ownershipChallengeAuthorization(challengeUrl: string): PoseGuardAuthorize {
-  return async (identity, signal, wallet, factor) => {
-    const challenge = await fetchEnrollmentChallenge({ endpoint: challengeUrl, signal });
-    const remaining = Math.min(120_000, Date.parse(challenge.expires_at) - Date.now());
-    if (remaining <= 0) throw new Error("Ownership challenge expired. Start a new check.");
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(remaining)]);
-    const proofCbor = await abortable(wallet.proveCredentialSub(challenge.nonce, ENROLLMENT_CONTEXT, factor, identity.sub), deadline);
-    try {
-      parseEnrollmentChallenge(challenge);
-      return { challengeId: challenge.challenge_id, proofCbor };
-    } catch (error) {
-      proofCbor.fill(0);
-      throw error;
-    }
   };
 }
 

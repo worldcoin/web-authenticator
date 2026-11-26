@@ -31,6 +31,7 @@ export async function loadWalletKitWasm(signal: AbortSignal, expected = __WALLET
   if (wasm.byteLength !== expected.byteLength || await sha256Hex(wasm) !== expected.sha256) {
     throw new WalletOpenError("The authenticator's wallet engine failed its integrity check. Reload the page and try again.");
   }
+  signal.throwIfAborted();
   return URL.createObjectURL(new Blob([wasm], { type: "application/wasm" }));
 }
 

@@ -29,16 +29,6 @@ export type RegistryEntry = Awaited<ReturnType<typeof signedRequest>>["registry"
 const rpRegistryAbi = parseAbi([
   "function getRp(uint64 rpId) view returns ((bool initialized, bool active, address manager, address signer, uint160 oprfKeyId, string unverifiedWellKnownDomain))",
 ]);
-/** What World Chain answers to the `getRp` call in `rpcRequest`, and the registry contract it was sent to. */
-export function rpRegistryReply(rpcRequest: string, entry: RegistryEntry) {
-  const { id, method, params } = JSON.parse(rpcRequest) as { id: number; method: string; params: [{ to: Hex }] };
-  if (method !== "eth_call") throw new Error(`Unexpected RPC method ${method}`);
-  const result = encodeFunctionResult({ abi: rpRegistryAbi, functionName: "getRp", result: {
-    initialized: true, active: entry.active, manager: zeroAddress, signer: entry.signer,
-    oprfKeyId: BigInt(entry.oprfKeyId), unverifiedWellKnownDomain: "",
-  } });
-  return { registry: params[0].to, body: { jsonrpc: "2.0", id, result } };
-}
 /** Answers the page's RP registry reads; resolves to the registry contracts it queried. */
 export async function routeRpRegistry(page: Page, entry: RegistryEntry) {
   const queried: Hex[] = [];
@@ -51,7 +41,17 @@ export async function routeRpRegistry(page: Page, entry: RegistryEntry) {
   });
   return queried;
 }
-export const bridgeId = "00000000-0000-4000-8000-000000000001";
+/** What World Chain answers to the `getRp` call in `rpcRequest`, and the registry contract it was sent to. */
+export function rpRegistryReply(rpcRequest: string, entry: RegistryEntry) {
+  const { id, method, params } = JSON.parse(rpcRequest) as { id: number; method: string; params: [{ to: Hex }] };
+  if (method !== "eth_call") throw new Error(`Unexpected RPC method ${method}`);
+  const result = encodeFunctionResult({ abi: rpRegistryAbi, functionName: "getRp", result: {
+    initialized: true, active: entry.active, manager: zeroAddress, signer: entry.signer,
+    oprfKeyId: BigInt(entry.oprfKeyId), unverifiedWellKnownDomain: "",
+  } });
+  return { registry: params[0].to, body: { jsonrpc: "2.0", id, result } };
+}
+const bridgeId = "00000000-0000-4000-8000-000000000001";
 export async function encryptedRequest(payload: Payload) {
   const raw = new Uint8Array(32).fill(3);
   const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);

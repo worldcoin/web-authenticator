@@ -19,9 +19,6 @@
     "deploy:cf": "wrangler deploy",
     "cf:check": "wrangler deploy --dry-run"
   },
-  "dependencies": {
-    "zod": "4.5.4"
-  },
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "@happy-dom/global-registrator": "20.13.2",
