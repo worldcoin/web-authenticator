@@ -35,7 +35,7 @@ export type PoseGuardSignup = {
   }
 );
 
-export type PoseGuardOutcome = EnrollmentResult["state"] | "pending" | "captured";
+export type PoseGuardOutcome = EnrollmentResult["state"] | "pending";
 
 export type RunPoseGuard = (
   video: HTMLVideoElement,
@@ -58,14 +58,6 @@ export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
   return {
     policy, endpoint, mode: "production",
     authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
-  };
-}
-
-/** Runs the PoseGuard capture and TEE check without submitting to signup-service. */
-export function createPoseGuardCapture(session: RequestWalletSession, policy: SelfieEnrollmentPolicy, requestSignal: AbortSignal): RunPoseGuard {
-  return async (video, viewSignal, update) => {
-    await capturePoseGuard(session, policy, video, AbortSignal.any([requestSignal, viewSignal]), update, preparePoseGuardCamera, INDEXER_SYNC_DELAYS_MS);
-    return "captured";
   };
 }
 

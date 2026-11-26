@@ -28,6 +28,17 @@ export function logPoseGuardEvent(
 	else console.info(event, fields)
 }
 
+/** The RP registry read failed after its retries, or the RP is not active. Names only: no request material. */
+export function logRpLookupFailure(error: unknown, environment: string) {
+	const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : undefined
+	console.warn('rp_lookup_failed', {
+		dependency: 'world_chain_rpc',
+		environment,
+		name: error instanceof Error ? error.name : 'unknown_error',
+		...(cause ? { cause } : {}),
+	})
+}
+
 // Never log arguments, results, or raw dependency errors: they can contain secrets.
 export async function logFlowStep<T>(step: string, operation: () => Promise<T>): Promise<T> {
 	const started = performance.now()

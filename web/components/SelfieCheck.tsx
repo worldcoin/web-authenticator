@@ -91,7 +91,6 @@ export default function SelfieCheck({ onClose, onComplete, backLabel, completion
         enrollmentFinished.current = outcome !== "pending";
         if (outcome === "completed") { setAllSet(true); return; }
         const title = {
-          captured: "PoseGuard captures accepted",
           completed: "Enrollment complete",
           duplicate: "Face already enrolled",
           failed: "Enrollment failed",

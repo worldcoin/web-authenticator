@@ -3,8 +3,9 @@ import { currentProtocolEnvironment } from './environment';
 import { parseLegacyProfile } from './legacy-profile';
 import { derivePasskeySecrets, AUTHENTICATOR_SALT, STORAGE_SALT } from './legacy-passkey-secrets';
 import { registrationState, saveRegistrationState } from './wallet-persistence';
-import { initializeWalletKit, type CredentialStore, type WalletKit } from "@worldcoin/walletkit-web";
+import type { CredentialStore, WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
+import { initializeWalletKitFromCompressedWasm } from "./walletkit-wasm";
 import { openOrRegisterAuthenticator } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
@@ -247,7 +248,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
   try {
     signal.throwIfAborted();
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
-    client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal: opening.signal }));
+    client = await logFlowStep("walletkit.worker_initialize", () => initializeWalletKitFromCompressedWasm(opening.signal));
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : actualId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");

@@ -10,24 +10,24 @@ afterEach(async () => {
 });
 
 for (const mode of ["static", "dynamic", "worker"] as const) {
-  test(`browser build rejects API code through a ${mode} import`, async () => {
+  test(`browser build rejects build scripts through a ${mode} import`, async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "authenticator-boundary-"));
     temporaryDirectories.push(directory);
     const entry = resolve(directory, "entry.js");
-    const apiConfig = resolve(import.meta.dir, "../../api/lib/config.ts");
+    const buildScript = resolve(import.meta.dir, "../build/static-hosting.ts");
     if (mode === "worker") {
-      await writeFile(resolve(directory, "worker.js"), `import ${JSON.stringify(apiConfig)};`);
+      await writeFile(resolve(directory, "worker.js"), `import ${JSON.stringify(buildScript)};`);
       await writeFile(entry, 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" });');
     } else {
       await writeFile(entry, mode === "static"
-        ? `import ${JSON.stringify(apiConfig)};`
-        : `import(${JSON.stringify(apiConfig)});`);
+        ? `import ${JSON.stringify(buildScript)};`
+        : `import(${JSON.stringify(buildScript)});`);
     }
     await expect(build({
       configFile: resolve(import.meta.dir, "../vite.config.ts"),
       publicDir: false,
       logLevel: "silent",
       build: { write: false, rollupOptions: { input: entry } },
-    })).rejects.toThrow("Browser builds cannot import API, experiment, or test modules");
+    })).rejects.toThrow("Browser builds cannot import build script, experiment, or test modules");
   });
 }

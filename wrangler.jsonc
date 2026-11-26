@@ -1,58 +1,22 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
+  // Static assets only: there is no Worker script, so every request is answered from web/dist.
+  // Security and cache headers come from the generated web/dist/_headers file.
   "name": "web-authenticator-dev",
   "account_id": "ae97c44fcd31b9289a7455120d2698b2",
-  "main": "api/worker.ts",
   "compatibility_date": "2026-10-26",
-  "compatibility_flags": ["nodejs_compat"],
   // Terraform manages authenticator.toolsforhumanity.dev and its TFH Access policy.
   "workers_dev": false,
   "preview_urls": false,
   "assets": {
-    "directory": "./.artifacts/cloudflare/assets",
-    "binding": "ASSETS",
-    "run_worker_first": true,
-    "html_handling": "none",
-    "not_found_handling": "none"
+    "directory": "./web/dist",
+    // The router in web/App.tsx owns every path that is not a file.
+    "not_found_handling": "single-page-application"
   },
-  // Public identifiers for the Access app protecting authenticator.toolsforhumanity.dev.
-  // Update the audience if Terraform recreates that Access application.
-  "vars": {
-    "APP_ENV": "staging",
-    "CF_ACCESS_TEAM_DOMAIN": "toolsforhumanity.cloudflareaccess.com",
-    "CF_ACCESS_AUD": "d0a462b581bb5cc080282fb737691d2fa93332168d859514a0f2ab7fc6692d46"
-  },
-  "observability": {
-    "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": false }
-  },
-  "version_metadata": { "binding": "CF_VERSION_METADATA" },
-  // Keep staging's existing Worker identity and Access audience stable.
-  // Terraform owns hostname routing; production is deployed manually by Actions.
+  // Keep staging's existing Worker identity stable. Terraform owns hostname routing;
+  // production is deployed manually by Actions.
   "env": {
-    "staging": {
-      "name": "web-authenticator-dev",
-      "version_metadata": { "binding": "CF_VERSION_METADATA" },
-      // WEB_AUTH_RP_SIGNER is managed as a staging Worker secret.
-      "vars": {
-        "APP_ENV": "staging",
-        "CF_ACCESS_TEAM_DOMAIN": "toolsforhumanity.cloudflareaccess.com",
-        "CF_ACCESS_AUD": "d0a462b581bb5cc080282fb737691d2fa93332168d859514a0f2ab7fc6692d46",
-        // Web Authenticator v1; the Worker secret must be this RP's signing key.
-        "DEMO_APP_ID": "app_e05e48013341a4feca7ed126deaa15b6",
-        "DEMO_RP_ID": "rp_c8b34be5b84c6722",
-        // Public World Chain RPC; the demo verifies proofs with the staging World ID Verifier contract.
-        "DEMO_WORLDCHAIN_RPC_URL": "https://worldchain-mainnet.g.alchemy.com/public"
-      }
-    },
-    "production": {
-      "name": "web-authenticator-prod",
-      "version_metadata": { "binding": "CF_VERSION_METADATA" },
-      "vars": {
-        "APP_ENV": "production",
-        "CF_ACCESS_TEAM_DOMAIN": "",
-        "CF_ACCESS_AUD": ""
-      }
-    }
+    "staging": { "name": "web-authenticator-dev" },
+    "production": { "name": "web-authenticator-prod" }
   }
 }

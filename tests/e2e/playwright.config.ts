@@ -22,13 +22,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "bun run start",
+    command: "bun run preview --port 4194",
     cwd: repositoryRoot,
-    env: {
-      ...process.env,
-      AUTHENTICATOR_HOST: "127.0.0.1",
-      PORT: "4194",
-    },
     port: 4194,
     reuseExistingServer: false,
     timeout: 120_000,

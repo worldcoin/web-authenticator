@@ -15,11 +15,7 @@
     "web/vite-env.d.ts",
     "web/test/**/*.ts",
     "web/test/**/*.tsx",
-    "api/test/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts"
-  ],
-  "exclude": [
-    "api/test/cloudflare.test.ts"
   ]
 }

@@ -28,9 +28,13 @@ export interface EnvironmentConfig {
 const oprfNodes = (domain: string) =>
   [0, 1, 2, 3, 4].flatMap(node => [`https://node${node}.us.${domain}`, `wss://node${node}.us.${domain}`]);
 
+/** World Chain (chain 480) JSON-RPC; both environments' RP registries are deployed there. */
+export const WORLD_CHAIN_RPC_URL = "https://worldchain-mainnet.g.alchemy.com/public";
+
 /** Services that are the same for every environment. */
 export const SHARED_CONNECT_SRC: readonly string[] = Object.freeze([
   "https://wld-ml-face-engine-public.worldcoin.org", // Public face-engine model CDN.
+  new URL(WORLD_CHAIN_RPC_URL).origin,
   // Requests may arrive through either bridge; payloads are end-to-end encrypted.
   "https://bridge.worldcoin.org",
   "https://staging-bridge.worldcoin.org",
@@ -38,7 +42,7 @@ export const SHARED_CONNECT_SRC: readonly string[] = Object.freeze([
 
 /**
  * Everything that differs between staging and production. Each environment must name
- * all of its own services here; `api/test/environment.test.ts` fails if production
+ * all of its own services here; `tests/deployment/environment.test.ts` fails if production
  * references a staging host or the two environments share a protocol service.
  */
 export const ENVIRONMENTS: Readonly<Record<ProtocolEnvironment, EnvironmentConfig>> = Object.freeze({

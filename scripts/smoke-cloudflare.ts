@@ -1,31 +1,31 @@
+import { RELEASE_FILE, type ReleaseManifest } from "../config/build-manifest";
 import { APP_ORIGINS } from "../config/environment";
+import { securityHeaders } from "../config/security-headers";
 
-/** Verify the live hostname and deployed version, without creating wallets or captures. */
+/** Verify the live hostname serves the released build, without creating wallets or captures. */
 export async function smokeDeployment(environment: "production", commit: string, fetcher: typeof fetch = fetch) {
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("Expected a full release commit SHA");
   const origin = APP_ORIGINS[environment];
-  const get = async (path: string) => {
-    const response = await fetcher(origin + path, {
-      redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000),
-    });
+  const expectedHeaders = Object.entries(securityHeaders(environment));
+  const get = async (path: string, contentType: RegExp) => {
+    const response = await fetcher(origin + path, { redirect: "error", signal: AbortSignal.timeout(15_000) });
     if (response.status !== 200) throw new Error(`Deployment check failed (${response.status}) for ${path}`);
-    if (response.headers.get("cache-control") !== "no-store") throw new Error("Missing cache protection");
-    if (response.headers.get("x-content-type-options") !== "nosniff") throw new Error("Missing content-type protection");
+    for (const [name, value] of expectedHeaders) {
+      if (response.headers.get(name) !== value) throw new Error(`Unexpected ${name} header for ${path}`);
+    }
+    // The single-page fallback answers missing files with index.html, so the type proves the file exists.
+    if (!contentType.test(response.headers.get("content-type") ?? "")) throw new Error(`Unexpected content type for ${path}`);
     return response;
   };
-  const health = await (await get("/api/health/ready")).json() as Record<string, unknown>;
-  if (health.status !== "ready" || health.environment !== environment || health.protocol !== environment ||
-    health.origin !== origin || health.commit !== commit) throw new Error("Live deployment does not match the release");
-  const page = await get("/verify");
-  if (!page.headers.get("content-type")?.includes("text/html")) throw new Error("Missing authenticator HTML");
-  const html = await page.text();
+  const release = await (await get(`/${RELEASE_FILE}`, /^application\/json\b/)).json() as Partial<ReleaseManifest>;
+  if (release.environment !== environment || release.commit !== commit) throw new Error("Live deployment does not match the release");
+  const html = await (await get("/verify", /^text\/html\b/)).text();
   const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"#]+)"/g)].map(match => match[1]!);
   if (!scripts.length) throw new Error("Missing browser entry script");
   for (const script of scripts) {
     const url = new URL(script, origin);
     if (url.origin !== origin || !url.pathname.startsWith("/assets/")) throw new Error("Unexpected browser entry origin");
-    const asset = await get(url.pathname + url.search);
-    if (!/(?:javascript|ecmascript)/.test(asset.headers.get("content-type") ?? "")) throw new Error("Browser entry is unavailable");
+    const asset = await get(url.pathname + url.search, /(?:javascript|ecmascript)/);
     await asset.body?.cancel();
   }
 }

@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { signedRequest, encryptedRequest } from "../../tests/integration/fixtures/request";
+import { ENVIRONMENTS, WORLD_CHAIN_RPC_URL } from "../../config/environment";
+import { signedRequest, encryptedRequest, rpRegistryReply } from "../../tests/integration/fixtures/request";
 import { loadIncomingRequest, publicRequestUnsupportedReason } from "../lib/incoming-request";
 import { parseConnector, returnUrl } from "../lib/connector";
 import { parsePayload, validateSignature } from "../lib/proof-request";
@@ -17,7 +18,7 @@ async function fixture(returnToUrl?: string) {
   const requests: string[] = [];
   const mock = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); requests.push(url);
-    if (url.startsWith("/api/staging-rp")) return Response.json(registry);
+    if (url === WORLD_CHAIN_RPC_URL) return Response.json(rpRegistryReply(String(init?.body), registry).body);
     if (url.includes("/request/")) return Response.json(encrypted.body);
     if (url.includes("/response/")) {
       const wrapper = JSON.parse(String(init?.body));
@@ -88,7 +89,7 @@ test("proof generation revalidates the request and passes its constraints unchan
   } as unknown as WalletKit;
   await createProof(incoming, wallet, signal(), () => {});
   expect(JSON.parse(serialized)).toEqual(incoming.proof);
-  expect(f.requests.filter(url => url.startsWith("/api/staging-rp"))).toHaveLength(2);
+  expect(f.requests.filter(url => url === WORLD_CHAIN_RPC_URL)).toHaveLength(2);
   incoming.unsupportedReason = "User presence required";
   serialized = "";
   await expect(createProof(incoming, wallet, signal(), () => {})).rejects.toThrow("Proof generation failed");
@@ -115,7 +116,38 @@ test("payload validation rejects expiry, misleading action and malformed nested 
 });
 
 
-test("production accepts only production payloads and verifies the production RP endpoint", async () => {
+test("an RP is read from the environment's registry, retrying only transport failures", async () => {
+  const f = await fixture();
+  const answer = spyOn(globalThis, "fetch");
+  const registries: string[] = [];
+  const reply = (init?: RequestInit) => {
+    const { registry, body } = rpRegistryReply(String(init?.body), f.registry);
+    registries.push(registry);
+    return Response.json(body);
+  };
+  answer.mockImplementationOnce((async _input => new Response("unavailable", { status: 503 })) as typeof fetch)
+    .mockImplementationOnce((async (_input): Promise<Response> => { throw new TypeError("network down"); }) as typeof fetch)
+    .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  await validateSignature(f.payload.proof_request, signal(), "staging");
+  expect(answer).toHaveBeenCalledTimes(3);
+  expect(registries).toEqual([ENVIRONMENTS.staging.rpRegistry]);
+
+  answer.mockClear();
+  f.registry.active = false;
+  await expect(validateSignature(f.payload.proof_request, signal(), "staging")).rejects.toThrow("Could not validate this RP");
+  expect(answer).toHaveBeenCalledTimes(1);
+
+  answer.mockClear();
+  answer.mockImplementation((async _input => new Response("unavailable", { status: 503 })) as typeof fetch);
+  await expect(validateSignature(f.payload.proof_request, signal(), "staging")).rejects.toThrow("Could not validate this RP");
+  expect(answer).toHaveBeenCalledTimes(3);
+
+  const aborted = new AbortController();
+  aborted.abort(new DOMException("left the page", "AbortError"));
+  await expect(validateSignature(f.payload.proof_request, aborted.signal, "staging")).rejects.toThrow("left the page");
+});
+
+test("production accepts only production payloads and verifies the RP in the production registry", async () => {
   const { payload, registry } = await signedRequest();
   const json = (environment: string) => JSON.stringify({ ...payload, environment });
   expect(() => parsePayload(json("production"), "production")).not.toThrow();
@@ -124,9 +156,11 @@ test("production accepts only production payloads and verifies the production RP
   }
   expect(() => parsePayload(json("sandbox"), "staging")).not.toThrow();
   expect(() => parsePayload(json("production"), "staging")).toThrow("staging requests only");
-  const mock = spyOn(globalThis, "fetch").mockImplementation((async input => {
-    expect(String(input)).toBe("/api/rp?id=rp_1");
-    return Response.json(registry);
+  const mock = spyOn(globalThis, "fetch").mockImplementation((async (input, init) => {
+    expect(String(input)).toBe(WORLD_CHAIN_RPC_URL);
+    const reply = rpRegistryReply(String(init?.body), registry);
+    expect(reply.registry).toBe(ENVIRONMENTS.production.rpRegistry);
+    return Response.json(reply.body);
   }) as typeof fetch);
   restore = () => mock.mockRestore();
   await validateSignature(payload.proof_request, signal(), "production");

@@ -5,27 +5,19 @@
   "packageManager": "bun@1.4.2",
   "workspaces": [
     "web",
-    "api",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n web,api \"bun run --cwd web dev\" \"bun run --cwd api dev\"",
-    "build": "bun run build:web && bun run build:api",
-    "build:web": "bun run --cwd web build",
-    "build:api": "bun run --cwd api build",
-    "start": "bun run --cwd api start",
-    "start:tunnel": "bun --env-file=.env.tunnel api/dist/main.js",
+    "dev": "bun run --cwd web dev",
+    "build": "bun run --cwd web build",
+    "preview": "bun run --cwd web preview",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "bun run cf:types && bun run --cwd web typecheck && bun run --cwd api typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit && tsc -p tsconfig.cloudflare.json --noEmit",
-    "test": "bun test ./web/test ./api/test ./packages ./tests",
+    "typecheck": "bun run --cwd web typecheck && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "test": "bun test ./web/test ./packages ./tests",
     "test:web": "bun run --cwd web test",
-    "test:api": "bun run --cwd api test",
     "test:browser": "bun run build && playwright test -c tests/e2e/playwright.config.ts",
-    "build:cf": "bun scripts/build-cloudflare.ts",
     "deploy:cf": "wrangler deploy",
-    "cf:types": "wrangler types --strict-vars=false",
-    "cf:check": "wrangler deploy --dry-run",
-    "cf:package": "bun scripts/build-cloudflare.ts --package-only"
+    "cf:check": "wrangler deploy --dry-run"
   },
   "dependencies": {
     "zod": "4.5.4"
@@ -40,7 +32,6 @@
     "@types/bun": "1.3.11",
     "@types/node": "20.19.25",
     "axe-core": "4.13.0",
-    "concurrently": "9.2.1",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "7.1.1",

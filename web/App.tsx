@@ -1,8 +1,6 @@
 import { createRootRoute, createRoute, createRouter, RouterProvider, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "./AppShell";
-import { DemoPage, DemoProvider } from "./DemoPage";
-import { DEMO_PATH } from "../config/demo";
 import { AuthenticatorAccess } from "./components/AuthenticatorAccess";
 import { consentClient, type ConsentClient } from "./lib/consent";
 import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
@@ -14,9 +12,9 @@ import { defaultServices, VerifyPage, type Services } from "./VerifyPage";
 const parseSearch = (search: string) => (search.length > 1 ? { query: search.slice(1) } : {});
 const stringifySearch = (search: Record<string, unknown>) => (typeof search.query === "string" ? `?${search.query}` : "");
 
-// A new page needs only a route here: the servers serve index.html for every non-file path.
+// A new page needs only a route here: the host serves index.html for every path that is not a file.
 function createAppRouter({ services, consent }: { services: Services; consent: ConsentClient }) {
-  const root = createRootRoute({ component: () => <DemoProvider><AppShell consent={consent} /></DemoProvider> });
+  const root = createRootRoute({ component: () => <AppShell consent={consent} /> });
   // Both paths share this layout so navigation keeps the unlocked wallet mounted.
   const authenticator = createRoute({ getParentRoute: () => root, id: "authenticator-layout", component: function AuthenticatorRoute() {
     const navigate = useNavigate();
@@ -28,7 +26,6 @@ function createAppRouter({ services, consent }: { services: Services; consent: C
       createRoute({ getParentRoute: () => authenticator, path: "/authenticator" }),
     ]),
     createRoute({ getParentRoute: () => root, path: "/verify", component: () => <VerifyPage services={services} /> }),
-    createRoute({ getParentRoute: () => root, path: DEMO_PATH, component: DemoPage }),
   ]);
   return createRouter({ routeTree, parseSearch, stringifySearch });
 }
