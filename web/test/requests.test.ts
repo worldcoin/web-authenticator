@@ -144,6 +144,13 @@ test("an RP is read from the environment's registry, retrying only transient fai
   await validate();
   expect(performance.now() - started).toBeGreaterThanOrEqual(1_000);
   expect(answer).toHaveBeenCalledTimes(2);
+  answer.mockClear();
+  const retryAt = new Date(Math.ceil(Date.now() / 1_000) * 1_000 + 1_000);
+  answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 503, headers: { "Retry-After": retryAt.toUTCString() } })))
+    .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  await validate();
+  expect(Date.now()).toBeGreaterThanOrEqual(retryAt.getTime());
+  expect(answer).toHaveBeenCalledTimes(2);
 
   // JSON-RPC "limit exceeded" is transient; a rejected request and an inactive RP are not.
   answer.mockClear();

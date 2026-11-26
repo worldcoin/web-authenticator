@@ -77,9 +77,14 @@ test("the generated _headers file applies every security header within Cloudflar
     expect(lines).toEqual([
       "/*",
       ...Object.entries(securityHeaders(environment)).map(([name, value]) => `  ${name}: ${value}`),
-      // The request link's query holds the bridge key.
-      "/verify",
+      // A request link's query holds the bridge key, and any path can serve the app.
       "  Cache-Control: no-store",
+      "/assets/*",
+      "  ! Cache-Control",
+      "  Cache-Control: public, max-age=0, must-revalidate",
+      "/fonts/*",
+      "  ! Cache-Control",
+      "  Cache-Control: public, max-age=0, must-revalidate",
     ]);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(2_000);
   }

@@ -18,6 +18,9 @@ test("the build is a complete Cloudflare static deployment", async () => {
   expect(files.get("_headers")?.toString()).toBe(renderHeadersFile("staging"));
   expect(JSON.parse(files.get(RELEASE_FILE)!.toString())).toEqual({ environment: "staging", commit: process.env.RELEASE_COMMIT ?? null });
   for (const [name, bytes] of files) expect({ name, fits: bytes.byteLength <= CLOUDFLARE_ASSET_LIMIT }).toEqual({ name, fits: true });
+  // Only these directories are cacheable, so the bundle must not put a file anywhere else.
+  const outside = [...files.keys()].filter(name => !name.startsWith("assets/") && !["index.html", "_headers", RELEASE_FILE].includes(name));
+  expect(outside).toEqual([]);
 
   // WalletKit's WASM ships only gzipped, and the app is told what it must decompress to.
   const walletKit = [...files.keys()].filter(name => name.includes("walletkit") && name.includes(".wasm"));

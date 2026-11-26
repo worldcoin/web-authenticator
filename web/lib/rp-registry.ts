@@ -65,9 +65,12 @@ async function ethCall(to: Hex, data: Hex, signal: AbortSignal): Promise<Hex> {
   return reply.result as Hex;
 }
 
+/** `Retry-After` is either a number of seconds or an HTTP date. */
 function retryAfterMs(response: Response): number | undefined {
-  const seconds = Number(response.headers.get("Retry-After"));
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : undefined;
+  const value = response.headers.get("Retry-After")?.trim();
+  if (!value) return undefined;
+  const delay = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
+  return Number.isFinite(delay) && delay > 0 ? delay : undefined;
 }
 
 class RpcFailure extends Error {

@@ -46,12 +46,16 @@ export function cloudflareStaticHosting(environment: ProtocolEnvironment, commit
   return {
     name: "cloudflare-static-hosting",
     config: () => ({ preview: { headers: { ...securityHeaders(environment) } } }),
-    generateBundle() {
+    generateBundle(_options, bundle) {
+      for (const [name, file] of Object.entries(bundle)) {
+        const size = file.type === "asset" ? Buffer.byteLength(file.source) : Buffer.byteLength(file.code);
+        if (size > ASSET_SIZE_LIMIT) this.error(`${name} exceeds Cloudflare's 25 MiB static asset limit.`);
+      }
       const release: ReleaseManifest = { environment, commit: commit ?? null };
       this.emitFile({ type: "asset", fileName: "_headers", source: renderHeadersFile(environment) });
       this.emitFile({ type: "asset", fileName: RELEASE_FILE, source: JSON.stringify(release) });
     },
-    // Checked on disk so that files copied from web/public are covered too.
+    // Files copied from web/public never enter the bundle, so they are checked on disk.
     writeBundle(options) {
       if (!options.dir) return;
       for (const entry of readdirSync(options.dir, { recursive: true, withFileTypes: true })) {

@@ -20,7 +20,8 @@ if (!("bun" in process.versions)) {
 
     expect(flow.steps).toContain("walletkit.wasm_load completed");
     // WalletKit keeps its vault in the origin private file system, which Playwright's WebKit does not
-    // provide. There the worker stops at its storage, after it has loaded the WASM.
+    // provide, so its worker cannot start there. "OperationError" is the logger's category for errors
+    // other than a failed fetch (TypeError) or a WASM that does not compile or link.
     const privateFileSystem = await hasPrivateFileSystem(page);
     expect(privateFileSystem).toBe(browserName !== "webkit");
     expect(flow.failures).toEqual(privateFileSystem ? [] : ["walletkit.worker_initialize (OperationError)"]);

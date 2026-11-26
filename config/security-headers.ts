@@ -3,20 +3,23 @@ import { connectSources, type ProtocolEnvironment } from "./environment";
 /** Cloudflare drops `_headers` lines longer than this. */
 const HEADERS_FILE_LINE_LIMIT = 2_000;
 
-/** Request links carry the bridge key in their query, so this page must never be stored. */
-const REQUEST_PAGE_PATH = "/verify";
+/** Directories that hold only files: Vite's output and web/public. Every other path may be a page. */
+const FILE_DIRECTORIES = ["assets", "fonts"];
+const REVALIDATE = "public, max-age=0, must-revalidate";
 
 /**
- * Cloudflare static-assets `_headers` file. Files keep Cloudflare's default Cache-Control, which
- * makes browsers revalidate by ETag, so a file that was missing during a deployment (answered
- * with index.html by the single-page fallback) is never pinned in a cache.
+ * Cloudflare static-assets `_headers` file. Pages are never stored, because a request link carries
+ * the bridge key in its query and the single-page fallback serves the app on any path. Files are
+ * revalidated by ETag, not cached as immutable, so a file that was missing during a deployment
+ * (answered with index.html by the fallback) is never pinned in a cache.
  */
 export function renderHeadersFile(environment: ProtocolEnvironment): string {
-  const rules: [path: string, headers: Readonly<Record<string, string>>][] = [
-    ["/*", securityHeaders(environment)],
-    [REQUEST_PAGE_PATH, { "Cache-Control": "no-store" }],
+  const lines = [
+    "/*",
+    ...Object.entries({ ...securityHeaders(environment), "Cache-Control": "no-store" }).map(([name, value]) => `  ${name}: ${value}`),
+    // "!" detaches the value inherited from "/*"; without it Cloudflare joins both values.
+    ...FILE_DIRECTORIES.flatMap(directory => [`/${directory}/*`, "  ! Cache-Control", `  Cache-Control: ${REVALIDATE}`]),
   ];
-  const lines = rules.flatMap(([path, headers]) => [path, ...Object.entries(headers).map(([name, value]) => `  ${name}: ${value}`)]);
   const tooLong = lines.find(line => line.length > HEADERS_FILE_LINE_LIMIT);
   if (tooLong) throw new Error(`_headers line exceeds ${HEADERS_FILE_LINE_LIMIT} characters: ${tooLong.slice(0, 40)}…`);
   return `${lines.join("\n")}\n`;
