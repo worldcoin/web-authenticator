@@ -110,12 +110,12 @@ test('Selfie required in every alternative only enrolls when it can complete the
 
 test('request summary preserves AND/OR groups and identifies credentials by schema', () => {
 	assert.equal(credentialRequirementsLabel(request('orb')), 'Orb')
-	assert.equal(credentialRequirementsLabel(request('selfie')), 'Selfie Check')
-	assert.equal(credentialRequirementsLabel(request()), '(Selfie Check and Orb)')
-	assert.equal(credentialRequirementsLabel(request({ any: ['selfie', 'orb'] })), '(Selfie Check or Orb)')
+	assert.equal(credentialRequirementsLabel(request('selfie')), 'Proof of Presence')
+	assert.equal(credentialRequirementsLabel(request()), '(Proof of Presence and Orb)')
+	assert.equal(credentialRequirementsLabel(request({ any: ['selfie', 'orb'] })), '(Proof of Presence or Orb)')
 	const nested = request({ any: ['selfie', { all: ['orb', 'other'] }] })
 	nested.proof_requests.push({ identifier: 'other', issuer_schema_id: 128 })
-	assert.equal(credentialRequirementsLabel(nested), '(Selfie Check or (Orb and Schema 128))')
+	assert.equal(credentialRequirementsLabel(nested), '(Proof of Presence or (Orb and Schema 128))')
 	nested.proof_requests[0].issuer_schema_id = 1
 	assert.equal(credentialRequirementsLabel({ ...nested, constraints: 'selfie' }), 'Orb')
 })

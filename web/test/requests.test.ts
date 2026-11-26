@@ -47,9 +47,9 @@ test("the public flow accepts Selfie requests but rejects other schemas, mixed a
   expect(publicRequestUnsupportedReason(incoming)).toBeUndefined();
   incoming.proof.proof_requests.push({ identifier: "orb", issuer_schema_id: 1 });
   incoming.proof.constraints = { any: [incoming.proof.proof_requests[0]!.identifier, "orb"] };
-  expect(publicRequestUnsupportedReason(incoming)).toContain("Selfie Check requests only");
+  expect(publicRequestUnsupportedReason(incoming)).toContain("Proof of Presence requests only");
   incoming.proof.proof_requests = [{ identifier: "orb", issuer_schema_id: 1 }];
-  expect(publicRequestUnsupportedReason(incoming)).toContain("Selfie Check requests only");
+  expect(publicRequestUnsupportedReason(incoming)).toContain("Proof of Presence requests only");
   incoming.proof.proof_requests = [{ identifier: "selfie", issuer_schema_id: 11 }];
   incoming.unsupportedReason = "User presence is not implemented.";
   expect(publicRequestUnsupportedReason(incoming)).toBe(incoming.unsupportedReason);

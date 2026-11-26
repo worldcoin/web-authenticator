@@ -181,7 +181,7 @@ export class WalletKit {
 					const credential = await this.store.fetchCredential(BigInt(11), now)
 					try {
 						const claims = await credential?.claimsHex()
-						if (!claims?.length) throw new Error('Selfie credential score is unavailable')
+						if (!claims?.length) throw new Error('Proof of Presence credential score is unavailable')
 						// Preserve schema-11 z-score disclosure; this does not assert user presence.
 						item.claims = [claims[0]]
 					} finally {

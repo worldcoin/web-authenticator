@@ -8,6 +8,7 @@ import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
+import * as protocol from "../lib/environment";
 import { WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
@@ -15,6 +16,7 @@ import * as capture from "../lib/selfie-capture";
 import * as demo from "../lib/demo";
 import * as demoEnrollment from "../lib/demo-enrollment";
 import * as poseGuard from "../lib/poseguard/enrollment";
+import { BUMPER_TINT } from "../components/PoseTargetIndicator";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
@@ -56,6 +58,40 @@ test("unsupported presence requirements stop before passkey setup", async () => 
   expect(view.queryByRole("button", { name: "Start check" })).toBeNull();
 });
 
+test("while the passkey sheet is open the request stays on screen with Continue pending", async () => {
+  const f = await fixture(11);
+  let unlock!: (session: RequestWalletSession) => void;
+  f.services.unlock = () => { f.calls.unlocked++; return new Promise(resolve => { unlock = resolve; }); };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+  const pending = await view.findByRole("button", { name: "Continue" });
+  await waitFor(() => expect(pending.getAttribute("aria-busy")).toBe("true"));
+  expect((pending as HTMLButtonElement).disabled).toBe(true);
+  expect(view.getByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
+  expect(view.getByRole("status").textContent).toBe("Opening authenticator…");
+  // A second tap while pending must not open another passkey sheet.
+  fireEvent.click(pending);
+  expect(f.calls.unlocked).toBe(1);
+  const cancel = view.getByRole("button", { name: "Cancel request" }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(false);
+  fireEvent.click(cancel);
+  expect(await view.findByRole("heading", { name: "Check cancelled" })).toBeTruthy();
+  unlock({ ready: Promise.resolve({ wallet: f.wallet }), dispose: () => f.wallet.terminate() } as RequestWalletSession);
+});
+
+test("an unavailable passkey shows retry guidance on the same request", async () => {
+  const f = await fixture(11);
+  f.services.unlock = async () => { throw new DOMException("Dismissed", "NotAllowedError"); };
+  const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+  const button = await view.findByRole("button", { name: "Continue" });
+  fireEvent.click(button);
+  expect((await view.findByRole("alert")).textContent).toContain("timed out");
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  expect(view.getByRole("button", { name: "Continue" })).toBe(button);
+  expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+  expect(view.queryByText("Something went wrong")).toBeNull();
+});
+
 test("request intro names the RP only after validation, then starts the check", async () => {
   const f = await fixture(11); let opened = 0; let resolve!: (request: IncomingRequest) => void;
   f.services.load = () => new Promise(done => { resolve = done; });
@@ -75,6 +111,35 @@ test("request intro names the RP only after validation, then starts the check", 
   expect(opened).toBe(0);
   expect(f.calls.unlocked).toBe(1);
 });
+test("production consent stays actionable while the verified requester name loads from the authenticator", async () => {
+  const f = await fixture(11);
+  const appId = `app_${"a".repeat(32)}`;
+  f.incoming.appId = appId;
+  const response = Promise.withResolvers<Response>();
+  const lookup = spyOn(globalThis, "fetch").mockReturnValue(response.promise);
+  const environment = spyOn(protocol, "currentProtocolEnvironment").mockReturnValue("production");
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    const start = await view.findByRole("button", { name: "Continue" });
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+    expect(view.getByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
+    expect(lookup.mock.calls[0]?.[0]).toBe(`/api/requester-name?rp_id=rp_1&app_id=${appId}`);
+    response.resolve(Response.json({ name: "Example" }));
+    await view.findByRole("heading", { name: "Request from Example" });
+  } finally { lookup.mockRestore(); environment.mockRestore(); }
+});
+
+test("staging consent uses the validated RP ID without a metadata request", async () => {
+  const f = await fixture(11);
+  f.incoming.appId = `app_${"a".repeat(32)}`;
+  const lookup = spyOn(globalThis, "fetch");
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    await view.findByRole("heading", { name: "Request from rp_1" });
+    expect(lookup).not.toHaveBeenCalled();
+  } finally { lookup.mockRestore(); }
+});
+
 for (const [name, failure, title] of [
   ["expired", new RequestExpiredError("expired"), "This request has expired"],
   ["invalid", new Error("The RP request signature is invalid."), "This request can’t be verified"],
@@ -204,7 +269,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
   const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
   const configure = spyOn(demoEnrollment, "configureDemoEnrollment").mockReturnValue(async (_video, _signal, report) => {
     update = report;
-    update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
+    update({ phase: "starting", title: "Waiting for your World ID to sync", hint: "", progress: 0, cameraReady: false });
     return outcome;
   });
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("The demo requires PoseGuard."));
@@ -223,10 +288,17 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     ]);
     expect(f.calls.unlocked).toBe(0);
     fireEvent.click(view.getByRole("button", { name: "Continue" }));
+    const syncing = await view.findByRole("heading", { name: "Waiting for your World ID to sync" });
+    expect(syncing.closest('[role="status"]')).toBeTruthy();
+    expect(view.getByTestId("camera-loading")).toBeTruthy();
+    act(() => update({ phase: "framing", title: "Getting ready", hint: "", progress: 0, cameraReady: true }));
+    expect(view.queryByTestId("camera-loading")).toBeNull();
+    expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Getting ready");
+    act(() => update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } }));
     // Live guidance is a pill over the camera: no text above it, no step count, no icon while framing the centre.
     const pill = await view.findByTestId("selfie-guidance-pill");
     expect(pill.textContent).toBe("Look straight");
-    expect(pill.querySelector("svg")).toBeNull();
+    expect(pill.querySelector("svg, [data-icon]")).toBeNull();
     expect(view.queryByRole("heading", { name: "Look straight" })).toBeNull();
     expect(view.queryByText(/Step \d of \d/)).toBeNull();
     expect(view.queryByTestId("pose-target-indicator")).toBeNull();
@@ -235,7 +307,7 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     // Holding the centre is guidance, not loading: no spinner once the targets have arrived.
     act(() => update({ phase: "holding", title: "Hold steady", hint: "", progress: 0.12, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } }));
     expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Hold steady");
-    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")).toBeNull();
+    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg, [data-icon]")).toBeNull();
     act(() => {
       update({ phase: "captured", title: "Hold steady", hint: "", progress: 0.25,
         cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
@@ -250,11 +322,11 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(ring.querySelectorAll("circle").length).toBeLessThan(64);
     // The pill's arrow points the same way as the bumper.
     expect(view.getByTestId("selfie-guidance-pill").textContent).toBe("Turn left");
-    expect(view.getByTestId("selfie-guidance-pill").querySelector("svg")!.style.transform).toBe("rotate(270deg)");
+    expect(view.getByTestId("selfie-guidance-pill").querySelector<HTMLElement>("[data-testid=guidance-arrow]")!.style.transform).toBe("rotate(270deg)");
     // A left turn puts the bumper and chevron at 270° on the ring; the bumper goes solid while the user holds.
     const indicator = view.getByTestId("pose-target-indicator");
     expect(indicator.dataset).toMatchObject({ angle: "270", aligned: "false" });
-    expect(indicator.querySelector("path")!.getAttribute("stroke")).toBe("#c8e4fe");
+    expect(indicator.querySelector("path")!.getAttribute("stroke")).toBe(BUMPER_TINT);
     expect(indicator.querySelectorAll("path")[1]!.getAttribute("transform")).toMatch(/rotate\(270\.0\)$/);
     act(() => update({ phase: "holding", title: "Turn left", hint: "", progress: 0.3, cameraReady: true,
       target: { pitch: 0, yaw: 30 }, poseStep: { index: 2, total: 4 } }));
@@ -262,16 +334,24 @@ test("the localhost demo opens the wallet and follows PoseGuard directions befor
     expect(view.getByTestId("pose-target-indicator").querySelector("path")!.getAttribute("stroke")).toBe("currentColor");
     expect(view.queryByRole("heading", { name: "PoseGuard captures accepted" })).toBeNull();
 
-    // Processing shows its message alone: no oval, ring or camera preview.
+    // The live aperture disappears immediately; only the last dotted outline can dissolve.
     act(() => update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false }));
     expect(view.getByRole("heading", { name: "Processing liveness" })).toBeTruthy();
     expect(view.getByText("This might take a few seconds")).toBeTruthy();
-    expect(view.getByTestId("processing-glyph")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").dataset.result).toBe("pending");
+    expect(view.getByTestId("presence-badge").querySelector("svg circle")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").querySelector("svg g")).toBeNull();
+    expect(view.getByTestId("presence-badge").textContent).toBe("");
     expect(view.queryByTestId("selfie-guidance-pill")).toBeNull();
-    expect(view.getByTestId("selfie-camera-stage").classList.contains("hidden")).toBe(true);
+    expect(view.getByTestId("selfie-camera-stage").querySelector("video")!.parentElement!.hidden).toBe(true);
+    expect(view.getByRole("region", { name: "Selfie capture" }).getAttribute("data-camera-handoff")).toBe("true");
+    expect(view.getByTestId("selfie-design-ring").querySelectorAll('[data-filled="true"]')).toHaveLength(19);
 
     finish("captured");
     expect(await view.findByRole("heading", { name: "PoseGuard captures accepted" })).toBeTruthy();
+    expect(view.getByTestId("presence-badge").dataset.result).toBe("accepted");
+    expect(view.getByTestId("presence-badge").querySelector("svg g path")).toBeTruthy();
+    expect(view.getByTestId("presence-badge").textContent).toBe("W");
     expect(view.getByText(demoAction)).toBeTruthy();
     expect(view.queryByText("Use the staging demo to test signup-service.")).toBeNull();
     expect(view.queryByText("Beta", { exact: true })).toBeNull();
@@ -337,18 +417,20 @@ test.each(["accepted", "rejected", "replayed", "saved"] as const)("hosted demo s
       return;
     }
     if (result === "saved") {
-      // A saved credential skips capture: the same spinner, then the same end screen.
+      // A saved credential skips capture: the same badge opening, then the same end screen.
       expect(await view.findByRole("heading", { name: "Generating proof" })).toBeTruthy();
-      expect(view.getByTestId("processing-glyph")).toBeTruthy();
+      expect(view.getByTestId("presence-badge").dataset.result).toBe("pending");
+      expect(view.queryByRole("button", { name: "Menu" })).toBeNull();
       expect(configure).not.toHaveBeenCalled();
       expect(f.calls.deliver).toEqual(["test-proof"]);
       verdict.resolve();
       expect(await view.findByTestId("all-set", undefined, { timeout: 3_000 })).toBeTruthy();
       expect(view.getByRole("heading", { name: "You’re all set" })).toBeTruthy();
+      expect(view.queryByRole("button", { name: "Menu" })).toBeNull();
       return;
     }
-    // The spinner keeps running while the demo verifies the delivered proof.
-    expect(await view.findByTestId("processing-glyph")).toBeTruthy();
+    // The badge opening loops while the demo verifies the delivered proof.
+    expect((await view.findByTestId("presence-badge")).dataset.result).toBe("pending");
     expect(view.getByRole("heading", { name: "Credential received" })).toBeTruthy();
     expect(f.calls.deliver).toEqual(["test-proof"]);
     expect(configure).toHaveBeenCalledTimes(1);
@@ -435,7 +517,7 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(f.calls.prove).toBe(0);
 });
 
-test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {
+test("standalone creation opens a passkey wallet and offers the Proof of Presence preview", async () => {
   localStorage.clear(); visit("/");
   const f = await fixture(11);
   let mode: string | undefined;
@@ -451,7 +533,7 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
     expect(mode).toBe("create");
     expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    fireEvent.click(view.getByRole("button", { name: "Set up Proof of Presence" }));
     expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
   } finally { localStorage.clear(); }
 });
@@ -478,7 +560,7 @@ test("saved access requires explicit sign-in and shows credentials without start
   } finally { localStorage.clear(); }
 });
 
-test("an active Selfie Check does not offer setup", async () => {
+test("an active Proof of Presence does not offer setup", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   try {
     visit("/");
@@ -486,7 +568,7 @@ test("an active Selfie Check does not offer setup", async () => {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("1 credential in your authenticator.")).toBeTruthy();
-    expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Set up Proof of Presence" })).toBeNull();
   } finally { localStorage.clear(); }
 });
 

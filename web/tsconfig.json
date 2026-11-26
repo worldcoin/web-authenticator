@@ -14,6 +14,7 @@
     "App.tsx",
     "main.tsx",
     "vite-env.d.ts",
+    "design/**/*",
     "components/**/*",
     "lib/**/*"
   ]

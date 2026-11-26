@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { securityHeaders } from "../lib/security-headers";
+import { DEMO_REQUEST_PATH } from "../../config/demo";
 import { secureRoutes } from "../lib/http";
 import { createServerOptions } from "../server";
 const servers: ReturnType<typeof Bun.serve>[] = [];
@@ -94,6 +95,20 @@ test("RP lookup rejects malformed identifiers without a remote call", async () =
   const response = await get("/api/staging-rp?id=bad");
   expect(response.status).toBe(400);
   expectSecurityHeaders(response);
+});
+test("only a loopback staging demo can request a signature from Bun", async () => {
+  const wrongOrigin = await get(DEMO_REQUEST_PATH, { method: "POST", headers: { Origin: "https://other.example" } });
+  expect(wrongOrigin.status).toBe(403);
+  const production = start({ environment: "production" });
+  const unavailable = await fetch(production + DEMO_REQUEST_PATH, { method: "POST", headers: { Origin: production } });
+  expect(unavailable.status).toBe(404);
+});
+test("requester names are served only by the production API", async () => {
+  const path = "/api/requester-name?rp_id=bad";
+  expect((await get(path)).status).toBe(404);
+  const live = start({ environment: "production" });
+  expect((await fetch(live + path)).status).toBe(400);
+  expect((await fetch(live + path, { method: "POST" })).status).toBe(404);
 });
 test("API routes reject other methods as JSON 404 instead of serving the web app", async () => {
   for (const path of ["/api/staging-rp?id=rp_1", "/api/health/live"]) {

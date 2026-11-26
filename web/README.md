@@ -14,7 +14,7 @@ The browser fetches and decrypts the request and checks its RP signature. Only S
 temporary camera flow. Mixed requests, user-presence requirements and identity
 attributes remain unsupported. Direct visits open the authenticator. A user can create a World ID with a passkey
 or sign in to an existing authenticator in this browser. Linking is not available.
-A signed-in user without an active Selfie Check can open the camera preview;
+A signed-in user without an active Proof of Presence can open the camera preview;
 credential issuance is not yet connected. World links and cookie settings are available from the floating menu.
 
 The public flow uses local capture as its completion signal; it does not send a

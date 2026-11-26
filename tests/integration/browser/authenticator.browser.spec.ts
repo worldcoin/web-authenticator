@@ -34,37 +34,36 @@ if (!("bun" in process.versions)) {
     for (const viewport of [{ width: 320, height: 568 }, { width: 393, height: 852 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
       await page.setViewportSize(viewport);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width);
-      await expect(page.locator("body")).toHaveCSS("background-color", "rgb(249, 249, 248)");
+      expect(Math.round((await page.getByRole("main").boundingBox())!.width)).toBe(viewport.width < 600 ? viewport.width : 480);
+      await expect(page.getByRole("main")).toHaveCSS("border-radius", viewport.width < 600 ? "0px" : "28px");
       await expect(page.getByRole("main")).toHaveCSS("box-shadow", "none");
       await page.screenshot({ path: `test-results/screenshots/${info.project.name}-home-${viewport.width}.png`, fullPage: true });
     }
   });
 
   test("public capture retries failure and completes with its already unlocked wallet", async ({ page }, info) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await installCamera(page);
     const { payload, registry } = await signedRequest(11);
     const encrypted = await encryptedRequest(payload);
     await page.route("https://staging-bridge.worldcoin.org/request/*", route => route.fulfill({ json: encrypted.body, headers: { "access-control-allow-origin": "*" } }));
     await page.route("**/api/staging-rp?*", route => route.fulfill({ json: registry }));
     await page.goto("/verify" + encrypted.query + "&deny");
+    const frame = page.getByRole("main");
+    const introBounds = await frame.boundingBox();
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByRole("heading", { name: "Allow camera access" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
+    expect(await frame.boundingBox()).toEqual(introBounds);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-camera-failure.png`, fullPage: true });
     await page.evaluate(() => { (window as typeof window & { cameraTest: { deny: boolean } }).cameraTest.deny = false; });
     // Record completion atomically instead of racing it with separate browser round trips.
     const captureBorder = page.evaluate(() => new Promise(resolve => {
-      // The hold lasts about a second, so record its first partial frame here rather than by polling.
-      let partialFill: string | undefined;
       const observer = new MutationObserver(() => {
-        const filled = document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]');
-        if (partialFill === undefined && filled.length > 0 && filled.length < 64) partialFill = getComputedStyle(filled[0]).fill;
         if (document.querySelector("[data-stage]")?.getAttribute("data-stage") !== "capture-border") return;
         observer.disconnect();
         resolve({
-          partialFill,
           filledDots: document.querySelectorAll('[data-testid=selfie-design-ring] circle[data-filled="true"]').length,
           still: !!document.querySelector('[data-testid=selfie-photo]'),
           checkmark: !!document.querySelector('[data-testid=selfie-complete]'),
@@ -78,7 +77,7 @@ if (!("bun" in process.versions)) {
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Looking good. Hold still" })).toBeVisible();
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-hold-progress.png`, fullPage: true });
-    expect(await captureBorder).toEqual({ partialFill: "rgb(0, 124, 251)", filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
+    expect(await captureBorder).toEqual({ filledDots: 64, still: false, checkmark: false, live: true, title: "Selfie completed", animationDuration: "0.3s" });
     await expect(page.getByRole("heading", { name: "Selfie captured" })).toBeVisible();
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.getByRole("link")).toHaveCount(0);
@@ -90,6 +89,7 @@ if (!("bun" in process.versions)) {
     await expect(page.getByText("You can close this page.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save with passkey" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+    expect(await frame.boundingBox()).toEqual(introBounds);
     await page.screenshot({ path: `test-results/screenshots/${info.project.name}-public-finished.png`, fullPage: true });
   });
 
@@ -121,7 +121,7 @@ if (!("bun" in process.versions)) {
         const border = page.getByTestId("selfie-completion-border");
         await expect(page.getByTestId("selfie-success-fill")).toHaveCount(0);
         await expect(border).toHaveCSS("fill", "none");
-        await expect(border).toHaveCSS("stroke", "rgb(40, 168, 107)");
+        await expect(border).toHaveCSS("stroke", "rgb(0, 194, 48)");
         await expect(border).toHaveCSS("stroke-dasharray", "1px, 0px");
         await expect(page.locator("[data-testid=selfie-design-ring] circle").first()).toBeHidden();
         await expect(border).toHaveCSS("animation-name", "none");
@@ -240,7 +240,7 @@ if (!("bun" in process.versions)) {
     await page.goto("/");
     const signIn = page.getByRole("button", { name: "Sign in with passkey" });
     await expect(signIn).toBeEnabled();
-    await expect(signIn).toHaveCSS("background-color", "rgb(10, 92, 254)");
+    await expect(signIn).toHaveCSS("background-color", "rgb(31, 31, 31)");
     await page.getByRole("button", { name: "Create a new World ID" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-passkey-requested", "true");
     await expect(page.getByRole("status")).toContainText("Create your passkey to continue.");

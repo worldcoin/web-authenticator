@@ -1,6 +1,6 @@
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { use, useEffect, useRef, useState } from "react";
-import { CompletionAnimationContext } from "./AppShell";
+import { RequestControlsContext } from "./AppShell";
 import { DemoContext } from "./DemoPage";
 import { isDemoHandoff } from "./lib/demo";
 import { DEMO_PATH } from "../config/demo";
@@ -8,6 +8,8 @@ import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-reques
 import { RequestExpiredError } from "./lib/proof-request";
 import { openAuthenticator, openRequestWallet } from "./lib/wallet-session";
 import { PublicRequestFlow } from "./PublicRequestFlow";
+import { loadRequesterName } from "./lib/requester-name";
+import { currentProtocolEnvironment } from "./lib/environment";
 
 export const defaultServices = { open: openAuthenticator, load: loadIncomingRequest, unlock: openRequestWallet };
 export type Services = typeof defaultServices;
@@ -18,8 +20,10 @@ export function VerifyPage({ services }: { services: Services }) {
   const navigate = useNavigate();
   const demo = use(DemoContext);
   const [bridgeId] = useState(() => new URL(window.location.href).searchParams.get("i"));
-  const setCompletionAnimating = use(CompletionAnimationContext);
+  const setRequestControlsHidden = use(RequestControlsContext);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
+  const attempt = demo?.attempt;
+  const [initialAttempt] = useState(attempt);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -34,7 +38,15 @@ export function VerifyPage({ services }: { services: Services }) {
     // Through the router's history so its location state drops the key too.
     if (url.searchParams.has("k")) history.replace(window.location.pathname);
     void services.load(source.current, controller.signal, () => {}).then(request => {
-      if (!controller.signal.aborted) { source.current = null; setIncoming(request); setLoading(false); }
+      if (controller.signal.aborted) return;
+      source.current = null;
+      setIncoming(request);
+      setLoading(false);
+      if (!request?.appId || (initialAttempt && isDemoHandoff(initialAttempt, request)) || currentProtocolEnvironment() !== "production") return;
+      void loadRequesterName(request.proof.rp_id, request.appId,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(5000)])).then(label => {
+        if (label && !controller.signal.aborted) setIncoming(current => current === request ? { ...current, label } : current);
+      }).catch(() => { /* Keep the validated RP ID when display metadata is unavailable. */ });
     }).catch(cause => {
       if (!controller.signal.aborted) {
         source.current = null;
@@ -48,7 +60,7 @@ export function VerifyPage({ services }: { services: Services }) {
     window.addEventListener("pagehide", stop);
     window.addEventListener("pageshow", restore);
     return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
-  }, [services, history]);
+  }, [services, history, initialAttempt]);
 
   useEffect(() => {
     if (!incoming) return;
@@ -56,7 +68,6 @@ export function VerifyPage({ services }: { services: Services }) {
     return () => clearTimeout(timer);
   }, [incoming]);
 
-  const attempt = demo?.attempt;
   const fromDemo = attempt !== undefined && attempt.bridgeId === bridgeId;
   const mismatch = fromDemo && incoming !== null && !isDemoHandoff(attempt, incoming);
   const demoFlow = fromDemo && demo ? {
@@ -74,6 +85,6 @@ export function VerifyPage({ services }: { services: Services }) {
     back: () => { demo.cancel(); void navigate({ to: DEMO_PATH, replace: true }); },
   } : undefined;
   return <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed || mismatch} expired={loadExpired || expired}
-    demo={demoFlow} onTransitionChange={setCompletionAnimating} onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}
+    demo={demoFlow} onControlsHiddenChange={setRequestControlsHidden} onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}
     />;
 }

@@ -3,6 +3,9 @@ const HEIGHT = 481.637;
 const DOT_COUNT = 64;
 const SURFACE_INSET = 11;
 const RING_GAP = 8;
+// Unfilled dots. Nucleus has no grey-300 semantic, so this is the primary foreground at the old track grey's weight.
+// TODO: Use a Nucleus semantic once one matches the ring track.
+const DOT_TRACK = "color-mix(in srgb, var(--color-foreground-primary) 12%, var(--color-background-primary))";
 
 /** The ring's SVG coordinate space; overlays use it to line up with the dots. */
 export const RING_VIEW_BOX = `0 0 ${WIDTH} ${HEIGHT}`;
@@ -38,10 +41,10 @@ export function CaptureProgressRing({ progress, gap }: { progress: number; gap?:
   const filled = Math.floor(Math.max(0, Math.min(1, progress)) * DOT_COUNT);
   const covered = (degrees: number) => !!gap && Math.abs(((degrees - gap.degrees + 540) % 360) - 180) <= gap.span / 2;
   // On completion the dots give way to a border that the capture-border stage animates.
-  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full text-accent" data-testid="selfie-design-ring" viewBox={RING_VIEW_BOX} fill="none" aria-hidden="true">
-    {DOTS.map(({ x, y, degrees }, index) => covered(degrees) ? null : <circle className="group-data-[transitioning=true]/selfie:invisible" fill={index < filled ? "currentColor" : "#e3e3e3"} key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
+  return <svg className="pointer-events-none absolute top-0 left-0 h-auto w-[345.005px] max-w-full text-accent-blue" data-testid="selfie-design-ring" viewBox={RING_VIEW_BOX} fill="none" aria-hidden="true">
+    {DOTS.map(({ x, y, degrees }, index) => covered(degrees) ? null : <circle className="group-data-[transitioning=true]/selfie:invisible" fill={index < filled ? "currentColor" : DOT_TRACK} key={index} cx={x} cy={y} r="2.94866" data-filled={index < filled} />)}
     <path className="hidden group-data-[transitioning=true]/selfie:block group-data-[stage=capture-border]/sequence:motion-safe:animate-selfie-border-complete" data-testid="selfie-completion-border" d={BORDER_PATH} pathLength={DOT_COUNT}
-      stroke="#28a86b" strokeWidth="5.89732" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1 0" strokeDashoffset="0.5" />
+      stroke="var(--color-status-success)" strokeWidth="5.89732" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1 0" strokeDashoffset="0.5" />
   </svg>;
 }
 

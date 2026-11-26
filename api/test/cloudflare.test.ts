@@ -199,6 +199,9 @@ test("production requires its configured HTTPS origin and exposes its version", 
   }
   expect(reads).toBe(before);
   expect((await handle(new Request(origin + "/api/rp?id=invalid"), env)).status).toBe(400);
+  expect((await handle(new Request(origin + "/api/requester-name?rp_id=invalid"), env)).status).toBe(400);
+  const staging = createWorkerHandler(async () => undefined);
+  expect((await staging(request("/api/requester-name?rp_id=invalid"), { ...env, APP_ENV: "staging" })).status).toBe(404);
   expect((await handle(new Request(origin + "/api/staging-rp?id=invalid"), env)).status).toBe(404);
   expect(authentications).toBe(0);
   expect(response.headers.get("content-security-policy")).toBe(securityHeaders("production")["Content-Security-Policy"]);

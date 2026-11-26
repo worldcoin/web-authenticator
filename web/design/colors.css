@@ -1,0 +1,59 @@
+/*
+ * Nucleus colors as Tailwind utilities, the web counterpart of iOS WLDColor.
+ * Components use only these semantic names (text-foreground-primary, bg-background-secondary,
+ * border-stroke-secondary, text-status-error, text-accent-blue, …), never hex values or primitives.
+ */
+@import "@worldcoin/nucleus/nucleus-primitive-colors.css";
+@import "@worldcoin/nucleus/nucleus-semantic-colors-light.css";
+
+/* TODO: Add Nucleus dark mode (nucleus-semantic-colors-dark.css) once every surface uses these tokens. */
+
+@theme inline {
+  /* Only Nucleus colors exist: Tailwind's default palette is removed. */
+  --color-*: initial;
+
+  --color-surface-page: var(--nucleus-surface-page);
+  --color-surface-overlay: var(--nucleus-surface-overlay);
+
+  --color-foreground-primary: var(--nucleus-foreground-primary);
+  /* The light secondary token falls below 4.5:1 for body text on the page surface. */
+  --color-foreground-secondary: var(--nucleus-grey-800);
+  --color-foreground-tertiary: var(--nucleus-grey-700);
+  --color-foreground-inverse: var(--nucleus-foreground-inverse);
+  --color-foreground-disabled: var(--nucleus-foreground-disabled);
+
+  --color-background-primary: var(--nucleus-background-primary);
+  --color-background-secondary: var(--nucleus-background-secondary);
+  --color-background-tertiary: var(--nucleus-background-tertiary);
+  --color-background-inverse: var(--nucleus-background-inverse);
+  --color-background-disabled: var(--nucleus-background-disabled);
+  --color-background-transparent: var(--nucleus-background-transparent);
+
+  --color-stroke-primary: var(--nucleus-stroke-primary);
+  --color-stroke-secondary: var(--nucleus-stroke-secondary);
+  --color-stroke-tertiary: var(--nucleus-stroke-tertiary);
+  --color-stroke-transparent: var(--nucleus-stroke-transparent);
+
+  --color-status-error: var(--nucleus-status-error);
+  --color-status-warning: var(--nucleus-status-warning);
+  --color-status-success: var(--nucleus-status-success);
+  --color-status-info: var(--nucleus-status-info);
+  --color-status-neutral: var(--nucleus-status-neutral);
+  --text-color-status-success: var(--nucleus-green-800);
+  --text-color-status-error: var(--nucleus-red-700);
+
+  --color-accent-orange: var(--nucleus-accent-orange);
+  --color-accent-purple: var(--nucleus-accent-purple);
+  --color-accent-pink: var(--nucleus-accent-pink);
+  --color-accent-magenta: var(--nucleus-accent-magenta);
+  --color-accent-aqua: var(--nucleus-accent-aqua);
+  --color-accent-blue: var(--nucleus-accent-blue);
+
+  /*
+   * Extras Nucleus does not define yet, like iOS NucleusColor+Extras. Built from Nucleus primitives;
+   * upstream them to Nucleus rather than adding hex values here.
+   */
+  --color-status-error-background: var(--nucleus-red-100);
+  --color-status-error-stroke: var(--nucleus-red-200);
+  --color-status-success-background: var(--nucleus-green-100);
+}

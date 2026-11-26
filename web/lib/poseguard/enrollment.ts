@@ -252,7 +252,7 @@ async function capturePoseGuard(
       attestation_header: result.enrollment.attestationHeader,
     });
     const identity = validateEnrollmentCapture(capture);
-    if (identity.sub !== sub) throw new Error("The selfie enrollment does not match this wallet.");
+    if (identity.sub !== sub) throw new Error("The Proof of Presence enrollment does not match this wallet.");
     if (import.meta.env.DEV) {
       const encoder = new TextEncoder();
       logPoseGuardEvent("poseguard_bundle_validated", {

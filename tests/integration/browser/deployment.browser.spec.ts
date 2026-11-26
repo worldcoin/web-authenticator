@@ -29,6 +29,12 @@ if (!("bun" in process.versions)) {
         const url = new URL(route.request().url());
         if (url.pathname.startsWith("/api/")) {
           lookups.push(url.pathname);
+          if (url.pathname === "/api/requester-name") {
+            expect(route.request().method()).toBe("GET");
+            expect(Object.fromEntries(url.searchParams)).toEqual({ rp_id: payload.proof_request.rp_id, app_id: payload.app_id });
+            await route.fulfill({ json: { name: "Fixture app" } });
+            return;
+          }
           await route.fulfill({ json: registry });
           return;
         }
@@ -41,7 +47,12 @@ if (!("bun" in process.versions)) {
       await page.goto(origin + "/verify" + encrypted.query);
       if (accepted) {
         await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
-        expect(lookups).toEqual([endpoint]);
+        if (environment === "production") {
+          await expect(page.getByRole("heading", { name: "Request from Fixture app" })).toBeVisible();
+          expect(lookups).toEqual([endpoint, "/api/requester-name"]);
+        } else {
+          expect(lookups).toEqual([endpoint]);
+        }
       } else {
         await expect(page.getByRole("heading", { name: "This request can’t be verified" })).toBeVisible();
         await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);

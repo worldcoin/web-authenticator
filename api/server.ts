@@ -9,7 +9,7 @@ export function createServerOptions(options: { staticRoot?: string; environment?
   const staticRoot = resolve(options.staticRoot ?? DEFAULT_STATIC_ROOT);
   const environment = options.environment ?? AUTHENTICATOR_APP_CONFIG.environment;
   return {
-    routes: secureRoutes(createRoutes({ staticRoot }), environment),
+    routes: secureRoutes(createRoutes({ staticRoot, environment }), environment),
     fetch: withSecurityHeaders(request => serveStatic(request, staticRoot), environment),
     error: (error: Error) => internalError(error, environment),
   };

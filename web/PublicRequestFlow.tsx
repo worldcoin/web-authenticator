@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RequestIntro } from "./components/RequestIntro";
 import { RequestCompletion } from "./components/RequestCompletion";
-import { ProcessingStatus, type EndAction } from "./components/ProcessingGlyph";
+import { ProcessingStatus, type EndAction } from "./components/ProcessingStatus";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
@@ -11,7 +11,7 @@ import type { DemoProofSource } from "./lib/demo";
 import { abortable } from "./lib/async";
 import { configureDemoEnrollment } from "./lib/demo-enrollment";
 import { configuredPoseGuardSignup, createPoseGuardEnrollment, type RunPoseGuard } from "./lib/poseguard/enrollment";
-import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
+import { captureFrame, requestFrame } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 // The second of two loading messages; enrollment shows "Processing liveness" before it.
@@ -27,7 +27,7 @@ const COMPLETION_STEPS = {
 const sequence = "group/sequence data-[paused=true]:**:[animation-play-state:paused]";
 
 /** App requests hold a temporary capture; saved authenticator access lives on its own route. */
-export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onTransitionChange, demo }: {
+export function PublicRequestFlow({ incoming, loading, failed, expired, onDispose, onUnlock, onControlsHiddenChange, demo }: {
   incoming: IncomingRequest | null;
   loading: boolean;
   failed: boolean;
@@ -39,12 +39,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     captureComplete: () => void;
     back: () => void;
   };
-  onTransitionChange: (active: boolean) => void;
+  onControlsHiddenChange: (hidden: boolean) => void;
   onUnlock: (signal: AbortSignal, progress: (message: string) => void) => Promise<RequestWalletSession>;
 }) {
   const [flow, setFlow] = useState<Flow>({ stage: "intro" });
   const [paused, setPaused] = useState(() => document.hidden);
   const [cancelError, setCancelError] = useState<string>();
+  const [departingRequester, setDepartingRequester] = useState<string>();
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string>();
   const [openProgress, setOpenProgress] = useState("Opening authenticator…");
@@ -64,11 +65,12 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   }, [stop]);
   useEffect(() => { if (expired) stop(); }, [expired, stop]);
 
-  const automatic = flow.stage in COMPLETION_STEPS;
+  const proving = flow.stage === "proving" || flow.stage === "all-set";
+  const hideControls = proving || flow.stage in COMPLETION_STEPS;
   useLayoutEffect(() => {
-    onTransitionChange(automatic);
-    return () => onTransitionChange(false);
-  }, [automatic, onTransitionChange]);
+    onControlsHiddenChange(hideControls);
+    return () => onControlsHiddenChange(false);
+  }, [hideControls, onControlsHiddenChange]);
 
   // One clock owns the sequence. Hidden tabs retain the remaining visible time.
   useEffect(() => {
@@ -149,6 +151,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     const controller = new AbortController();
     operation.current = controller;
     const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
+    const requester = demo ? "Web Authenticator" : incoming.label;
     setOpening(true); setOpenError(undefined); setOpenProgress("Opening authenticator…");
     try {
       const current = await abortable(onUnlock(deadline, message => {
@@ -167,15 +170,17 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
           checkExpiry(incoming.proof);
           if (credentials.satisfied) {
             // A saved credential was not just received: only the proof is pending.
+            setDepartingRequester(requester);
             setFlow({ stage: "proving", returnUrl: incoming.returnUrl });
             if (await completeDemo(incoming, ready.wallet, deadline, "saved")) setFlow({ stage: "all-set", returnUrl: incoming.returnUrl });
             return;
           }
           if (!credentials.canEnrollSelfie) {
-            throw new WalletOpenError("This authenticator can’t complete this Selfie Check.");
+            throw new WalletOpenError("This authenticator can’t complete this Proof of Presence.");
           }
         }
         const enroll = configureDemoEnrollment(current, controller.signal);
+        setDepartingRequester(requester);
         setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: async (video, signal, update) => {
           const result = await enroll(video, signal, update);
           if (result === "captured") {
@@ -185,13 +190,15 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
             demo.captureComplete();
           } else if (result === "completed") {
             update({ phase: "checking", ...CREDENTIAL_RECEIVED, progress: 1, cameraReady: false });
-            await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
+            const verified = await completeDemo(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]), "issued");
+            if (!verified) return "failed";
           }
           return result;
         } });
         return;
       }
       const signup = configuredPoseGuardSignup();
+      setDepartingRequester(requester);
       setFlow({ stage: "capture", returnUrl: incoming.returnUrl, enroll: signup ? createPoseGuardEnrollment(current, signup, controller.signal) : undefined });
       void current.ready.then(result => {
         if (deadline.aborted || session.current !== current || !("error" in result)) return;
@@ -201,12 +208,13 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       });
     } catch (cause) {
       if (!controller.signal.aborted) {
+        const passkeyUnavailable = !session.current && cause instanceof Error && cause.name === "NotAllowedError";
         stop();
         if (cause instanceof RequestExpiredError) {
           setFlow({ stage: "expired", returnUrl: incoming.returnUrl }); onDispose();
         } else {
           setOpenError(walletOpenErrorMessage(cause));
-          setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
+          if (!passkeyUnavailable) setFlow({ stage: "setup-error", returnUrl: incoming.returnUrl });
         }
       }
     } finally { setOpening(false); }
@@ -255,20 +263,9 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   // the credential, so another run would skip the face check.
   const endAction: EndAction | undefined = !demo && flow.returnUrl ? { label: "Return to the app", href: flow.returnUrl } : undefined;
 
-  if (flow.stage === "proving" || flow.stage === "all-set") return <section className="fixed inset-0 z-40 m-auto flex h-[100svh] w-full max-w-[393px] flex-col items-center justify-center bg-white px-6 text-center" aria-label="Selfie check">
-    <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />
-  </section>;
-
-  if (opening) return <div className={requestFrame}>
-    <div className={screenContent}><div className={centeredLayout}>
-      <p className={body} role="status">{openProgress}</p>
-    </div></div>
-    <div className={actions}><button className={secondaryAction} onClick={() => void cancel()}>Cancel request</button></div>
-  </div>;
-
   if (flow.stage === "setup-error") return <div className={requestFrame}>
     <RequestCompletion state="error" detail={openError} returnUrl={flow.returnUrl} onReturn={demo?.back} onRetry={() => {
-      completing.current = false; setOpenError(undefined); setFlow({ stage: "intro" });
+      completing.current = false; setOpenError(undefined); setDepartingRequester(undefined); setFlow({ stage: "intro" });
     }} />
   </div>;
 
@@ -285,28 +282,29 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
     <RequestCompletion state="expired" returnUrl={incoming?.returnUrl} onReturn={demo?.back} />
   </div>;
 
-  if (flow.stage === "capture" || flow.stage === "preparing" || flow.stage === "capture-border" || flow.stage === "capture-complete") return <div className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
-    <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
-      <SelfieCheck
-        onClose={() => void cancel()}
-        backLabel="Cancel check"
-        onComplete={flow.enroll ? undefined : () => void complete()}
-        enroll={flow.enroll}
-        endAction={endAction}
-        completionHint={flow.stage === "preparing" ? openProgress : undefined}
-      />
-    </Suspense>
-  </div>;
-
-  return <div className={consentFrame}>
-    <RequestIntro
-      onReturn={demo?.back}
-      state={loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
-      rp={demo && incoming ? "Web Authenticator" : incoming?.label}
-      reason={unsupported}
-      returnUrl={incoming?.returnUrl}
-      onStart={() => void start()}
-      onCancel={() => void cancel()}
-    />
+  const intro = flow.stage === "intro";
+  const requester = demo && incoming ? "Web Authenticator" : incoming?.label;
+  return <div className={captureFrame}>
+    {proving ? <section data-request-destination className={`${captureFrame} items-center justify-center px-6 text-center`} aria-label="Proof of Presence">
+      <ProcessingStatus title={CREDENTIAL_RECEIVED.hint} done={flow.stage === "all-set"} endAction={endAction} />
+    </section> : !intro && <Suspense fallback={<p className="sr-only" role="status">Opening Proof of Presence…</p>}>
+      <div data-request-destination className={`${captureFrame} ${sequence}`} data-testid="request-frame" data-stage={flow.stage} data-paused={paused}>
+        <SelfieCheck fromRequest onClose={() => void cancel()} backLabel="Cancel check"
+          onComplete={flow.enroll ? undefined : () => void complete()} enroll={flow.enroll} endAction={endAction}
+          completionHint={flow.stage === "preparing" ? openProgress : undefined} />
+      </div>
+    </Suspense>}
+    {(intro || departingRequester !== undefined) && <div
+      className={`${requestFrame} ${intro ? "flex-1" : "departing-intro"}`}
+      inert={!intro} aria-hidden={!intro || undefined}
+      onAnimationEnd={event => {
+        if (!intro && event.target === event.currentTarget) setDepartingRequester(undefined);
+      }}>
+      <RequestIntro onReturn={demo?.back}
+        state={!intro ? "ready" : loading ? "verifying" : expired ? "expired" : failed || !incoming ? "invalid" : unsupported ? "unsupported" : "ready"}
+        rp={intro ? requester : departingRequester} reason={unsupported} returnUrl={incoming?.returnUrl}
+        pending={opening || !intro ? openProgress : undefined} error={intro ? openError : undefined}
+        onStart={() => void start()} onCancel={() => void cancel()} />
+    </div>}
   </div>;
 }

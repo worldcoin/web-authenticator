@@ -1,4 +1,4 @@
-import { Outlet, useRouterState } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
 import { createContext, useEffect, useState } from "react";
 import { AppLayout } from "./components/AppLayout";
 import { ConsentScreen } from "./components/ConsentScreen";
@@ -7,13 +7,12 @@ import type { ConsentChoice, ConsentClient, ConsentState } from "./lib/consent";
 /** Hides shared chrome while the full-screen camera is open. */
 export const CaptureScreenContext = createContext<(active: boolean) => void>(() => {});
 
-/** Hides the menu while a timed sequence plays. */
-export const CompletionAnimationContext = createContext<(active: boolean) => void>(() => {});
+/** The request flow can reserve the full card for proof progress and completion. */
+export const RequestControlsContext = createContext<(hidden: boolean) => void>(() => {});
 
 /** Chrome and cookie consent around every route. */
 export function AppShell({ consent }: { consent: ConsentClient }) {
-  const isAuthenticator = useRouterState({ select: state => state.location.pathname === "/" || state.location.pathname === "/authenticator" });
-  const [completionAnimating, setCompletionAnimating] = useState(false);
+  const [requestControlsHidden, setRequestControlsHidden] = useState(false);
   const [captureActive, setCaptureActive] = useState(false);
   // null until the stored choice is read; analytics stays off unless the state is "granted".
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
@@ -50,10 +49,10 @@ export function AppShell({ consent }: { consent: ConsentClient }) {
     ? () => { setConsentError(null); setConsentOpen(true); }
     : undefined;
 
-  return <AppLayout onCookieSettings={onCookieSettings} hideControls={completionAnimating || captureActive} tintedBackground={isAuthenticator && !consentScreen && !captureActive}>
+  return <AppLayout onCookieSettings={onCookieSettings} hideControls={requestControlsHidden || captureActive}>
     {consentState !== null && consentScreen && <ConsentScreen busy={consentBusy} error={consentError} onChoose={choice => void chooseConsent(choice)} />}
     <div className="contents" hidden={consentState === null || consentScreen}>
-      <CompletionAnimationContext value={setCompletionAnimating}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></CompletionAnimationContext>
+      <RequestControlsContext value={setRequestControlsHidden}><CaptureScreenContext value={setCaptureActive}><Outlet /></CaptureScreenContext></RequestControlsContext>
     </div>
   </AppLayout>;
 }

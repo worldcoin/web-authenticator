@@ -19,6 +19,8 @@ bun run dev
 
 Open [localhost:4173](http://localhost:4173). Local development uses staging by default.
 
+To run the signed Proof of Presence demo locally, set `DEMO_APP_ID`, `DEMO_RP_ID`, `WEB_AUTH_RP_SIGNER`, and `DEMO_WORLDCHAIN_RPC_URL` in the Bun server environment and open [the localhost demo](http://localhost:4173/demo). Use a registered staging RP and its matching signing key. The browser validates the signed request through the staging bridge. The localhost demo ends after capture.
+
 By default, IDKit requests route to `<base_url>/verify`. To test the full IDKit request flow, please set the `override_connector_base_url` field in your IDKit request builder to http://localhost:4173/verify to test locally
 
 ## Repository Structure

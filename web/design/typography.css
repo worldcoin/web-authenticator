@@ -1,0 +1,112 @@
+/*
+ * Nucleus typography as Tailwind utilities, the web counterpart of iOS WLDFonts.
+ * `text-h2`, `text-b1`, `text-l1`, … set size, weight, line height and tracking together.
+ */
+@import "@worldcoin/nucleus/nucleus-fonts.css";
+
+/* Nucleus ships the variable font but no @font-face; every style's family is "WorldProMVP-Regular". */
+@font-face {
+  font-family: "WorldProMVP-Regular";
+  src: url("../node_modules/@worldcoin/nucleus/fonts/WorldProMVP.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * Grayscale antialiasing, as iOS and Figma draw World Pro. macOS browsers otherwise render text
+ * noticeably heavier than its Nucleus weight.
+ */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@theme inline {
+  --font-sans: "WorldProMVP-Regular", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Only the Nucleus scale exists: Tailwind's default text sizes are removed. */
+  --text-*: initial;
+
+  --text-d1: var(--nucleus-font-d1-size);
+  --text-d1--font-weight: var(--nucleus-font-d1-weight);
+  --text-d1--line-height: var(--nucleus-font-d1-line-height);
+  --text-d1--letter-spacing: var(--nucleus-font-d1-letter-spacing);
+
+  --text-h1: var(--nucleus-font-h1-size);
+  --text-h1--font-weight: var(--nucleus-font-h1-weight);
+  --text-h1--line-height: var(--nucleus-font-h1-line-height);
+  --text-h1--letter-spacing: var(--nucleus-font-h1-letter-spacing);
+
+  --text-h2: var(--nucleus-font-h2-size);
+  --text-h2--font-weight: var(--nucleus-font-h2-weight);
+  --text-h2--line-height: var(--nucleus-font-h2-line-height);
+  --text-h2--letter-spacing: var(--nucleus-font-h2-letter-spacing);
+
+  --text-h3: var(--nucleus-font-h3-size);
+  --text-h3--font-weight: var(--nucleus-font-h3-weight);
+  --text-h3--line-height: var(--nucleus-font-h3-line-height);
+  --text-h3--letter-spacing: var(--nucleus-font-h3-letter-spacing);
+
+  --text-h4: var(--nucleus-font-h4-size);
+  --text-h4--font-weight: var(--nucleus-font-h4-weight);
+  --text-h4--line-height: var(--nucleus-font-h4-line-height);
+  --text-h4--letter-spacing: var(--nucleus-font-h4-letter-spacing);
+
+  --text-h5: var(--nucleus-font-h5-size);
+  --text-h5--font-weight: var(--nucleus-font-h5-weight);
+  --text-h5--line-height: var(--nucleus-font-h5-line-height);
+  --text-h5--letter-spacing: var(--nucleus-font-h5-letter-spacing);
+
+  --text-s1: var(--nucleus-font-s1-size);
+  --text-s1--font-weight: var(--nucleus-font-s1-weight);
+  --text-s1--line-height: var(--nucleus-font-s1-line-height);
+  --text-s1--letter-spacing: var(--nucleus-font-s1-letter-spacing);
+
+  --text-s2: var(--nucleus-font-s2-size);
+  --text-s2--font-weight: var(--nucleus-font-s2-weight);
+  --text-s2--line-height: var(--nucleus-font-s2-line-height);
+  --text-s2--letter-spacing: var(--nucleus-font-s2-letter-spacing);
+
+  --text-s3: var(--nucleus-font-s3-size);
+  --text-s3--font-weight: var(--nucleus-font-s3-weight);
+  --text-s3--line-height: var(--nucleus-font-s3-line-height);
+  --text-s3--letter-spacing: var(--nucleus-font-s3-letter-spacing);
+
+  --text-l1: var(--nucleus-font-l1-size);
+  --text-l1--font-weight: var(--nucleus-font-l1-weight);
+  --text-l1--line-height: var(--nucleus-font-l1-line-height);
+  --text-l1--letter-spacing: var(--nucleus-font-l1-letter-spacing);
+
+  --text-l2: var(--nucleus-font-l2-size);
+  --text-l2--font-weight: var(--nucleus-font-l2-weight);
+  --text-l2--line-height: var(--nucleus-font-l2-line-height);
+  --text-l2--letter-spacing: var(--nucleus-font-l2-letter-spacing);
+
+  --text-l3: var(--nucleus-font-l3-size);
+  --text-l3--font-weight: var(--nucleus-font-l3-weight);
+  --text-l3--line-height: var(--nucleus-font-l3-line-height);
+  --text-l3--letter-spacing: var(--nucleus-font-l3-letter-spacing);
+
+  --text-b1: var(--nucleus-font-b1-size);
+  --text-b1--font-weight: var(--nucleus-font-b1-weight);
+  --text-b1--line-height: var(--nucleus-font-b1-line-height);
+  --text-b1--letter-spacing: var(--nucleus-font-b1-letter-spacing);
+
+  --text-b2: var(--nucleus-font-b2-size);
+  --text-b2--font-weight: var(--nucleus-font-b2-weight);
+  --text-b2--line-height: var(--nucleus-font-b2-line-height);
+  --text-b2--letter-spacing: var(--nucleus-font-b2-letter-spacing);
+
+  --text-b3: var(--nucleus-font-b3-size);
+  --text-b3--font-weight: var(--nucleus-font-b3-weight);
+  --text-b3--line-height: var(--nucleus-font-b3-line-height);
+  --text-b3--letter-spacing: var(--nucleus-font-b3-letter-spacing);
+
+  --text-c1: var(--nucleus-font-c1-size);
+  --text-c1--font-weight: var(--nucleus-font-c1-weight);
+  --text-c1--line-height: var(--nucleus-font-c1-line-height);
+  --text-c1--letter-spacing: var(--nucleus-font-c1-letter-spacing);
+}

@@ -1,8 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useCallback, useEffect, useRef, useState, type ContextType, type ReactNode } from "react";
 import { DEMO_PATH } from "../config/demo";
+import { DemoBadgeStart, PresenceBadge } from "./components/PresenceBadge";
 import { RequestIntro } from "./components/RequestIntro";
-import { actions, body, centeredLayout, consentFrame, errorCopy, messageBlock, primaryAction, requestFrame, screenContent, screenTitle, secondaryAction } from "./components/styles";
+import { actions, body, centeredLayout, errorCopy, messageBlock, requestFrame, screenContent, screenTitle } from "./components/styles";
+import { Button } from "./design/Button";
+import { buttonStyle } from "./design/buttons";
 import { currentProtocolEnvironment } from "./lib/environment";
 import { logDemoRequest, startDemo, verifyDemo, type DemoAttempt, type DemoHandoff, type DemoProofSource } from "./lib/demo";
 
@@ -29,6 +32,7 @@ export const DemoContext = createContext<{
 } | null>(null);
 
 export function DemoProvider({ children }: { children: ReactNode }) {
+  const badgeStart = useRef<number | null>(null);
   const active = useRef<ActiveDemoAttempt | null>(null);
   const [state, setState] = useState<DemoState>({ phase: "idle" });
   const [attempt, setAttempt] = useState<DemoHandoff>();
@@ -53,6 +57,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
   const create = useCallback(async () => {
     if (active.current) return;
+    badgeStart.current = null;
     const current: ActiveDemoAttempt = { controller: new AbortController() };
     const { signal } = current.controller;
     active.current = current;
@@ -109,7 +114,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     setState({ phase: "captured" });
   };
 
-  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>{children}</DemoContext>;
+  return <DemoContext value={{ state, attempt, create, open, complete, captureComplete, cancel }}>
+    <DemoBadgeStart value={attempt ? badgeStart : null}>{children}</DemoBadgeStart>
+  </DemoContext>;
 }
 
 export function DemoPage() {
@@ -128,14 +135,14 @@ export function DemoPage() {
           </div>
         </div>
       </div>
-      <div className={actions}><a className={primaryAction} href={localhost.href}>Open localhost demo</a></div>
+      <div className={actions}><a className={`${buttonStyle("primary48")} w-full`} href={localhost.href}>Open localhost demo</a></div>
     </section>;
   }
   return <DemoStatus demo={demo} />;
 }
 
 /**
- * Visitors arrive knowing they are about to do a Selfie Check, so the demo creates the request
+ * Visitors arrive knowing they are about to do a Proof of Presence, so the demo creates the request
  * straight away and hands over to /verify, whose consent screen holds the tap that opens the passkey.
  */
 function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext>> }) {
@@ -152,26 +159,28 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
   }, [phase, create, open, navigate]);
 
   if (phase === "idle" || phase === "starting" || phase === "ready") {
-    return <section className={consentFrame} aria-label="Selfie Check demo">
+    return <section className={requestFrame} aria-label="Proof of Presence demo">
       <RequestIntro state="verifying" onStart={() => {}} onCancel={() => {}} />
     </section>;
   }
   const waiting = phase === "waiting" || phase === "verifying";
-  return <section className={requestFrame} aria-label="Selfie Check demo">
-    <div className={screenContent}>
+  const captured = phase === "captured";
+  return <section className={requestFrame} aria-label="Proof of Presence demo">
+    {captured && <PresenceBadge done title={demoTitle(demo.state)} />}
+    <div className={captured ? "flex flex-1 justify-center pt-4 pb-6" : screenContent}>
       <div className={centeredLayout}>
         <div className={`${messageBlock} gap-4`}>
-          <h1 className={screenTitle} aria-live="polite">{demoTitle(demo.state)}</h1>
+          {!captured && <h1 className={screenTitle} aria-live="polite">{demoTitle(demo.state)}</h1>}
           {demo.state.phase === "error" && <p className={errorCopy} role="alert">{demo.state.message}</p>}
           <DemoRequestDetails attempt={demo.attempt} />
         </div>
       </div>
     </div>
     <div className={actions}>
-      {waiting ? <button type="button" className={secondaryAction} onClick={demo.cancel}>Cancel request</button>
-        : <button type="button" className={primaryAction} onClick={() => void create()}>
+      {waiting ? <Button buttonStyle="tertiary48" className="w-full" onClick={demo.cancel}>Cancel request</Button>
+        : <Button buttonStyle="primary48" className="w-full" onClick={() => void create()}>
           {phase === "error" ? "Try again" : "Create another request"}
-        </button>}
+        </Button>}
     </div>
   </section>;
 }
@@ -179,7 +188,7 @@ function DemoStatus({ demo }: { demo: NonNullable<ContextType<typeof DemoContext
 function DemoRequestDetails({ attempt }: { attempt?: DemoHandoff }) {
   const rows = [
     ["Environment", "Staging"],
-    ["Credential", "Selfie Check (schema 11)"],
+    ["Credential", "Proof of Presence (schema 11)"],
     ...(attempt ? [
       ["Action", attempt.config.action],
       ["App ID", attempt.config.app_id],
@@ -189,8 +198,8 @@ function DemoRequestDetails({ attempt }: { attempt?: DemoHandoff }) {
       ["Expires", new Date(attempt.config.rp_context.expires_at * 1000).toISOString()],
     ] : []),
   ];
-  return <details className="w-full rounded-2xl bg-background-secondary px-4 py-3 text-left text-[13px]">
-    <summary className="cursor-pointer font-medium">Request details</summary>
+  return <details className="w-full rounded-2xl bg-background-secondary px-4 py-3 text-left text-b3 text-foreground-primary">
+    <summary className="cursor-pointer text-l3">Request details</summary>
     <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
       {rows.map(([label, value]) => <div key={label} className="contents">
         <dt className="text-foreground-secondary">{label}</dt>
@@ -208,7 +217,7 @@ function demoTitle(state: DemoState): string {
   if (state.phase === "cancelled") return "Check cancelled";
   if (state.phase === "verifying") return "Verifying proof…";
   if (state.phase === "waiting") return "Check in progress";
-  return "Selfie Check";
+  return "Proof of Presence";
 }
 
 function demoError(error: unknown): string {

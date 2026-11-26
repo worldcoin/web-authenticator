@@ -1,4 +1,6 @@
-import { actions, centeredLayout, completionTitle, copy, detailCopy, messageBlock, primaryAction, returnLink, screenContent, secondaryAction, signinPrimary } from "./styles";
+import { Button } from "../design/Button";
+import { buttonStyle } from "../design/buttons";
+import { actions, centeredLayout, completionTitle, copy, detailCopy, messageBlock, screenContent } from "./styles";
 
 export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, onReturn, transient = false, saved = false }: {
   state: "complete" | "cancelled" | "expired" | "replayed" | "error";
@@ -28,14 +30,14 @@ export function RequestCompletion({ state, returnUrl, detail, onRetry, onOpen, o
     <div className={`${screenContent} group-data-[stage=confirmation-exit]/sequence:motion-safe:animate-completion-out`} data-testid="request-completion" role="status">
       <div className={`${centeredLayout} gap-6`}>
         <img className={state === "complete" ? "size-22" : "h-14 w-[56.0035px]"} src={state === "complete" ? "/assets/figma/request-completion-emblem.svg" : "/assets/figma/request-selfie-emblem.svg"} alt="" />
-        <div className={`${messageBlock} gap-3`}><h1 className={completionTitle}>{title}</h1><p className={`${copy} text-[17px] text-foreground-secondary`}>{description}</p>{detail && <p className={`${detailCopy} text-foreground-secondary`}>{detail}</p>}</div>
+        <div className={`${messageBlock} gap-3`}><h1 className={completionTitle}>{title}</h1><p className={`${copy} text-foreground-secondary`}>{description}</p>{detail && <p className={`${detailCopy} text-foreground-secondary`}>{detail}</p>}</div>
       </div>
     </div>
     {!transient && <div className={actions}>
-      {showAuthenticator && <button className={`${signinPrimary} max-w-[345px]`} onClick={onOpen}>Go to authenticator</button>}
-      {onRetry && <button className={primaryAction} onClick={onRetry}>Try again</button>}
-      {onReturn ? <button type="button" className={onRetry ? secondaryAction : primaryAction} onClick={onReturn}>Return to demo</button>
-        : returnUrl && <a className={`${onRetry || showAuthenticator ? secondaryAction : primaryAction} ${returnLink}`} href={returnUrl}>Return to the app</a>}
+      {showAuthenticator && <Button buttonStyle="primary48" className="w-full max-w-[345px]" onClick={onOpen}>Go to authenticator</Button>}
+      {onRetry && <Button buttonStyle="primary48" className="w-full" onClick={onRetry}>Try again</Button>}
+      {onReturn ? <Button buttonStyle={onRetry ? "tertiary48" : "primary48"} className="w-full" onClick={onReturn}>Return to demo</Button>
+        : returnUrl && <a className={`${buttonStyle(onRetry || showAuthenticator ? "tertiary48" : "primary48")} w-full`} href={returnUrl}>Return to the app</a>}
     </div>}
   </>;
 }
