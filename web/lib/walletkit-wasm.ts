@@ -20,16 +20,18 @@ export async function initializeWalletKitFromCompressedWasm(signal: AbortSignal)
 /** Resolves to a blob URL of the decompressed WASM, checked against the build's size and digest. */
 export async function loadWalletKitWasm(signal: AbortSignal, expected = __WALLETKIT_WASM__): Promise<string> {
   let wasm: Blob;
+  let digest: string;
   try {
     const response = await fetch(expected.url, { signal });
     if (!response.ok || !response.body) throw new Error(`WalletKit WASM request failed (${response.status}).`);
     const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
     wasm = await new Response(decompressed).blob();
+    digest = await sha256Hex(await wasm.arrayBuffer());
   } catch (cause) {
     signal.throwIfAborted();
     throw new WalletOpenError(LOAD_FAILED, { cause });
   }
-  if (wasm.size !== expected.byteLength || await sha256Hex(await wasm.arrayBuffer()) !== expected.sha256) {
+  if (wasm.size !== expected.byteLength || digest !== expected.sha256) {
     throw new WalletOpenError("The authenticator's wallet engine failed its integrity check. Reload the page and try again.");
   }
   signal.throwIfAborted();

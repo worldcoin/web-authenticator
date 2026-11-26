@@ -136,7 +136,16 @@ test("an RP is read from the environment's registry, retrying only transient fai
   expect(answer).toHaveBeenCalledTimes(3);
   expect(registries).toEqual([ENVIRONMENTS.staging.rpRegistry]);
 
-  // A rate limit is retried no sooner than the server allows.
+  // A rate limit is retried after a fixed delay when the browser cannot read Retry-After.
+  answer.mockClear();
+  answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 429 })))
+    .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);
+  const limited = performance.now();
+  await validate();
+  expect(performance.now() - limited).toBeGreaterThanOrEqual(1_000);
+  expect(answer).toHaveBeenCalledTimes(2);
+
+  // When the header is readable, the retry comes no sooner than the server allows.
   answer.mockClear();
   answer.mockImplementationOnce(failing(() => new Response("slow down", { status: 429, headers: { "Retry-After": "1" } })))
     .mockImplementation((async (_input, init) => reply(init)) as typeof fetch);

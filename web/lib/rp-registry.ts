@@ -5,7 +5,9 @@ import { pause } from "./async";
 const ATTEMPTS = 3;
 const ATTEMPT_TIMEOUT_MS = 5_000;
 const RETRY_BASE_DELAY_MS = 250;
-const MAX_RETRY_DELAY_MS = 5_000;
+/** Three attempts and two pauses at these limits fit the caller's 20 s deadline. */
+const MAX_RETRY_DELAY_MS = 2_000;
+const RATE_LIMIT_DELAY_MS = 1_000;
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 /** JSON-RPC: resource unavailable, limit exceeded, internal error. */
 const RETRYABLE_RPC_CODES = new Set([-32002, -32005, -32603]);
@@ -65,10 +67,13 @@ async function ethCall(to: Hex, data: Hex, signal: AbortSignal): Promise<Hex> {
   return reply.result as Hex;
 }
 
-/** `Retry-After` is either a number of seconds or an HTTP date. */
+/**
+ * `Retry-After` is either a number of seconds or an HTTP date. The public RPC does not expose it
+ * to browsers, so a rate limit without a readable header waits a fixed delay.
+ */
 function retryAfterMs(response: Response): number | undefined {
   const value = response.headers.get("Retry-After")?.trim();
-  if (!value) return undefined;
+  if (!value) return response.status === 429 ? RATE_LIMIT_DELAY_MS : undefined;
   const delay = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
   return Number.isFinite(delay) && delay > 0 ? delay : undefined;
 }
