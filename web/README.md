@@ -48,36 +48,38 @@ Duplicate `i`, `k`, `b`, `t`, or `return_to` parameters are rejected.
 6. Only Selfie Check requests are supported: every entry in `proof_requests` must have `issuer_schema_id: 11`. Mixed requests (including OR branches with another schema), `require_user_presence: true`, and non-empty `identity_attributes` are rejected as unsupported.
 7. Return navigation uses `return_to_url` from the encrypted payload only (HTTPS or HTTP localhost).
 
-## Request flow by origin
+## Request flow
 
-Tapping **Continue** on the request screen unlocks an existing passkey wallet or creates and registers one in the browser. What happens next depends on `configuredPoseGuardSignup()` in `web/lib/poseguard/enrollment.ts`.
+Tapping **Continue** on the request screen unlocks an existing passkey wallet or creates and registers one in the browser. `/verify` runs the same flow in every environment; there is no origin check and no local-capture fallback. An environment can issue Selfie Checks only when `selfieEnrollment` in `config/environment.ts` configures an issuer policy (`selfieIssuer()` in `web/lib/poseguard/enrollment.ts`).
 
-| Origin and build | Issuer configured | Behaviour after Continue |
-| ---------------- | ----------------- | ------------------------ |
-| `https://authenticator.toolsforhumanity.dev` (staging build) | Yes | Answers the request end to end: proves from an existing credential or enrolls a Selfie Check, then sends the proof to the bridge. |
-| `http://localhost:4173` / loopback (staging build) | No (staging signup-service CORS allows only the staging origin) | Unlocks or registers the wallet, captures one selfie locally in the browser, and stops on "Selfie captured". Issues no credential, creates no proof, and sends nothing to the bridge. |
-| `https://web.world.org` (production build) | No (`selfieEnrollment` is `null`; production has no reviewed TEE release policy) | Unlocks or registers the wallet, captures one selfie locally in the browser, and stops on "Selfie captured". Issues no credential, creates no proof, and sends nothing to the bridge. |
+### After the wallet is ready
 
-On origins without an issuer configuration, the requesting app receives no response and keeps waiting until the request expires.
-
-### Staging origin flow
-
-1. Wait for wallet readiness, inspect stored credentials, and check request expiry.
-2. **Satisfying credential already in wallet:** skip the camera, revalidate RP signature and expiry, generate the proof in WalletKit (including the schema-11 score claim), and `PUT` the encrypted `proof_response` to `<bridge>/response/<i>`.
-3. **No active Selfie Check credential, and Selfie Check satisfies the request:**
+1. Inspect stored credentials and check request expiry.
+2. **Satisfying credential already in wallet:** skip the camera, revalidate the RP signature and expiry, generate the proof in WalletKit, and `PUT` the encrypted `proof_response` to `<bridge>/response/<i>`. Works in every environment.
+3. **No satisfying credential, Selfie Check can satisfy the request, and the environment has an issuer:**
    - Prepare a schema-11 subject in WalletKit (retrying while the indexer syncs a fresh account, up to ~47 s).
-   - Run PoseGuard attested TEE capture (`wss://selfie-enrollment-stage.worldcoin.dev/v1/embeddings`, verified against pinned Nitro PCR0/PCR1/PCR2 measurements in `config/environment.ts`).
-   - Submit the attested capture to staging signup-service (`PUT https://app.stage.face.worldcoin.org/api/v2/identity` with `X-Nitro-Attestation`) and poll `GET /api/v2/identity?sub=<sub>` (1 s interval, 120 s timeout).
-   - Store the issued schema-11 credential in the browser vault, revalidate RP signature and expiry, prove, and deliver through the bridge.
-4. **Active Selfie Check credential outside the request's date bounds:** fails with an error; the flow does not re-enroll over an active Selfie Check credential.
+   - Run PoseGuard capture in the attested enclave (`selfieEnrollment.endpoint`, verified against pinned Nitro PCR0/PCR1/PCR2 measurements in `config/environment.ts`).
+   - Submit the attested capture to the environment's signup-service (`PUT <signupServiceOrigin>/api/v2/identity` with `X-Nitro-Attestation`) and poll `GET /api/v2/identity?sub=<sub>` (1 s interval, 120 s timeout).
+   - Store the issued schema-11 credential in the wallet, revalidate the RP signature and expiry, prove, and deliver through the bridge.
+4. **Otherwise:** end on "This check can’t be completed here" and send an encrypted `{ error_code: "verification_rejected" }` response to the bridge (15 s timeout) so the requesting app stops waiting. This covers an environment without an issuer (`selfieEnrollment: null`) and a wallet whose active Selfie Check credential falls outside the request's date bounds (the flow does not re-enroll over an active Selfie Check credential).
+
+### Behaviour by environment
+
+| Environment and origin | Issuer configured | Behaviour after Continue |
+| ---------------------- | ----------------- | ------------------------ |
+| Staging (`https://authenticator.toolsforhumanity.dev`) | Yes (`selfie-enrollment-stage.worldcoin.dev` / `app.stage.face.worldcoin.org`) | Both paths work: saved credentials prove, and wallets without one enroll a Selfie Check and prove. |
+| Production (`https://web.world.org`) | No (`selfieEnrollment: null`) | Saved credentials prove; without one, the request is declined with "This check can’t be completed here". |
+| Local development (`http://localhost` / loopback, staging build) | Yes (staging config) | Saved credentials prove; enrollment runs capture, then fails with an error because staging signup-service refuses the localhost origin (CORS). |
 
 ### End states and cancellation
 
-- **Success (staging origin):** shows "You’re all set" with a link to `/authenticator` and, when `return_to_url` is set, "Return to the app".
+- **Success:** shows "You’re all set" with "Return to authenticator" (`/authenticator`) and, when the request carried `return_to_url`, "Return to the app".
 - **Nullifier replay:** when WalletKit reports `NullifierReplay`, stops without sending to the bridge and shows "Proof already created".
-- **Enrollment outcomes:** polling timeout shows "Enrollment pending" with "Check status" to resume polling; `duplicate` shows "Face already enrolled" and `failed` shows "Enrollment failed", each with "Cancel check".
-- **Errors:** wallet setup, capture, proving, or delivery failures show an error with "Try again".
-- **Cancel:** cancelling sends an encrypted `{ error_code: "verification_rejected" }` response to the bridge (15 s timeout) and reports a notice if notification fails.
+- **Unavailable:** shows "This check can’t be completed here", sends `{ error_code: "verification_rejected" }` to the bridge (15 s timeout), and shows a notice if notification fails.
+- **Expired:** shows "This request has expired".
+- **Cancel:** shows "Check cancelled", sends an encrypted `{ error_code: "verification_rejected" }` response to the bridge (15 s timeout), and shows a notice if notification fails.
+- **Errors:** wallet setup, capture, proving, or delivery failures show "Something went wrong" (or the capture error inside the camera screen) with "Try again".
+- **Enrollment outcomes (inside the camera screen):** polling timeout shows "Enrollment pending" with "Check status" to resume polling; `duplicate` shows "Face already enrolled" and `failed` shows "Enrollment failed", each with "Cancel check".
 
 ## Passkey wallet
 
