@@ -1,31 +1,56 @@
 import { abortable } from "./async";
-import type { WalletKit } from "./walletkit";
 import { checkRequestCredentials, type IncomingRequest } from "./incoming-request";
-import { checkExpiry } from "./proof-request";
+import { checkExpiry, RequestExpiredError } from "./proof-request";
+import { WalletOpenError } from "./wallet-errors";
+import type { WalletKit } from "./walletkit";
 
-export async function createProof(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal, progress: (message: string) => void): Promise<string> {
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
-  const terminate = () => wallet.terminate();
-  deadline.addEventListener("abort", terminate, { once: true });
+const ANSWER_TIMEOUT_MS = 120_000;
+
+/** The wallet has already proved this action for this app; a second proof would repeat its nullifier. */
+export class ProofReplayedError extends Error {}
+
+/** Answers the request: proves it with the wallet's credentials and delivers the proof to the app. */
+export async function proveAndDeliver(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal): Promise<void> {
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(ANSWER_TIMEOUT_MS)]);
+  const proof = await createProof(incoming, wallet, deadline);
   try {
-    if (incoming.unsupportedReason) throw new Error(incoming.unsupportedReason);
-    await incoming.validate(deadline);
-    const available = await checkRequestCredentials(incoming, wallet, deadline);
-    if (!available.satisfied) throw new Error("Required credentials are missing.");
-    progress("Creating your proof with WalletKit…");
-    // Preserve the RP's requirements, signals, dates and constraints verbatim.
-    const proof = await abortable(wallet.generateProof(JSON.stringify(incoming.proof)), deadline);
-    deadline.throwIfAborted();
-    checkExpiry(incoming.proof);
-    const response = JSON.parse(proof) as { id?: unknown; error?: unknown; responses?: unknown };
-    if (response.id !== incoming.proof.id || response.error || !Array.isArray(response.responses) || !response.responses.length) {
-      throw new Error("WalletKit returned an invalid proof response.");
-    }
-    return proof;
+    await incoming.deliver(proof, deadline);
   } catch (cause) {
-    wallet.terminate();
-    throw new Error("Proof generation failed or timed out. Unlock to retry, or start a fresh request at the requesting app.", { cause });
-  } finally {
-    deadline.removeEventListener("abort", terminate);
+    deadline.throwIfAborted();
+    if (cause instanceof RequestExpiredError) throw cause;
+    throw new WalletOpenError("Could not send the proof. Try again.", { cause });
   }
+}
+
+async function createProof(incoming: IncomingRequest, wallet: WalletKit, signal: AbortSignal): Promise<string> {
+  if (incoming.unsupportedReason) throw new WalletOpenError(incoming.unsupportedReason);
+  await revalidate(incoming, signal);
+  const credentials = await checkRequestCredentials(incoming, wallet, signal);
+  if (!credentials.satisfied) throw new WalletOpenError("This authenticator does not hold the credentials this request needs.");
+  let proof: string;
+  try {
+    // The RP's requirements, signals, dates and constraints reach WalletKit verbatim.
+    proof = await abortable(wallet.generateProof(JSON.stringify(incoming.proof)), signal);
+  } catch (cause) {
+    signal.throwIfAborted();
+    if (isNullifierReplay(cause)) throw new ProofReplayedError("This action was already proved.", { cause });
+    throw new WalletOpenError("Could not create the proof. Try again.", { cause });
+  }
+  checkExpiry(incoming.proof);
+  return proof;
+}
+
+/** The RP may have been deactivated, or the request may have expired, since the request was opened. */
+async function revalidate(incoming: IncomingRequest, signal: AbortSignal) {
+  try {
+    await incoming.validate(signal);
+  } catch (cause) {
+    signal.throwIfAborted();
+    if (cause instanceof RequestExpiredError) throw cause;
+    throw new WalletOpenError("This request could not be verified again. Start a new request at the requesting app.", { cause });
+  }
+}
+
+function isNullifierReplay(error: unknown): boolean {
+  return error instanceof Error && error.name === "WalletKitError" && "code" in error && error.code === "NullifierReplay";
 }

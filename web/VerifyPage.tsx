@@ -1,6 +1,5 @@
 import { useRouter } from "@tanstack/react-router";
-import { use, useEffect, useRef, useState } from "react";
-import { CompletionAnimationContext } from "./AppShell";
+import { useEffect, useRef, useState } from "react";
 import { loadIncomingRequest, type IncomingRequest } from "./lib/incoming-request";
 import { RequestExpiredError } from "./lib/proof-request";
 import { openAuthenticator, openRequestWallet } from "./lib/wallet-session";
@@ -12,7 +11,6 @@ export type Services = typeof defaultServices;
 /** Where request links open: loads and validates the request in the URL, then runs the flow. */
 export function VerifyPage({ services }: { services: Services }) {
   const { history } = useRouter();
-  const setCompletionAnimating = use(CompletionAnimationContext);
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -51,6 +49,6 @@ export function VerifyPage({ services }: { services: Services }) {
   }, [incoming]);
 
   return <PublicRequestFlow incoming={incoming} loading={loading} failed={loadFailed} expired={loadExpired || expired}
-    onTransitionChange={setCompletionAnimating} onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}
+    onUnlock={services.unlock} onDispose={() => { setIncoming(null); source.current = null; }}
     />;
 }

@@ -1,38 +1,22 @@
 import type { SelfieCaptureFailure } from "@worldcoin/walletkit-web";
-import { ENVIRONMENTS, parsePoseGuardTestMode, type SelfieEnrollmentPolicy } from "../../../config/environment";
+import { ENVIRONMENTS, type ProtocolEnvironment, type SelfieEnrollmentPolicy } from "../../../config/environment";
 import { abortable, pause } from "../async";
 import { currentProtocolEnvironment } from "../environment";
 import { EnrollmentCaptureSchema, validateEnrollmentCapture } from "../enrollment-contract";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
-import {
-  getEnrollmentAuthorization, pollEnrollment, SignupServiceError, submitEnrollment,
-  type EnrollmentAuthorization, type EnrollmentReceipt, type EnrollmentResult,
-} from "../signup-service";
+import { pollEnrollment, SignupServiceError, submitEnrollment, type EnrollmentReceipt, type EnrollmentResult } from "../signup-service";
 import { WalletOpenError } from "../wallet-errors";
 import type { RequestWalletSession } from "../wallet-session";
 import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
 
-const TEST_CHALLENGE_ID = "00000000-0000-4000-8000-000000000001";
-const TEST_ATTESTATION_HEADER = btoa("poseguard test attestation");
 // A new account's leaf reaches the indexer's tree after its database row; about 47 s in total.
 const INDEXER_SYNC_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000];
 
-type PoseGuardAuthorize = (identity: EnrollmentReceipt, signal: AbortSignal, wallet: WalletKit, factor: string) => Promise<EnrollmentAuthorization>;
-
-export type PoseGuardSignup = {
-  policy: SelfieEnrollmentPolicy;
-  endpoint: string;
-} & (
-  | { mode: "test" | "staging" }
-  | {
-    mode: "production"; // Names the flow, not environment.
-    saveCredential?: true;
-    authorize: PoseGuardAuthorize;
-  }
-);
+/** Where a Selfie Check is enrolled: the attested enclave and the service that issues the credential. */
+export type SelfieIssuer = { policy: SelfieEnrollmentPolicy; endpoint: string };
 
 export type PoseGuardOutcome = EnrollmentResult["state"] | "pending";
 
@@ -42,33 +26,21 @@ export type RunPoseGuard = (
   update: (state: CaptureState) => void,
 ) => Promise<PoseGuardOutcome>;
 
-export function configuredPoseGuardSignup(): PoseGuardSignup | undefined {
-  const environment = currentProtocolEnvironment();
-  const { appOrigin, signupServiceOrigin, selfieEnrollment: policy } = ENVIRONMENTS[environment];
-  if (environment !== "staging" || window.location.origin !== appOrigin || !policy) return;
-
-  const endpoint = new URL("/api/v2/identity", signupServiceOrigin).href;
-  if (parsePoseGuardTestMode(import.meta.env.VITE_POSEGUARD_TEST_MODE, environment)) {
-    return { policy, endpoint, mode: "test" };
-  }
-
-  const path = policy.authorizationPath;
-  if (!path) return;
-  return {
-    policy, endpoint, mode: "production",
-    authorize: (identity, signal) => getEnrollmentAuthorization(path, identity, signal),
-  };
+/** The environment's Selfie Check issuer, or undefined where none is configured. */
+export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolEnvironment()): SelfieIssuer | undefined {
+  const { signupServiceOrigin, selfieEnrollment: policy } = ENVIRONMENTS[environment];
+  return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
 }
 
 export function createPoseGuardEnrollment(
   session: RequestWalletSession,
-  signup: PoseGuardSignup,
+  issuer: SelfieIssuer,
   requestSignal: AbortSignal,
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
 ): RunPoseGuard {
-  let receipt: EnrollmentReceipt | undefined;
-  let owner: { wallet: WalletKit; factor: string } | undefined;
+  // A submitted capture and the wallet that will hold its credential.
+  let enrollment: { receipt: EnrollmentReceipt; wallet: WalletKit; factor: string } | undefined;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
@@ -76,7 +48,7 @@ export function createPoseGuardEnrollment(
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
     const signal = AbortSignal.any([viewSignal, requestSignal]);
-    const signupOptions = { endpoint: signup.endpoint, signal };
+    const signupOptions = { endpoint: issuer.endpoint, signal };
     try {
       signal.throwIfAborted();
       if (saved) return "completed";
@@ -84,46 +56,30 @@ export function createPoseGuardEnrollment(
         update(checking());
         return await waitForSave(savePromise, signal);
       }
-      if (!receipt) {
+      if (!enrollment) {
         const { capture, identity, wallet, blindingFactor } =
-          await capturePoseGuard(session, signup.policy, video, signal, update, prepareCamera, indexerSyncDelays);
-        let authorization: EnrollmentAuthorization | "staging" = "staging";
-        if (signup.mode === "production") {
-          update(checking());
-          authorization = await abortable(signup.authorize(identity, signal, wallet, blindingFactor), signal);
-        } else if (signup.mode === "test") {
-          authorization = { challengeId: TEST_CHALLENGE_ID, proofCbor: Uint8Array.of(0xa0) };
-        }
+          await capturePoseGuard(session, issuer.policy, video, signal, update, prepareCamera, indexerSyncDelays);
         try {
           signal.throwIfAborted();
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
-          receipt = identity;
-          if (signup.mode === "staging" || (signup.mode === "production" && signup.saveCredential)) {
-            owner = { wallet, factor: blindingFactor };
-          }
-          const evidence = signup.mode === "test" ? { ...capture, attestation_header: TEST_ATTESTATION_HEADER } : capture;
-          receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(evidence, authorization, signupOptions));
+          const submitted = enrollment = { receipt: identity, wallet, factor: blindingFactor };
+          // The issuer accepts the attested capture on its own; it asks for no ownership proof.
+          submitted.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(capture, "staging", signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
             (error instanceof SignupServiceError && error.status !== undefined &&
-              error.status >= 400 && error.status < 500 && error.status !== 408))) receipt = undefined;
+              error.status >= 400 && error.status < 500 && error.status !== 408))) enrollment = undefined;
           throw error;
-        } finally {
-          if (authorization !== "staging") authorization.proofCbor.fill(0);
         }
       }
 
       update(checking());
       try {
+        const { receipt, wallet, factor } = enrollment;
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state !== "completed") return result.state;
         const { credential } = result;
-        if (!owner) {
-          credential.fill(0);
-          return "completed";
-        }
-        const { wallet, factor } = owner;
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
           try {
@@ -131,7 +87,6 @@ export function createPoseGuardEnrollment(
             signal.throwIfAborted();
             await wallet.storeCredential(credential, factor, undefined, 11n);
             saved = true;
-            owner = undefined;
             savePromise = undefined;
           } finally {
             credential.fill(0);
