@@ -39,7 +39,19 @@ if (!("bun" in process.versions)) {
       opened.promise.then(() => "opened", (error: Error) => error.message),
       new Promise<string>(resolve => setTimeout(() => resolve("timed out"), 60_000)),
     ]);
-    expect({ outcome, steps, problems }).toEqual({ outcome: "opened", steps: expect.any(Array), problems: [] });
+    // WalletKit keeps its vault in the origin private file system; report whether this browser offers one.
+    const privateFileSystem = await page.evaluate(async () => {
+      try {
+        const root = await navigator.storage.getDirectory();
+        await root.getFileHandle("probe", { create: true });
+        await root.removeEntry("probe");
+        return "available";
+      } catch (error) {
+        return error instanceof Error ? `${error.name}: ${error.message}` : "unavailable";
+      }
+    });
+    expect({ outcome, steps, problems, privateFileSystem })
+      .toEqual({ outcome: "opened", steps: expect.any(Array), problems: [], privateFileSystem: "available" });
   });
 
   test("a WalletKit WASM the host cannot serve stops the request with an explicit error", async ({ page }) => {
