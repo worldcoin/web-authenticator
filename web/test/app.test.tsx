@@ -14,6 +14,9 @@ import * as capture from "../lib/selfie-capture";
 import * as poseGuard from "../lib/poseguard/enrollment";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
+/** A fake enrollment; `unresolved` is whether the issuer may hold a capture it has not issued yet. */
+const fakeEnrollment = (run: poseGuard.RunPoseGuard, unresolved = () => false): poseGuard.PoseGuardEnrollment =>
+  Object.assign(run, { hasUnresolvedSubmission: unresolved });
 // Most tests are about other flows: consent is already decided, so the consent screen never renders.
 const decidedConsent: ConsentClient = { read: async () => "denied", save: async choice => choice };
 afterAll(() => GlobalRegistrator.unregister());
@@ -164,11 +167,11 @@ test("a request the wallet cannot answer enrolls a Selfie Check, then proves and
   let update!: Parameters<poseGuard.RunPoseGuard>[2];
   let finish!: (result: poseGuard.PoseGuardOutcome) => void;
   const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
-  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(async (_video, _signal, report) => {
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(async (_video, _signal, report) => {
     update = report;
     update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
     return outcome;
-  });
+  }));
   const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("Enrollment requires PoseGuard."));
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
@@ -324,7 +327,7 @@ test("a capture runs as busy, and another tab taking the wallet ends the request
   f.incoming.cancel = async () => { cancelled++; };
   let busy = 0;
   f.services.unlock = async () => ({ ...f.session({ wallet: f.wallet }), holdBusy: async () => { busy++; return () => {}; } });
-  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(() => new Promise(() => {}));
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(() => new Promise(() => {})));
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Continue" }));
@@ -345,7 +348,7 @@ test("a pending enrollment keeps other tabs out until it resolves", async () => 
   const holds = { taken: 0, released: 0 };
   f.services.unlock = async () => ({ ...f.session({ wallet: f.wallet }), holdBusy: async () => { holds.taken++; return () => { holds.released++; }; } });
   const outcomes: poseGuard.PoseGuardOutcome[] = ["pending", "failed"];
-  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(async () => outcomes.shift()!);
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(async () => outcomes.shift()!));
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Continue" }));
@@ -356,6 +359,44 @@ test("a pending enrollment keeps other tabs out until it resolves", async () => 
     await waitFor(() => expect(outcomes).toEqual([]));
     await waitFor(() => expect(holds).toEqual({ taken: 1, released: 1 }));
   } finally { enrollment.mockRestore(); }
+});
+
+for (const unresolved of [true, false]) {
+  test(`a failed attempt ${unresolved ? "keeps" : "releases"} the busy hold when a submitted capture is ${unresolved ? "unresolved" : "resolved"}`, async () => {
+    const f = await fixture(11);
+    const holds = { taken: 0, released: 0 };
+    f.services.unlock = async () => ({ ...f.session({ wallet: f.wallet }), holdBusy: async () => { holds.taken++; return () => { holds.released++; }; } });
+    let attempts = 0;
+    // The issuer accepted the capture, then its status read failed.
+    const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(async () => {
+      attempts++; throw new Error("Status unavailable");
+    }, () => unresolved));
+    try {
+      const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+      fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(attempts).toBe(1));
+      await waitFor(() => expect(holds).toEqual({ taken: 1, released: unresolved ? 0 : 1 }));
+      // Leaving ends the request and its hold either way.
+      fireEvent.click(view.getByRole("button", { name: "Cancel check" }));
+      await waitFor(() => expect(f.calls.terminated).toBe(1));
+    } finally { enrollment.mockRestore(); }
+  });
+}
+
+test("another tab taking the wallet while credentials load leaves sign-in available", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  try {
+    const f = await fixture(11);
+    f.wallet.listCredentials = () => new Promise(() => {});
+    visit("/authenticator");
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("Loading your credentials…")).toBeTruthy();
+    act(() => f.takeover.abort());
+    expect(await view.findByText("Continued in another tab.")).toBeTruthy();
+    expect(view.queryByText("Loading your credentials…")).toBeNull();
+    expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+  } finally { localStorage.clear(); }
 });
 
 test("a signed-in authenticator locks and says so when another tab takes the wallet", async () => {

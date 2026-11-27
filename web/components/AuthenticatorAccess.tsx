@@ -38,8 +38,9 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
         value.takenOver?.addEventListener("abort", () => {
           if (wallet.current !== value) return;
-          operation.current?.abort(); wallet.current = null;
-          setRecords(null); setHandedOff(true); setSaved(hasSavedWallet());
+          // The aborted operation skips its own cleanup, so reset its progress here.
+          operation.current?.abort(); operation.current = null; wallet.current = null;
+          setRecords(null); setProgress(null); setHandedOff(true); setSaved(hasSavedWallet());
         }, { once: true });
         wallet.current = value; return value;
       }), deadline);

@@ -47,12 +47,14 @@ export async function claimWallet(): Promise<WalletTenure> {
     const lost = new AbortController();
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
-    let granted!: () => void;
-    const owned = new Promise<void>(resolve => { granted = resolve; });
-    // Rejects only when another tab steals the lock; a release resolves it.
-    navigator.locks.request(OPEN_LOCK, { steal: true }, () => { granted(); return held; })
-      .catch(() => lost.abort(new WalletTakenOverError()));
-    await owned;
+    let granted = false;
+    let owned!: () => void;
+    const ownership = new Promise<void>(resolve => { owned = resolve; });
+    // After the grant this rejects only when another tab steals the lock; a release resolves it.
+    const request = navigator.locks.request(OPEN_LOCK, { steal: true }, () => { granted = true; owned(); return held; });
+    request.catch(() => { if (granted) lost.abort(new WalletTakenOverError()); });
+    // A request that fails before its grant rejects the claim and frees the busy gate.
+    await Promise.race([ownership, request]);
     const holds = new Set<() => void>();
     return {
       lost: lost.signal,

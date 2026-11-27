@@ -32,19 +32,28 @@ export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolE
   return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
 }
 
+/** A Selfie Check enrollment for one request, run once per capture attempt. */
+export type PoseGuardEnrollment = RunPoseGuard & {
+  /**
+   * Whether the issuer may have accepted a capture whose credential is not stored yet. Only this
+   * enrollment holds what recovers it, so the wallet must not move to another tab meanwhile.
+   */
+  hasUnresolvedSubmission(): boolean;
+};
+
 export function createPoseGuardEnrollment(
   session: RequestWalletSession,
   issuer: SelfieIssuer,
   requestSignal: AbortSignal,
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
-): RunPoseGuard {
+): PoseGuardEnrollment {
   // A submitted capture and the wallet that will hold its credential.
   let enrollment: { receipt: EnrollmentReceipt; wallet: WalletKit; factor: string } | undefined;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
-  return async (video, viewSignal, update) => {
+  const run: RunPoseGuard = async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
     const signal = AbortSignal.any([viewSignal, requestSignal]);
@@ -101,6 +110,8 @@ export function createPoseGuardEnrollment(
       inFlight = false;
     }
   };
+
+  return Object.assign(run, { hasUnresolvedSubmission: () => enrollment !== undefined && !saved });
 
   async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
     const timeout = AbortSignal.timeout(30_000);
