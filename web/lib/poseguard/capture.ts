@@ -129,7 +129,8 @@ export async function collectPoseGuardImages(
     for (const issuedTarget of steps) {
       active.throwIfAborted();
       // Positive pitch points up in FaceEngine and down in the browser estimate.
-      const target = issuedTarget && { pitch: -issuedTarget.targetPitch, yaw: issuedTarget.targetYaw };
+      const engineTarget = issuedTarget && { pitch: issuedTarget.targetPitch, yaw: issuedTarget.targetYaw };
+      const target = engineTarget && { pitch: -engineTarget.pitch, yaw: engineTarget.yaw };
       const title = target ? turnInstruction(target) : "Look straight";
       const requiredMs = target ? 300 : CAPTURE_HOLD_DURATION_MS_V1;
       const completed = accepted.length;
@@ -152,7 +153,6 @@ export async function collectPoseGuardImages(
           active.throwIfAborted();
           if (frame.timestamp <= lastTimestamp || frame.timestamp - lastTimestamp > SAMPLE_GAP_MS) alignedSince = undefined;
           lastTimestamp = frame.timestamp;
-          const engineTarget = issuedTarget && { pitch: issuedTarget.targetPitch, yaw: issuedTarget.targetYaw };
           const gate = frame.stale ? "stale" : poseGate(frame.pose, engineTarget, frame.dimensions.png);
           const aligned = gate === "aligned";
           alignedSince = aligned ? (alignedSince ?? frame.timestamp) : undefined;
