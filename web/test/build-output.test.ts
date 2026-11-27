@@ -32,3 +32,20 @@ test("the build is a complete Cloudflare static deployment", async () => {
   expect(loader).toContain(`byteLength:${original.byteLength}`);
   expect(loader).toContain(createHash("sha256").update(original).digest("hex"));
 }, 120_000);
+
+// The capture diagnostics keep face images, so they must never reach a deployed build. Bun sets NODE_ENV=test,
+// which Vite reads as a development build, so this build sets it the way a deploy does.
+test("a production build leaves out the PoseGuard capture diagnostics", async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const { output } = await build({
+      configFile: resolve(webRoot, "vite.config.ts"), logLevel: "silent", build: { write: false },
+    }) as Rollup.RollupOutput;
+    const leaked = output.filter(file => file.type === "chunk" &&
+      ["PoseGuard debug", "poseguard-debug-", "Checked by the TEE only"].some(marker => file.code.includes(marker)));
+    expect(leaked.map(file => file.fileName)).toEqual([]);
+  } finally {
+    process.env.NODE_ENV = previous;
+  }
+}, 120_000);

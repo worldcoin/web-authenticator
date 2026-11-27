@@ -4,6 +4,7 @@ import wasmModuleUrl from "onnxruntime-web/ort-wasm-simd-threaded.mjs?url";
 import { HEAD_POSE_MODEL } from "../../../config/head-pose-model";
 import rgbnet from "../rgbnet-model.json";
 import { decodeRgbnet, INPUT_SIZE, prepareRgbnet, resizeAxisWeights, type FaceDetection } from "../rgbnet";
+import { eyeRoll } from "./engine-checks";
 import type { PoseObservation, PoseWorkerRequest, PoseWorkerResponse } from "./types";
 
 const POSE_SIZE = 224;
@@ -89,6 +90,7 @@ async function analyze(frame: ImageBitmap): Promise<PoseObservation | null> {
         left, top, right, bottom,
         yaw: Math.tanh(raw[1]) * 85,
         pitch: -Math.tanh(raw[0]) * 50,
+        roll: eyeRoll(face.landmarks),
       };
     });
   } finally {

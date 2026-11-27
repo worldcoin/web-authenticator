@@ -150,20 +150,27 @@ export function previewCrop(width: number, height: number, viewWidth = 1, viewHe
 }
 
 /**
- * Geometry checks of the face engine's VanillaSelfie captured-image analyzer, which World App iOS uses too.
- * Source: worldcoin/biometric-engines biometric-engines-worker/config/vanilla_selfie.yaml and
- * face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution}.rs.
+ * Geometry checks of the TEE worker's PoseGuard captured-image analyzer, run on all four frames.
+ * Source: worldcoin/biometric-engines `biometric-engines-worker-v0.3.0`, biometric-engines-worker/config/pose_guard_selfie.yaml
+ * and face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution,bbox_location}.rs.
  * The engine stays authoritative; matching it here avoids capturing frames it will reject.
  */
 export const ENGINE_FRAMING_V1 = Object.freeze({
-	// FaceBboxSizeValidator: smaller normalized box axis must exceed min.
+	// FaceBboxSizeValidator: smaller normalized box axis must exceed min; larger must stay below max.
 	minRelativeSize: 0.52,
+	maxRelativeSize: 0.8,
 	// FaceBboxResolutionValidator: box size in pixels of the analyzed image.
 	minResolutionPx: 112,
+	// BoundingBoxAlignmentQa: box must stay this far inside every image edge.
+	edgeMargin: 0.015,
 })
 
 export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {
 	const { minRelativeSize, minResolutionPx } = ENGINE_FRAMING_V1
 	return Math.min(relativeWidth, relativeHeight) <= minRelativeSize ||
 		Math.min(relativeWidth * imageWidth, relativeHeight * imageHeight) <= minResolutionPx
+}
+
+export function isFaceTooBig(relativeWidth: number, relativeHeight: number): boolean {
+	return Math.max(relativeWidth, relativeHeight) >= ENGINE_FRAMING_V1.maxRelativeSize
 }

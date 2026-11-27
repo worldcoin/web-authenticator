@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment, holdingBusy, type PoseGuardOutcome } from "../lib/poseguard/enrollment";
-import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
+import type { PoseGuardCapture, PoseGuardPrompt, PoseObservation } from "../lib/poseguard/types";
 import type { WalletKit } from "../lib/walletkit";
 import { CAPTURE_ID, enrollmentCapture } from "./fixtures/enrollment";
 
@@ -33,7 +33,7 @@ function cameraFrames(pitch = -17) {
     const [timestamp, yaw, pitch] = candidate;
     return {
       timestamp,
-      pose: { yaw, pitch, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8 },
+      pose: { yaw, pitch, roll: 0, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8 },
       dimensions: { png: [758, 1080] },
       async png() { encoded.push(marker); return Uint8Array.of(marker); },
       release() { released.push(marker); },
@@ -113,6 +113,70 @@ test.each([
   })).rejects.toBe(stop);
   expect(camera.encoded).toEqual([...encoded]);
 });
+
+// Browser pitch points down: -8 is a chin raised 8°, which the TEE's central head-pose check rejects above 6°.
+test.each([
+  { label: "a chin raised past the TEE's central pitch", pose: { pitch: -8 }, gate: "pitch", title: "Look straight" },
+  { label: "a face larger than the TEE's maximum size", pose: { left: 0.05, right: 0.9 }, gate: "too_big", title: "Move back" },
+  { label: "a head tilted past the TEE's central roll", pose: { roll: 44 }, gate: "roll", title: "Keep your head level" },
+] as const)("holds back a central frame with $label", async ({ pose, gate, title }) => {
+  const { gates, titles, encoded } = await centralFrames(pose, 20);
+  expect(encoded).toBe(0);
+  expect(new Set(gates)).toEqual(new Set([gate]));
+  expect(titles.at(-1)).toBe(title);
+});
+
+test("captures a central frame the TEE accepts though it looks down 15°", async () => {
+  const { gates, encoded } = await centralFrames({ pitch: 15 }, 20);
+  expect(encoded).toBe(1);
+  expect(gates.every(value => value === "aligned")).toBe(true);
+});
+
+test("holds back a challenge frame tilted past the TEE's roll tolerance", async () => {
+  const camera = cameraFrames();
+  const controller = new AbortController();
+  const gates: string[] = [];
+  const captured: number[] = [];
+  let reads = 0;
+  const stop = new Error("Read enough frames");
+  await expect(collectPoseGuardImages(prompt, controller.signal, async () => {
+    const frame = await camera.readFrame();
+    if (++reads === 6) controller.abort(stop);
+    // The first challenge asks for a 30° turn; tilt every frame of it by 9°.
+    return frame.timestamp >= 1300 && frame.pose ? { ...frame, pose: { ...frame.pose, roll: 9 } } : frame;
+  }, () => {}, {
+    started() {},
+    gated(step, value) { if (step === 2) gates.push(value); },
+    captured(frame) { captured.push(frame.step); },
+  })).rejects.toBe(stop);
+  expect(captured).toEqual([1]);
+  expect(gates).toContain("roll");
+  expect(gates).not.toContain("aligned");
+});
+
+async function centralFrames(change: Partial<PoseObservation>, count: number) {
+  const controller = new AbortController();
+  const gates: string[] = [];
+  const titles: string[] = [];
+  let encoded = 0;
+  let reads = 0;
+  const stop = new Error("Read enough frames");
+  await expect(collectPoseGuardImages(prompt, controller.signal, async () => {
+    if (++reads === count) controller.abort(stop);
+    return {
+      timestamp: reads * 100,
+      pose: { yaw: 0, pitch: 0, roll: 0, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8, ...change },
+      dimensions: { png: [758, 1080] },
+      async png() { encoded++; return Uint8Array.of(0); },
+      release() {},
+    };
+  }, state => { if (state.poseStep?.index === 1) titles.push(state.title); }, {
+    started() {},
+    gated(step, gate) { if (step === 1) gates.push(gate); },
+    captured() {},
+  })).rejects.toBe(stop);
+  return { gates, titles, encoded };
+}
 
 test("submits the attested capture once, resumes from the matching receipt and stores the credential", async () => {
   const capture = enrollmentCapture();

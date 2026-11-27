@@ -2,8 +2,9 @@ import { z } from "zod";
 import { abortable, pause } from "../async";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { CAPTURE_HOLD_DURATION_MS_V1 } from "../hold-steady-progress";
-import { isFaceTooSmall } from "../rgbnet";
+import { isFaceTooBig, isFaceTooSmall } from "../rgbnet";
 import { grabFrame, type CaptureState } from "../selfie-capture";
+import { enginePose, ENGINE_POSE_V1, POSE_GATE_MARGIN_DEGREES, type EngineTarget } from "./engine-checks";
 import type { ImageSize, PoseGate, PoseGuardImages, PoseGuardPrompt, PoseObservation, PoseTarget } from "./types";
 import { openPoseDetector } from "./worker";
 
@@ -18,6 +19,11 @@ const PoseGuardPromptSchema = z.object({
   }).refine(target => target.targetPitch !== 0 || target.targetYaw !== 0)).length(3),
   captureTimeoutMs: z.number().min(1),
 });
+const GATE_TITLES: Partial<Record<PoseGate, string>> = {
+  too_small: "Move closer",
+  too_big: "Move back",
+  roll: "Keep your head level",
+};
 const DIRECTIONS = ["right", "up and right", "up", "up and left", "left", "down and left", "down", "down and right"];
 
 export interface PoseFrame {
@@ -28,6 +34,25 @@ export interface PoseFrame {
   png(signal: AbortSignal): Promise<Uint8Array>;
   release(): void;
 }
+
+/** Watches a capture as it runs; the dev-only diagnostics panel is the only implementation. */
+export interface PoseGuardCaptureObserver {
+  started(targets: readonly EngineTarget[]): void;
+  gated(step: number, gate: PoseGate): void;
+  captured(frame: CapturedPoseFrame): void;
+}
+
+export type CapturedPoseFrame = {
+  step: number;
+  /** As issued by the TEE, in FaceEngine signs; null for the central frame. */
+  target: EngineTarget | null;
+  pose: PoseObservation;
+  /** The bytes sent to the TEE; they are zeroed when the enrollment ends, so copy them before returning. */
+  png: Uint8Array;
+  size: ImageSize;
+  heldMs: number;
+  durationMs: number;
+};
 
 export async function preparePoseGuardCamera(video: HTMLVideoElement, signal: AbortSignal, update: (state: CaptureState) => void) {
   const controller = new AbortController();
@@ -112,6 +137,7 @@ export async function collectPoseGuardImages(
   signal: AbortSignal,
   readFrame: (signal: AbortSignal) => Promise<PoseFrame>,
   update: (state: CaptureState) => void,
+  observer?: PoseGuardCaptureObserver,
 ): Promise<PoseGuardImages> {
   const parsed = PoseGuardPromptSchema.safeParse(issuedPrompt);
   if (!parsed.success) throw new Error("WalletKit supplied an invalid PoseGuard prompt.");
@@ -119,6 +145,7 @@ export async function collectPoseGuardImages(
   const active = AbortSignal.any([signal, AbortSignal.timeout(Math.min(CHALLENGE_TIMEOUT_MS, Math.floor(prompt.captureTimeoutMs)))]);
   const accepted: Uint8Array[] = [];
   const steps = [null, ...prompt.targets];
+  observer?.started(prompt.targets.map(({ targetPitch, targetYaw }) => ({ pitch: targetPitch, yaw: targetYaw })));
   try {
     for (const issuedTarget of steps) {
       active.throwIfAborted();
@@ -146,7 +173,9 @@ export async function collectPoseGuardImages(
           active.throwIfAborted();
           if (frame.timestamp <= lastTimestamp || frame.timestamp - lastTimestamp > SAMPLE_GAP_MS) alignedSince = undefined;
           lastTimestamp = frame.timestamp;
-          const gate = frame.stale ? "stale" : poseGate(frame.pose, target, frame.dimensions.png);
+          const engineTarget = issuedTarget && { pitch: issuedTarget.targetPitch, yaw: issuedTarget.targetYaw };
+          const gate = frame.stale ? "stale" : poseGate(frame.pose, engineTarget, frame.dimensions.png);
+          observer?.gated(phase.poseStep.index, gate);
           const aligned = gate === "aligned";
           alignedSince = aligned ? (alignedSince ?? frame.timestamp) : undefined;
           const heldMs = alignedSince === undefined ? 0 : frame.timestamp - alignedSince;
@@ -168,17 +197,24 @@ export async function collectPoseGuardImages(
               const bytes = await frame.png(active);
               if (active.aborted) { bytes.fill(0); active.throwIfAborted(); }
               accepted.push(bytes);
+              const durationMs = Math.round(performance.now() - shownAt);
+              if (observer && frame.pose) {
+                observer.captured({
+                  step: phase.poseStep.index, target: engineTarget, pose: frame.pose, png: bytes,
+                  size: frame.dimensions.png, heldMs: Math.round(heldMs), durationMs,
+                });
+              }
               // Unchanged copy: nothing on screen marks the moment a frame is taken.
               update({ ...phase, title: target ? title : "Hold steady", phase: "captured", hint: "", progress: accepted.length / steps.length });
               logPoseGuardEvent("poseguard_target", {
                 status: "captured", step: phase.poseStep.index,
-                durationMs: Math.round(performance.now() - shownAt),
+                durationMs,
                 heldMs: Math.round(heldMs),
                 ...(import.meta.env.DEV ? { png: frame.dimensions.png.join("×") } : {}),
               });
             }
           } else {
-            update({ ...phase, title: gate === "too_small" ? "Move closer" : title, phase: "framing", hint: "", progress: completed / steps.length });
+            update({ ...phase, title: GATE_TITLES[gate] ?? title, phase: "framing", hint: "", progress: completed / steps.length });
           }
         } finally {
           frame.release();
@@ -205,15 +241,30 @@ export function poseDirection(target: PoseTarget): { degrees: number; label: str
   return { degrees, label: DIRECTIONS[Math.round(degrees / 45) % 8] };
 }
 
-function poseGate(pose: PoseObservation | null, target: PoseTarget | null, [width, height]: ImageSize): PoseGate {
+/** Mirrors the TEE's framing and pose checks, kept `POSE_GATE_MARGIN_DEGREES` inside its angle bounds. */
+function poseGate(pose: PoseObservation | null, target: EngineTarget | null, [width, height]: ImageSize): PoseGate {
   if (!pose) return "no_estimate";
-  const { left, right, top, bottom, pitch, yaw } = pose;
+  const { left, right, top, bottom } = pose;
   if (left < 0.02 || right > 0.98 || top < 0.02 || bottom > 0.98) return "framing";
   if (isFaceTooSmall(right - left, bottom - top, width, height)) return "too_small";
-  const yawMatches = Math.abs(yaw - (target?.yaw ?? 0)) <= (target ? 8 : 6);
-  const pitchMatches = Math.abs(pitch - (target?.pitch ?? 0)) <= (target ? 8 : 10);
+  if (isFaceTooBig(right - left, bottom - top)) return "too_big";
+  const { pitch, yaw, roll } = enginePose(pose);
+  const margin = POSE_GATE_MARGIN_DEGREES;
+  let yawMatches: boolean, pitchMatches: boolean, rollMatches: boolean;
+  if (target) {
+    const tolerance = ENGINE_POSE_V1.challengeTolerance - margin;
+    yawMatches = Math.abs(yaw - target.yaw) <= tolerance;
+    pitchMatches = Math.abs(pitch - target.pitch) <= tolerance;
+    rollMatches = Math.abs(roll) <= tolerance;
+  } else {
+    const { maxYaw, minPitch, maxPitch, maxRoll } = ENGINE_POSE_V1.central;
+    yawMatches = Math.abs(yaw) <= maxYaw - margin;
+    pitchMatches = pitch >= minPitch + margin && pitch <= maxPitch - margin;
+    rollMatches = Math.abs(roll) <= maxRoll - margin;
+  }
   if (!pitchMatches) return yawMatches ? "pitch" : "pitch_and_yaw";
-  return yawMatches ? "aligned" : "yaw";
+  if (!yawMatches) return "yaw";
+  return rollMatches ? "aligned" : "roll";
 }
 
 async function encodePng(frame: HTMLCanvasElement, signal: AbortSignal): Promise<Uint8Array> {
