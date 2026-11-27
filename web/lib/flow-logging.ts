@@ -1,5 +1,3 @@
-import type { CaptureResult } from "./selfie-capture"
-
 /** A capture that ended on the error screen. The message stays dev-only: dependency errors can contain secrets. */
 export function logCaptureFailure(error: unknown) {
 	const name = error instanceof Error ? error.name : 'unknown_error'
@@ -9,10 +7,6 @@ export function logCaptureFailure(error: unknown) {
 		...(cause ? { cause } : {}),
 		...(import.meta.env.DEV && error instanceof Error ? { message: error.message } : {}),
 	})
-}
-
-export function logCaptureTiming({ guidanceMs, totalMs, width, height }: CaptureResult['timing']) {
-	if (import.meta.env.DEV) console.info('selfie_capture', { guidanceMs, totalMs, width, height })
 }
 
 export function logPoseGuardStep<T>(step: string, operation: () => Promise<T>): Promise<T> {

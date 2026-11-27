@@ -7,7 +7,6 @@ import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
 import { pollEnrollment, SignupServiceError, submitEnrollment, type EnrollmentReceipt, type EnrollmentResult } from "../signup-service";
 import { WalletOpenError } from "../wallet-errors";
-import type { RequestWalletSession } from "../wallet-session";
 import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
@@ -32,7 +31,7 @@ export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolE
   return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
 }
 
-/** A Selfie Check enrollment for one request, run once per capture attempt. */
+/** A Selfie Check enrollment, run once per capture attempt. */
 export type PoseGuardEnrollment = RunPoseGuard & {
   /**
    * Whether the issuer may have accepted a capture whose credential is not stored yet. Only this
@@ -41,53 +40,101 @@ export type PoseGuardEnrollment = RunPoseGuard & {
   hasUnresolvedSubmission(): boolean;
 };
 
+/** How long an unattended, unresolved submission keeps other tabs out. */
+const UNRESOLVED_HOLD_MS = 10 * 60_000;
+
+/**
+ * Runs each attempt of `enroll`, then `finish` after a completed one, under the tab's busy hold,
+ * so another tab cannot take the wallet mid-capture, issuance or `finish`. The hold outlives an
+ * attempt while a submitted capture is unresolved, for at most UNRESOLVED_HOLD_MS unattended.
+ */
+export function holdingBusy(
+  enroll: PoseGuardEnrollment,
+  holdBusy: () => Promise<() => void>,
+  finish: (signal: AbortSignal, update: (state: CaptureState) => void) => Promise<void>,
+  unresolvedHoldMs = UNRESOLVED_HOLD_MS,
+): RunPoseGuard {
+  let release: (() => void) | undefined;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const unhold = () => { clearTimeout(expiry); release?.(); release = undefined; };
+  return async (video, signal, update) => {
+    clearTimeout(expiry);
+    release ??= await holdBusy();
+    let keep = false;
+    try {
+      const outcome = await enroll(video, signal, update);
+      keep = outcome === "pending";
+      if (outcome === "completed") await finish(signal, update);
+      return outcome;
+    } catch (cause) {
+      keep = enroll.hasUnresolvedSubmission();
+      throw cause;
+    } finally {
+      if (keep) expiry = setTimeout(unhold, unresolvedHoldMs);
+      else unhold();
+    }
+  };
+}
+
+/**
+ * Enrolls a Selfie Check into `wallet`, whose account must already be registered. The returned run
+ * can be called again: it resumes a submitted capture that has no result yet, and captures anew
+ * once the issuer has failed one. `walletSignal` ends the enrollment with the wallet's session.
+ */
 export function createPoseGuardEnrollment(
-  session: RequestWalletSession,
+  wallet: WalletKit,
   issuer: SelfieIssuer,
-  requestSignal: AbortSignal,
+  walletSignal: AbortSignal,
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
 ): PoseGuardEnrollment {
-  // A submitted capture and the wallet that will hold its credential.
-  let enrollment: { receipt: EnrollmentReceipt; wallet: WalletKit; factor: string } | undefined;
+  let submitted: { receipt: EnrollmentReceipt; factor: string } | undefined;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
   const run: RunPoseGuard = async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
-    const signal = AbortSignal.any([viewSignal, requestSignal]);
+    const signal = AbortSignal.any([viewSignal, walletSignal]);
     const signupOptions = { endpoint: issuer.endpoint, signal };
     try {
       signal.throwIfAborted();
-      if (saved) return "completed";
+      if (saved) {
+        // The end screen follows the processing screen, so a run that has nothing left to do still shows it.
+        update(checking());
+        return "completed";
+      }
       if (savePromise) {
         update(checking());
         return await waitForSave(savePromise, signal);
       }
-      if (!enrollment) {
-        const { capture, identity, wallet, blindingFactor } =
-          await capturePoseGuard(session, issuer.policy, video, signal, update, prepareCamera, indexerSyncDelays);
+      if (!submitted) {
+        const { capture, identity, blindingFactor } =
+          await capturePoseGuard(wallet, issuer.policy, video, signal, update, prepareCamera, indexerSyncDelays);
         try {
           signal.throwIfAborted();
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
-          const submitted = enrollment = { receipt: identity, wallet, factor: blindingFactor };
+          const pending = submitted = { receipt: identity, factor: blindingFactor };
           // The issuer accepts the attested capture on its own; it asks for no ownership proof.
-          submitted.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(capture, "staging", signupOptions));
+          pending.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(capture, "staging", signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
             (error instanceof SignupServiceError && error.status !== undefined &&
-              error.status >= 400 && error.status < 500 && error.status !== 408))) enrollment = undefined;
+              error.status >= 400 && error.status < 500 && error.status !== 408))) submitted = undefined;
           throw error;
         }
       }
 
       update(checking());
       try {
-        const { receipt, wallet, factor } = enrollment;
+        const { receipt, factor } = submitted;
         const result = await pollEnrollment(receipt, signupOptions);
-        if (result.state !== "completed") return result.state;
+        if (result.state !== "completed") {
+          // A failed capture can be retaken. A duplicate face stays one, so its result is kept.
+          if (result.state === "failed") submitted = undefined;
+          return result.state;
+        }
         const { credential } = result;
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
@@ -111,7 +158,7 @@ export function createPoseGuardEnrollment(
     }
   };
 
-  return Object.assign(run, { hasUnresolvedSubmission: () => enrollment !== undefined && !saved });
+  return Object.assign(run, { hasUnresolvedSubmission: () => submitted !== undefined && !saved });
 
   async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
     const timeout = AbortSignal.timeout(30_000);
@@ -128,7 +175,7 @@ export function createPoseGuardEnrollment(
 }
 
 async function capturePoseGuard(
-  session: RequestWalletSession,
+  wallet: WalletKit,
   policy: SelfieEnrollmentPolicy,
   video: HTMLVideoElement,
   signal: AbortSignal,
@@ -138,11 +185,6 @@ async function capturePoseGuard(
 ) {
   signal.throwIfAborted();
   update({ ...INITIAL_CAPTURE_STATE, title: "Getting ready", hint: "" });
-  const wallet = await logPoseGuardStep("wallet_ready", async () => {
-    const state = await abortable(session.ready, signal);
-    if ("error" in state) throw state.error;
-    return state.wallet;
-  });
   const { sub, blindingFactor } = await logPoseGuardStep("prepare_credential", () =>
     prepareEnrollmentCredential(wallet, signal, update, indexerSyncDelays));
   const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
@@ -201,7 +243,7 @@ async function capturePoseGuard(
         walletSubjectMatches: true,
       });
     }
-    return { capture, identity, wallet, blindingFactor };
+    return { capture, identity, blindingFactor };
   } finally {
     camera.close();
     if (images) clearImages(images);

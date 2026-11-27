@@ -39,6 +39,11 @@ export class WalletKit {
 		return this.tenure?.lost
 	}
 
+	/** Makes other tabs refuse to take the wallet until the returned function is called or the wallet is closed. */
+	holdBusy(): Promise<() => void> {
+		return this.tenure ? this.tenure.holdBusy() : Promise.resolve(() => {})
+	}
+
 	terminate() {
 		this.client.terminate()
 		this.tenure?.release()

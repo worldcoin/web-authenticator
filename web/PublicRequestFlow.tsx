@@ -8,15 +8,13 @@ import type { RequestWalletSession } from "./lib/wallet-session";
 import { WalletTakenOverError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import type { WalletKit } from "./lib/walletkit";
 import { abortable, onAbort } from "./lib/async";
-import { createPoseGuardEnrollment, selfieIssuer, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { createPoseGuardEnrollment, holdingBusy, selfieIssuer, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { ProofReplayedError, proveAndDeliver } from "./lib/prove";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
 const SelfieCheck = lazy(() => import("./components/SelfieCheck"));
 // Shown once a credential is in the wallet, while the proof is created and sent.
 const PROVING = { title: "Credential received", hint: "Generating proof" };
-// How long an unattended, unresolved Selfie Check submission keeps other tabs out.
-const PENDING_HOLD_MS = 10 * 60_000;
 const APP_NOT_NOTIFIED = "The requesting app could not be notified. Return there to start again.";
 
 type Flow =
@@ -134,33 +132,14 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         void decline(incoming, "unavailable");
         return;
       }
-      const enroll = createPoseGuardEnrollment(current, issuer, controller.signal);
+      const enroll = createPoseGuardEnrollment(ready.wallet, issuer, controller.signal);
       // A tab that opens later is refused while a capture, issuance or proof runs here, and
-      // while a submitted capture is unresolved: only this tab can recover its credential. An
-      // unattended unresolved capture stops blocking other tabs after PENDING_HOLD_MS.
-      let release: (() => void) | undefined;
-      let expiry: ReturnType<typeof setTimeout> | undefined;
-      const unhold = () => { clearTimeout(expiry); release?.(); release = undefined; };
-      setFlow({ stage: "capture", enroll: async (video, signal, update) => {
-        clearTimeout(expiry);
-        release ??= await current.holdBusy();
-        let keep = false;
-        try {
-          const outcome = await enroll(video, signal, update);
-          keep = outcome === "pending";
-          if (outcome !== "completed") return outcome;
-          update({ phase: "checking", ...PROVING, progress: 1, cameraReady: false });
-          // A replayed action replaces the capture screen, so its outcome is never shown.
-          if (await answer(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]))) { stop(); onDispose(); }
-          return outcome;
-        } catch (cause) {
-          keep = enroll.hasUnresolvedSubmission();
-          throw cause;
-        } finally {
-          if (keep) expiry = setTimeout(unhold, PENDING_HOLD_MS);
-          else unhold();
-        }
-      } });
+      // while a submitted capture is unresolved: only this tab can recover its credential.
+      setFlow({ stage: "capture", enroll: holdingBusy(enroll, () => current.holdBusy(), async (signal, update) => {
+        update({ phase: "checking", ...PROVING, progress: 1, cameraReady: false });
+        // A replayed action replaces the capture screen, so its outcome is never shown.
+        if (await answer(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]))) { stop(); onDispose(); }
+      }) });
     } catch (cause) {
       if (controller.signal.aborted) return;
       if (cause instanceof RequestExpiredError) end("expired");

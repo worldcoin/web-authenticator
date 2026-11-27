@@ -14,7 +14,7 @@ Static client-side React SPA for passkey World ID access and relying party (`/ve
 
 `/` and `/authenticator` share one layout so signing in or creating a World ID replaces the URL with `/authenticator` without unmounting the unlocked wallet. Reloading or leaving locks the wallet and requires signing in again.
 
-The standalone authenticator lets a user create a World ID with a passkey (disabled when a wallet is already saved in this browser) or sign in to an existing one, and lists stored credentials. Linking an authenticator is unavailable. A signed-in user without an active Selfie Check credential can open a local camera preview that issues no credential.
+The standalone authenticator lets a user create a World ID with a passkey (disabled when a wallet is already saved in this browser) or sign in to an existing one, and lists stored credentials. Linking an authenticator is unavailable. A signed-in user without an active Selfie Check credential can set one up where the environment has an issuer: the same PoseGuard capture and enrollment as `/verify` stores the credential in the wallet, and the credentials list then shows it as Active. Without an issuer the entry reads "Not available yet".
 
 The router keeps the query string opaque (`parseSearch`/`stringifySearch`) so TanStack Router does not re-encode `k` before `/verify` reads the raw URL. Request flow stages stay in memory rather than in the URL.
 

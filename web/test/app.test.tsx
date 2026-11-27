@@ -10,7 +10,6 @@ import { RequestExpiredError } from "../lib/proof-request";
 import { WalletBusyElsewhereError, WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
-import * as capture from "../lib/selfie-capture";
 import * as poseGuard from "../lib/poseguard/enrollment";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost:4173/" }));
@@ -29,7 +28,7 @@ async function fixture(schema: number, available = false) {
   const { payload } = await signedRequest(schema);
   const credential = { credentialId: 1n, issuerSchemaId: BigInt(schema), isExpired: false, expiresAt: BigInt(Math.floor(Date.now()/1000)+3600), genesisIssuedAt: 0n } as CredentialMetadata;
   let records = available ? [credential] : [];
-  const calls = { unlocked: 0, prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0 };
+  const calls = { unlocked: 0, prove: 0, deliver: [] as string[], failDelivery: false, listed: 0, deleted: [] as bigint[], failDelete: false, terminated: 0, busy: 0, idle: 0 };
   const incoming: IncomingRequest = {
     proof: payload.proof_request, label: "rp_1",
     validate: async () => {}, cancel: async () => {},
@@ -40,6 +39,7 @@ async function fixture(schema: number, available = false) {
     deleteCredential: async (id: bigint) => { calls.deleted.push(id); if (calls.failDelete) throw new Error("private worker error"); records = records.filter(record => record.credentialId !== id); },
     generateProof: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
     terminate: () => { calls.terminated++; },
+    holdBusy: async () => { calls.busy++; return () => { calls.idle++; }; },
   } as unknown as WalletKit;
   // Aborting it is another tab taking the wallet.
   const takeover = new AbortController();
@@ -172,7 +172,6 @@ test("a request the wallet cannot answer enrolls a Selfie Check, then proves and
     update({ phase: "framing", title: "Look straight", hint: "", progress: 0, cameraReady: true, target: null, poseStep: { index: 1, total: 4 } });
     return outcome;
   }));
-  const captureMock = spyOn(capture, "captureSelfie").mockRejectedValue(new Error("Enrollment requires PoseGuard."));
   try {
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     expect(await view.findByRole("heading", { name: "Request from rp_1" })).toBeTruthy();
@@ -234,12 +233,10 @@ test("a request the wallet cannot answer enrolls a Selfie Check, then proves and
     expect([...allSet.querySelectorAll("a")].map(link => link.getAttribute("href"))).toContain("https://rp.example/done");
     expect(enrollment).toHaveBeenCalledTimes(1);
     expect(enrollment.mock.calls[0]![1]).toEqual(issuer);
-    expect(captureMock).not.toHaveBeenCalled();
     expect(f.calls.deliver).toEqual([JSON.stringify({ id: "test-request", responses: [{}] })]);
     expect(f.calls.terminated).toBe(1);
   } finally {
     enrollment.mockRestore();
-    captureMock.mockRestore();
   }
 });
 
@@ -401,28 +398,36 @@ test("another tab taking the wallet while credentials load leaves sign-in availa
 
 test("a signed-in authenticator locks and says so when another tab takes the wallet", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(() => new Promise(() => {})));
   try {
     const f = await fixture(11);
     visit("/authenticator");
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
-    // The camera preview closes too, so the notice is not hidden behind it.
+    // Enrolling here keeps other tabs out. Should the wallet still be taken, the camera closes too.
     fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
     expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+    await waitFor(() => expect(f.calls.busy).toBe(1));
     act(() => f.takeover.abort());
     expect(await view.findByText("Continued in another tab.")).toBeTruthy();
     expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     expect(view.queryByText("0 credentials in your authenticator.")).toBeNull();
     expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
     expect(view.queryByRole("alert")).toBeNull();
-  } finally { localStorage.clear(); }
+  } finally { enrollment.mockRestore(); localStorage.clear(); }
 });
 
-test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {
+test("standalone creation opens a passkey wallet, enrolls a Selfie Check and shows it active", async () => {
   localStorage.clear(); visit("/");
   const f = await fixture(11);
   let mode: string | undefined;
+  let finish!: (result: poseGuard.PoseGuardOutcome) => void;
+  const outcome = new Promise<poseGuard.PoseGuardOutcome>(resolve => { finish = resolve; });
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(async (_video, _signal, update) => {
+    update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false });
+    return outcome;
+  }));
   const view = render(<AuthenticatorAppV1 services={{ ...f.services, open: async (_signal, _progress, selected) => {
     mode = selected;
     localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
@@ -434,10 +439,73 @@ test("standalone creation opens a passkey wallet and offers the Selfie Check pre
     fireEvent.click(view.getByRole("button", { name: "Create a new World ID" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
     expect(mode).toBe("create");
-    expect(view.getByText(/it won’t issue a credential/)).toBeTruthy();
+    expect(view.getByText("Verify with a selfie")).toBeTruthy();
     fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
-    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
-  } finally { localStorage.clear(); }
+    expect(await view.findByRole("heading", { name: "Processing liveness" })).toBeTruthy();
+    expect(enrollment.mock.calls[0]!.slice(0, 2)).toEqual([f.wallet, poseGuard.selfieIssuer("staging")!]);
+
+    // Leaving and reopening continues the same enrollment instead of starting another.
+    fireEvent.click(view.getByRole("button", { name: "Back to authenticator" }));
+    fireEvent.click(await view.findByRole("button", { name: "Set up Selfie Check" }));
+    expect(await view.findByRole("heading", { name: "Processing liveness" })).toBeTruthy();
+    expect(enrollment).toHaveBeenCalledTimes(1);
+
+    f.issue();
+    finish("completed");
+    await view.findByTestId("all-set", undefined, { timeout: 3_000 });
+    // The end screen returns in place: the wallet stays open and lists the new credential.
+    fireEvent.click(view.getByRole("button", { name: "Return to authenticator" }));
+    expect(await view.findByText("1 credential in your authenticator.")).toBeTruthy();
+    expect(view.getByRole("listitem").textContent).toBe("◎Selfie CheckActive");
+    expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(f.calls.terminated).toBe(0);
+  } finally { enrollment.mockRestore(); localStorage.clear(); }
+});
+
+test.each([
+  { failures: 1, shown: "1 credential in your authenticator." },
+  { failures: 2, shown: "Your credentials could not be loaded. Lock the authenticator and sign in again." },
+])("a credential list that fails to load $failures time(s) after enrollment still ends all set", async ({ failures: failing, shown }) => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  visit("/");
+  const f = await fixture(11);
+  const list = f.wallet.listCredentials.bind(f.wallet);
+  let failures = 0;
+  f.wallet.listCredentials = async () => { if (failures-- > 0) throw new Error("private worker error"); return list(); };
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(fakeEnrollment(async (_video, _signal, update) => {
+    update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false });
+    return "completed";
+  }));
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    await view.findByText("0 credentials in your authenticator.");
+    f.issue(); failures = failing;
+    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    await view.findByTestId("all-set", undefined, { timeout: 3_000 });
+    fireEvent.click(view.getByRole("button", { name: "Return to authenticator" }));
+    // Returning loads the list again; one that still cannot load says so.
+    expect(await view.findByText(shown)).toBeTruthy();
+    expect(view.queryByText("private worker error")).toBeNull();
+    // Locking, which the message asks for, clears it.
+    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
+    expect(view.queryByRole("alert")).toBeNull();
+  } finally { enrollment.mockRestore(); localStorage.clear(); }
+});
+
+test("an environment without a Selfie Check issuer does not offer setup", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  visit("/");
+  const f = await fixture(11);
+  const issuer = spyOn(poseGuard, "selfieIssuer").mockReturnValue(undefined);
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+    expect(view.getByText("Not available yet")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Set up Selfie Check" })).toBeNull();
+  } finally { issuer.mockRestore(); localStorage.clear(); }
 });
 
 test("saved access requires explicit sign-in and shows credentials without starting camera", async () => {
