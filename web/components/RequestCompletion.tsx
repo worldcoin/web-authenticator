@@ -6,6 +6,7 @@ const MESSAGES = {
   replayed: ["Proof already created", "This authenticator has already proved this action for this app."],
   unavailable: ["This check can’t be completed here", "This authenticator has no credential for this request and can’t issue one."],
   error: ["Something went wrong", "The check could not be completed. Please try again."],
+  "handed-off": ["Continued in another tab", "Your authenticator opened in another tab, so this tab stopped. You can close it."],
 } as const;
 
 /** How a request ended without a proof. */

@@ -6,8 +6,9 @@ beforeAll(() => {
   GlobalRegistrator.register({ url: "https://localhost/" });
   Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
   Object.defineProperty(globalThis, "PublicKeyCredential", { configurable: true, value: class {} });
-  Object.defineProperty(navigator, "locks", { configurable: true, value: { request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}) } });
+  Object.defineProperty(navigator, "locks", { configurable: true, value: { request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}), query: async () => ({ held: heldLocks }) } });
 });
+let heldLocks: { name: string }[] = [];
 afterAll(() => GlobalRegistrator.unregister());
 
 test("explicit access mode cannot create or replace a saved authenticator", async () => {
@@ -63,4 +64,17 @@ test("cancellation after creation erases the PRF output without opening a worker
     expect(assertions).toBe(0);
     expect(output.every(byte => byte === 0)).toBe(true);
   } finally { localStorage.clear(); }
+});
+
+test("a check running in another tab refuses before the passkey prompt", async () => {
+  let prompts = 0;
+  Object.defineProperty(navigator, "credentials", { configurable: true, value: {
+    get: async () => { prompts++; throw new Error("Unexpected prompt"); },
+    create: async () => { prompts++; throw new Error("Unexpected prompt"); },
+  } });
+  heldLocks = [{ name: "world-id-wallet-open-v1" }, { name: "world-id-wallet-busy-v1" }];
+  try {
+    await expect(openAuthenticator(new AbortController().signal, () => {}, "open")).rejects.toThrow("busy with a check in another tab");
+    expect(prompts).toBe(0);
+  } finally { heldLocks = []; }
 });

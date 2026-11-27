@@ -1,5 +1,6 @@
 import { isCanonicalSubject } from './enrollment-contract'
 import type { PoseGuardCapture } from "./poseguard/types";
+import type { WalletTenure } from "./tab-handoff";
 import {
 	type Authenticator,
 	type CredentialStore,
@@ -29,15 +30,31 @@ export class WalletKit {
 		private readonly client: PublishedWalletKit,
 		private readonly store: CredentialStore,
 		private readonly environment: InitializeOptions['environment'],
-		private readonly region: InitializeOptions['region']
+		private readonly region: InitializeOptions['region'],
+		private readonly tenure?: WalletTenure
 	) {}
+
+	/** Aborts when another tab takes the wallet; the worker is already stopped by then. */
+	get takenOver(): AbortSignal | undefined {
+		return this.tenure?.lost
+	}
+
+	/** Makes other tabs refuse to take the wallet until the returned function is called or the wallet is closed. */
+	holdBusy(): Promise<() => void> {
+		return this.tenure ? this.tenure.holdBusy() : Promise.resolve(() => {})
+	}
 
 	terminate() {
 		this.client.terminate()
+		this.tenure?.release()
 	}
 
 	async close() {
-		await this.client.close()
+		try {
+			await this.client.close()
+		} finally {
+			this.tenure?.release()
+		}
 	}
 
 	recoveryDataFromSeed(seed: Uint8Array) {

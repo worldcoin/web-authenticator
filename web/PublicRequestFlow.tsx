@@ -5,10 +5,10 @@ import { ProcessingStatus, type EndAction } from "./components/ProcessingGlyph";
 import { checkRequestCredentials, publicRequestUnsupportedReason, type IncomingRequest } from "./lib/incoming-request";
 import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
-import { walletOpenErrorMessage } from "./lib/wallet-errors";
+import { WalletTakenOverError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import type { WalletKit } from "./lib/walletkit";
-import { abortable } from "./lib/async";
-import { createPoseGuardEnrollment, selfieIssuer, type RunPoseGuard } from "./lib/poseguard/enrollment";
+import { abortable, onAbort } from "./lib/async";
+import { createPoseGuardEnrollment, holdingBusy, selfieIssuer, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { ProofReplayedError, proveAndDeliver } from "./lib/prove";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
 
@@ -18,7 +18,7 @@ const PROVING = { title: "Credential received", hint: "Generating proof" };
 const APP_NOT_NOTIFIED = "The requesting app could not be notified. Return there to start again.";
 
 type Flow =
-  | { stage: "intro" | "proving" | "all-set" | "cancelled" | "expired" | "replayed" | "unavailable" }
+  | { stage: "intro" | "proving" | "all-set" | "cancelled" | "expired" | "replayed" | "unavailable" | "handed-off" }
   | { stage: "capture"; enroll: RunPoseGuard }
   | { stage: "error"; detail: string };
 
@@ -57,8 +57,11 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   }, [stop]);
   useEffect(() => { if (expired) stop(); }, [expired, stop]);
 
-  /** Ends the request on a final screen. */
-  const end = useCallback((stage: "all-set" | "cancelled" | "expired" | "replayed" | "unavailable") => {
+  /**
+   * Ends the request on a final screen. A request handed off to another tab sends the app
+   * nothing: that tab may be answering this same request.
+   */
+  const end = useCallback((stage: "all-set" | "cancelled" | "expired" | "replayed" | "unavailable" | "handed-off") => {
     stop();
     setFlow({ stage });
     onDispose();
@@ -106,7 +109,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         if (!deadline.aborted) setOpenProgress(message);
       }).then(value => {
         if (deadline.aborted) { value.dispose(); deadline.throwIfAborted(); }
-        session.current = value; return value;
+        // Another tab took the wallet and has already stopped its worker here.
+        session.current = value;
+        onAbort(value.takenOver, () => { if (session.current === value) end("handed-off"); });
+        return value;
       }), deadline);
       const ready = await abortable(current.ready, deadline);
       if ("error" in ready) throw ready.error;
@@ -115,7 +121,10 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
 
       if (credentials.satisfied) {
         setFlow({ stage: "proving" });
-        if (await answer(incoming, ready.wallet, deadline)) end("all-set");
+        const release = await current.holdBusy();
+        try {
+          if (await answer(incoming, ready.wallet, deadline)) end("all-set");
+        } finally { release(); }
         return;
       }
       const issuer = selfieIssuer();
@@ -124,17 +133,17 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         return;
       }
       const enroll = createPoseGuardEnrollment(ready.wallet, issuer, controller.signal);
-      setFlow({ stage: "capture", enroll: async (video, signal, update) => {
-        const outcome = await enroll(video, signal, update);
-        if (outcome !== "completed") return outcome;
+      // A tab that opens later is refused while a capture, issuance or proof runs here, and
+      // while a submitted capture is unresolved: only this tab can recover its credential.
+      setFlow({ stage: "capture", enroll: holdingBusy(enroll, () => current.holdBusy(), async (signal, update) => {
         update({ phase: "checking", ...PROVING, progress: 1, cameraReady: false });
         // A replayed action replaces the capture screen, so its outcome is never shown.
         if (await answer(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]))) { stop(); onDispose(); }
-        return outcome;
-      } });
+      }, controller.signal) });
     } catch (cause) {
       if (controller.signal.aborted) return;
       if (cause instanceof RequestExpiredError) end("expired");
+      else if (cause instanceof WalletTakenOverError) end("handed-off");
       else { stop(); setFlow({ stage: "error", detail: walletOpenErrorMessage(cause) }); }
     } finally { setOpening(false); }
   }, [loading, incoming, failed, expired, unsupported, flow.stage, onUnlock, onDispose, stop, end, answer, decline]);
@@ -169,7 +178,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
   </div>;
 
   if (flow.stage !== "intro") return <div className={requestFrame}>
-    <RequestCompletion state={flow.stage} returnUrl={returnUrl} detail={notice} />
+    <RequestCompletion state={flow.stage} returnUrl={flow.stage === "handed-off" ? undefined : returnUrl} detail={notice} />
   </div>;
 
   return <div className={consentFrame}>

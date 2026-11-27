@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
-import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
+import { createPoseGuardEnrollment, holdingBusy, type PoseGuardOutcome } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
 import type { WalletKit } from "../lib/walletkit";
 import { CAPTURE_ID, enrollmentCapture } from "./fixtures/enrollment";
@@ -250,6 +250,8 @@ test.each([
 
     await expect(attempt()).resolves.toBe(first);
     expect(stored).toBe(0);
+    // The issuer answered either way: nothing is left for this tab to recover.
+    expect(run.hasUnresolvedSubmission()).toBe(false);
     await expect(attempt()).resolves.toBe(second);
     expect({ puts, sdkCalls, stored }).toEqual({ puts: captures, sdkCalls: captures, stored: expectedStored });
   } finally {
@@ -380,4 +382,36 @@ test.each([
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
 
   await expect(run({} as HTMLVideoElement, signal, () => {})).rejects.toThrow(message);
+});
+
+test("the busy hold outlives a pending attempt, ends after its cap, and ends with the wallet session", async () => {
+  const holds = { taken: 0, released: 0 };
+  const holdBusy = async () => { holds.taken++; return () => { holds.released++; }; };
+  const outcomes: PoseGuardOutcome[] = ["pending", "pending", "pending"];
+  const enroll = Object.assign(async () => outcomes.shift()!, { hasUnresolvedSubmission: () => true });
+  const video = {} as HTMLVideoElement;
+  const signal = new AbortController().signal;
+
+  const capped = holdingBusy(enroll, holdBusy, async () => {}, new AbortController().signal, 10);
+  expect(await capped(video, signal, () => {})).toBe("pending");
+  expect(holds).toEqual({ taken: 1, released: 0 });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(holds).toEqual({ taken: 1, released: 1 });
+
+  const session = new AbortController();
+  const ended = holdingBusy(enroll, holdBusy, async () => {}, session.signal, 60_000);
+  expect(await ended(video, signal, () => {})).toBe("pending");
+  session.abort();
+  expect(holds).toEqual({ taken: 2, released: 2 });
+
+  // A save that outlived the wait finishes later: the hold ends once nothing is unresolved.
+  let unresolved = true;
+  const settling = holdingBusy(Object.assign(async () => "pending" as const, { hasUnresolvedSubmission: () => unresolved }),
+    holdBusy, async () => {}, new AbortController().signal, 60_000, 5);
+  expect(await settling(video, signal, () => {})).toBe("pending");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(holds).toEqual({ taken: 3, released: 2 });
+  unresolved = false;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(holds).toEqual({ taken: 3, released: 3 });
 });

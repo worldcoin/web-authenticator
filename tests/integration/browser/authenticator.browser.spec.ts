@@ -81,6 +81,7 @@ if (!("bun" in process.versions)) {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "locks", { configurable: true, value: {
         request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}),
+        query: async () => ({ held: [] }),
       } });
       if (typeof PublicKeyCredential === "undefined") {
         Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: class {} });

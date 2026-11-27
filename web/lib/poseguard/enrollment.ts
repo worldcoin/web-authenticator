@@ -1,6 +1,6 @@
 import type { SelfieCaptureFailure } from "@worldcoin/walletkit-web";
 import { ENVIRONMENTS, type ProtocolEnvironment, type SelfieEnrollmentPolicy } from "../../../config/environment";
-import { abortable, pause } from "../async";
+import { abortable, onAbort, pause } from "../async";
 import { currentProtocolEnvironment } from "../environment";
 import { EnrollmentCaptureSchema, validateEnrollmentCapture } from "../enrollment-contract";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
@@ -31,6 +31,61 @@ export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolE
   return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
 }
 
+/** A Selfie Check enrollment, run once per capture attempt. */
+export type PoseGuardEnrollment = RunPoseGuard & {
+  /**
+   * Whether the issuer may have accepted a capture whose credential is not stored yet. Only this
+   * enrollment holds what recovers it, so the wallet must not move to another tab meanwhile.
+   */
+  hasUnresolvedSubmission(): boolean;
+};
+
+/** How long an unattended, unresolved submission keeps other tabs out. */
+const UNRESOLVED_HOLD_MS = 10 * 60_000;
+/** How often a kept hold checks whether its submission resolved, e.g. a save that outlived the wait. */
+const UNRESOLVED_CHECK_MS = 5_000;
+
+/**
+ * Runs each attempt of `enroll`, then `finish` after a completed one, under the tab's busy hold,
+ * so another tab cannot take the wallet mid-capture, issuance or `finish`. The hold outlives an
+ * attempt while a submitted capture is unresolved, for at most UNRESOLVED_HOLD_MS unattended.
+ */
+export function holdingBusy(
+  enroll: PoseGuardEnrollment,
+  holdBusy: () => Promise<() => void>,
+  finish: (signal: AbortSignal, update: (state: CaptureState) => void) => Promise<void>,
+  /** The wallet session; ending it ends the hold. */
+  walletSignal: AbortSignal,
+  unresolvedHoldMs = UNRESOLVED_HOLD_MS,
+  checkMs = UNRESOLVED_CHECK_MS,
+): RunPoseGuard {
+  let release: (() => void) | undefined;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  let check: ReturnType<typeof setInterval> | undefined;
+  const settle = () => { clearTimeout(expiry); clearInterval(check); };
+  const unhold = () => { settle(); release?.(); release = undefined; };
+  onAbort(walletSignal, unhold);
+  return async (video, signal, update) => {
+    settle();
+    release ??= await holdBusy();
+    let keep = false;
+    try {
+      const outcome = await enroll(video, signal, update);
+      keep = outcome === "pending";
+      if (outcome === "completed") await finish(signal, update);
+      return outcome;
+    } catch (cause) {
+      keep = enroll.hasUnresolvedSubmission();
+      throw cause;
+    } finally {
+      if (keep) {
+        expiry = setTimeout(unhold, unresolvedHoldMs);
+        check = setInterval(() => { if (!enroll.hasUnresolvedSubmission()) unhold(); }, checkMs);
+      } else unhold();
+    }
+  };
+}
+
 /**
  * Enrolls a Selfie Check into `wallet`, whose account must already be registered. The returned run
  * can be called again: it resumes a submitted capture that has no result yet, and captures anew
@@ -42,12 +97,14 @@ export function createPoseGuardEnrollment(
   walletSignal: AbortSignal,
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
-): RunPoseGuard {
+): PoseGuardEnrollment {
   let submitted: { receipt: EnrollmentReceipt; factor: string } | undefined;
+  // The issuer's final answer for `submitted`: it issues nothing for a duplicate face.
+  let duplicate = false;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
-  return async (video, viewSignal, update) => {
+  const run: RunPoseGuard = async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
     const signal = AbortSignal.any([viewSignal, walletSignal]);
@@ -88,6 +145,7 @@ export function createPoseGuardEnrollment(
         if (result.state !== "completed") {
           // A failed capture can be retaken. A duplicate face stays one, so its result is kept.
           if (result.state === "failed") submitted = undefined;
+          else duplicate = true;
           return result.state;
         }
         const { credential } = result;
@@ -112,6 +170,8 @@ export function createPoseGuardEnrollment(
       inFlight = false;
     }
   };
+
+  return Object.assign(run, { hasUnresolvedSubmission: () => submitted !== undefined && !saved && !duplicate });
 
   async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
     const timeout = AbortSignal.timeout(30_000);

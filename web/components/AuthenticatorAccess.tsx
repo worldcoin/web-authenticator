@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { abortable } from "../lib/async";
-import { createPoseGuardEnrollment, selfieIssuer, type RunPoseGuard } from "../lib/poseguard/enrollment";
+import { abortable, onAbort } from "../lib/async";
+import { createPoseGuardEnrollment, holdingBusy, selfieIssuer, type RunPoseGuard } from "../lib/poseguard/enrollment";
 import { hasSavedWallet, type WalletOpenMode } from "../lib/wallet-session";
-import { walletOpenErrorMessage } from "../lib/wallet-errors";
+import { WalletTakenOverError, walletOpenErrorMessage } from "../lib/wallet-errors";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
 
 const SelfieCheck = lazy(() => import("./SelfieCheck"));
@@ -18,6 +18,8 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   const [enrolling, setEnrolling] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string>();
+  // Another tab took the wallet, which stopped it here.
+  const [handedOff, setHandedOff] = useState(false);
   const wallet = useRef<{ kit: WalletKit; closed: AbortController } | null>(null);
   const operation = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -31,20 +33,30 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   const startAccess = async (mode: "open" | "create") => {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
-    setError(undefined);
+    setError(undefined); setHandedOff(false);
     setProgress(mode === "create" ? "Create your passkey to continue." : "Use your passkey to sign in.");
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
       const current = await abortable(onOpen(deadline, () => { if (!deadline.aborted && operation.current === controller) setProgress("Opening your authenticator…"); }, mode).then(value => {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
-        wallet.current = { kit: value, closed: new AbortController() }; return value;
+        const opened = wallet.current = { kit: value, closed: new AbortController() };
+        onAbort(value.takenOver, () => {
+          if (wallet.current !== opened) return;
+          // The aborted operation skips its own cleanup, so reset its progress here.
+          operation.current?.abort(); operation.current = null;
+          closeWallet(wallet);
+          setEnrolling(false); setEnrollment(null); setRecords(null); setProgress(null);
+          setError(undefined); setHandedOff(true); setSaved(hasSavedWallet());
+        });
+        return value;
       }), deadline);
       setProgress("Loading your credentials…");
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));
       deadline.throwIfAborted(); setRecords(credentials); onSignedIn();
     } catch (cause) {
       closeWallet(wallet);
-      if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
+      if (cause instanceof WalletTakenOverError) setHandedOff(true);
+      else if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
     } finally {
       if (operation.current === controller) operation.current = null;
       if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
@@ -56,12 +68,11 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
     if (!enrollment) {
       const { kit, closed } = wallet.current;
       const enroll = createPoseGuardEnrollment(kit, issuer, closed.signal);
-      setEnrollment({ enroll: async (video, signal, update) => {
-        const outcome = await enroll(video, signal, update);
+      // Another tab is refused while a capture or issuance runs here, or a submission is unresolved.
+      setEnrollment({ enroll: holdingBusy(enroll, () => kit.holdBusy(), async signal => {
         // The credential is saved either way; leaving the camera loads the list again.
-        if (outcome === "completed") await refreshCredentials(AbortSignal.any([signal, closed.signal])).catch(() => signal.throwIfAborted());
-        return outcome;
-      } });
+        await refreshCredentials(AbortSignal.any([signal, closed.signal])).catch(() => signal.throwIfAborted());
+      }, closed.signal) });
     }
     setEnrolling(true);
   };
@@ -92,6 +103,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       {records
         ? <CredentialsPanel records={records} onSetUpSelfieCheck={selfieIssuer() ? setUpSelfieCheck : undefined} onLock={lock} />
         : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
+      {handedOff && !records && <p className="mt-4 rounded-lg bg-[#f4f7fc] p-3 text-[14px] text-[#2c3a4f]" role="status"><strong className="font-medium">Continued in another tab.</strong> Your authenticator opened in another tab, so it was locked here. Sign in again to use it in this tab.</p>}
       {error && <p className="mt-4 rounded-lg bg-[#fff1f1] p-3 text-[14px] text-[#a32424]" role="alert">{error}</p>}
     </article>
   </div>;
