@@ -3,6 +3,8 @@ export type { PoseGuardCapture, PoseGuardImages, PoseGuardPrompt } from "@worldc
 export type PoseObservation = {
   yaw: number;
   pitch: number;
+  /** FaceEngine's roll from the eye landmarks; 0 is level. */
+  roll: number;
   left: number;
   right: number;
   top: number;
