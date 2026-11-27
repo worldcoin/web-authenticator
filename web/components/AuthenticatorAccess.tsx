@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { abortable } from "../lib/async";
+import { abortable, onAbort } from "../lib/async";
 import { hasSavedWallet, type WalletOpenMode } from "../lib/wallet-session";
 import { WalletTakenOverError, walletOpenErrorMessage } from "../lib/wallet-errors";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
@@ -36,13 +36,14 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
       const current = await abortable(onOpen(deadline, () => { if (!deadline.aborted && operation.current === controller) setProgress("Opening your authenticator…"); }, mode).then(value => {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
-        value.takenOver?.addEventListener("abort", () => {
+        wallet.current = value;
+        onAbort(value.takenOver, () => {
           if (wallet.current !== value) return;
           // The aborted operation skips its own cleanup, so reset its progress here.
           operation.current?.abort(); operation.current = null; wallet.current = null;
-          setRecords(null); setProgress(null); setHandedOff(true); setSaved(hasSavedWallet());
-        }, { once: true });
-        wallet.current = value; return value;
+          setRecords(null); setProgress(null); setPreview(false); setHandedOff(true); setSaved(hasSavedWallet());
+        });
+        return value;
       }), deadline);
       setProgress("Loading your credentials…");
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));

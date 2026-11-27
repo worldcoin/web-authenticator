@@ -7,13 +7,14 @@ import type { CredentialStore, WalletKit } from "@worldcoin/walletkit-web";
 import { WalletKit as AccountWallet } from "./walletkit";
 import { initializeWalletKitFromCompressedWasm } from "./walletkit-wasm";
 import { openOrRegisterAuthenticator } from "./wallet-registration";
-import { abortable } from "./async";
+import { abortable, pause } from "./async";
 import { prfBytes } from "./prf-result";
 import { isSharedRpId, rpIdForNewPasskey } from "./passkey-rp";
-import { WalletBusyElsewhereError, WalletOpenError, WalletRegistrationError } from "./wallet-errors";
+import { WalletBusyElsewhereError, WalletOpenError, WalletRegistrationError, WalletStorageBusyError } from "./wallet-errors";
 import { claimWallet, walletBusyElsewhere, type WalletTenure } from "./tab-handoff";
 
 const PROFILE_KEY = "world-id-wallet-v1";
+const DISPLACED_RETRY_MS = 2_000;
 const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
 /** Passkey PRF input label; must equal the contract's `PRF_INPUT_V1_LABEL`. */
 export const PRF_INPUT_LABEL = "world-id/web-authenticator/prf/v1";
@@ -263,7 +264,13 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
     // The tab that has the wallet open stops its worker, releasing the vault's storage handle.
     const claimed = tenure = await logFlowStep("wallet.claim_tab", claimWallet);
     claimed.lost.addEventListener("abort", () => { opening.abort(claimed.lost.reason); client?.terminate(); }, { once: true });
-    client = await initializeWalletKitFromCompressedWasm(opening.signal);
+    client = await initializeWalletKitFromCompressedWasm(opening.signal).catch(async cause => {
+      // A displaced tab that is throttled may still be closing its worker after WalletKit's own
+      // retries; give it one more chance before reporting the storage as held.
+      if (!(cause instanceof WalletStorageBusyError) || !claimed.displaced) throw cause;
+      await pause(DISPLACED_RETRY_MS, opening.signal);
+      return initializeWalletKitFromCompressedWasm(opening.signal);
+    });
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : actualId));
     const root = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");

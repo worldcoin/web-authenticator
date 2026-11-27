@@ -91,7 +91,7 @@ if (!("bun" in process.versions)) {
       const second = await tab(context);
       await second.goto("/authenticator");
       await second.getByRole("button", { name: "Sign in with passkey" }).click();
-      await expect(second.getByRole("alert")).toHaveText("Your authenticator is still open in another tab or window. Close it, then try again.", { timeout: 60_000 });
+      await expect(second.getByRole("alert")).toHaveText("Your authenticator is still open in another tab or window. Close it, then try again. If no other tab is open, reload this page.", { timeout: 60_000 });
       await expect(signedIn(first)).toBeVisible();
     });
   });

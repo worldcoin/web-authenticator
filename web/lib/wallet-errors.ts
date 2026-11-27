@@ -27,7 +27,7 @@ export class WalletTakenOverError extends WalletOpenError {
  */
 export class WalletStorageBusyError extends WalletOpenError {
   constructor(options?: ErrorOptions) {
-    super("Your authenticator is still open in another tab or window. Close it, then try again.", options);
+    super("Your authenticator is still open in another tab or window. Close it, then try again. If no other tab is open, reload this page.", options);
   }
 }
 

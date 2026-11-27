@@ -13,7 +13,24 @@ test("a wallet lock request that fails before its grant rejects the claim and fr
       held.add(name);
       try { return await callback({}); } finally { held.delete(name); }
     },
+    query: async () => ({ held: [...held].map(name => ({ name })) }),
   } });
   await expect(claimWallet()).rejects.toThrow("Lock requests are not allowed here");
   expect([...held]).toEqual([]);
+});
+
+test("a released tenure cannot become busy, so it never blocks other tabs", async () => {
+  const held = new Map<string, number>();
+  Object.defineProperty(navigator, "locks", { configurable: true, value: {
+    request: async (name: string, _options: unknown, callback: (lock: object | null) => unknown) => {
+      held.set(name, (held.get(name) ?? 0) + 1);
+      try { return await callback({}); } finally { held.set(name, held.get(name)! - 1); }
+    },
+    query: async () => ({ held: [] }),
+  } });
+  const tenure = await claimWallet();
+  tenure.release();
+  await expect(tenure.holdBusy()).rejects.toThrow("continued in another tab");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(Object.fromEntries(held)).toEqual({ "world-id-wallet-busy-v1": 0, "world-id-wallet-open-v1": 0 });
 });

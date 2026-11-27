@@ -7,7 +7,7 @@ import { checkExpiry, RequestExpiredError } from "./lib/proof-request";
 import type { RequestWalletSession } from "./lib/wallet-session";
 import { WalletTakenOverError, walletOpenErrorMessage } from "./lib/wallet-errors";
 import type { WalletKit } from "./lib/walletkit";
-import { abortable } from "./lib/async";
+import { abortable, onAbort } from "./lib/async";
 import { createPoseGuardEnrollment, selfieIssuer, type RunPoseGuard } from "./lib/poseguard/enrollment";
 import { ProofReplayedError, proveAndDeliver } from "./lib/prove";
 import { actions, body, captureFrame, centeredLayout, consentFrame, requestFrame, screenContent, secondaryAction } from "./components/styles";
@@ -112,8 +112,9 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
       }).then(value => {
         if (deadline.aborted) { value.dispose(); deadline.throwIfAborted(); }
         // Another tab took the wallet and has already stopped its worker here.
-        value.takenOver.addEventListener("abort", () => { if (session.current === value) end("handed-off"); }, { once: true });
-        session.current = value; return value;
+        session.current = value;
+        onAbort(value.takenOver, () => { if (session.current === value) end("handed-off"); });
+        return value;
       }), deadline);
       const ready = await abortable(current.ready, deadline);
       if ("error" in ready) throw ready.error;

@@ -19,9 +19,12 @@ const BUSY_LOCK = "world-id-wallet-busy-v1";
 export interface WalletTenure {
   /** Aborts with a `WalletTakenOverError` when another tab takes the wallet. */
   readonly lost: AbortSignal;
+  /** Whether another tab had the wallet open, so its worker may still be closing. */
+  readonly displaced: boolean;
   /**
    * Makes other tabs refuse to take the wallet until the returned function is called, or the
-   * tenure is released. Rejects with a `WalletTakenOverError` once a takeover has started.
+   * tenure is released. Rejects with a `WalletTakenOverError` once a takeover has started or
+   * the tenure is released.
    */
   holdBusy(): Promise<() => void>;
   /** Gives up the wallet and any busy hold. Call after terminating the worker. */
@@ -45,6 +48,9 @@ export async function claimWallet(): Promise<WalletTenure> {
   return navigator.locks.request(BUSY_LOCK, { ifAvailable: true }, async gate => {
     if (gate === null) throw new WalletBusyElsewhereError();
     const lost = new AbortController();
+    const { held: locks = [] } = await navigator.locks.query();
+    const displaced = locks.some(lock => lock.name === OPEN_LOCK);
+    let released = false;
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
     let granted = false;
@@ -58,7 +64,9 @@ export async function claimWallet(): Promise<WalletTenure> {
     const holds = new Set<() => void>();
     return {
       lost: lost.signal,
+      displaced,
       holdBusy: async () => {
+        if (released) throw new WalletTakenOverError();
         if (holds.size > 0) throw new Error("This tab is already busy.");
         let done!: () => void;
         const finished = new Promise<void>(resolve => { done = resolve; });
@@ -72,10 +80,16 @@ export async function claimWallet(): Promise<WalletTenure> {
         });
         await Promise.race([ready, request]);
         const releaseHold = () => { holds.delete(releaseHold); done(); };
+        // Released while acquiring: give the busy lock straight back.
+        if (released) { done(); throw new WalletTakenOverError(); }
         holds.add(releaseHold);
         return releaseHold;
       },
-      release: () => { for (const releaseHold of holds) releaseHold(); release(); },
+      release: () => {
+        released = true;
+        for (const releaseHold of holds) releaseHold();
+        release();
+      },
     };
   });
 }

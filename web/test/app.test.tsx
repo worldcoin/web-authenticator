@@ -407,8 +407,12 @@ test("a signed-in authenticator locks and says so when another tab takes the wal
     const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
     fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
     expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+    // The camera preview closes too, so the notice is not hidden behind it.
+    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
     act(() => f.takeover.abort());
     expect(await view.findByText("Continued in another tab.")).toBeTruthy();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
     expect(view.queryByText("0 credentials in your authenticator.")).toBeNull();
     expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
     expect(view.queryByRole("alert")).toBeNull();
@@ -532,7 +536,7 @@ for (const [cause, expected] of [
   [new WalletBusyElsewhereError(), "Your authenticator is busy with a check in another tab. Finish or cancel it there, then try again."],
   // WalletKit's worker gave up on the vault's file handle: a tab that did not hand the wallet over holds it.
   [Object.assign(new Error("PersistentStorage error: creating sync access handle: NoModificationAllowedError"), { code: "PersistentStorage" }),
-    "Your authenticator is still open in another tab or window. Close it, then try again."],
+    "Your authenticator is still open in another tab or window. Close it, then try again. If no other tab is open, reload this page."],
 ] as const) {
   test(`wallet errors surface safe recovery guidance: ${expected}`, async () => {
     localStorage.clear(); visit("/");

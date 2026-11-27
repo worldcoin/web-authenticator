@@ -19,3 +19,9 @@ export function pause(ms: number, signal: AbortSignal): Promise<void> {
     if (signal.aborted) abort();
   });
 }
+
+/** Runs `callback` once `signal` aborts, including when it already has. */
+export function onAbort(signal: AbortSignal | undefined, callback: () => void): void {
+  if (signal?.aborted) callback();
+  else signal?.addEventListener("abort", callback, { once: true });
+}
