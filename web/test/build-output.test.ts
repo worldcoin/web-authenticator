@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { build, type Rollup } from "vite";
 import { RELEASE_FILE } from "../../config/build-manifest";
@@ -31,4 +31,23 @@ test("the build is a complete Cloudflare static deployment", async () => {
   expect(loader).toContain(`/${walletKit[0]}`);
   expect(loader).toContain(`byteLength:${original.byteLength}`);
   expect(loader).toContain(createHash("sha256").update(original).digest("hex"));
+}, 120_000);
+
+// The capture diagnostics keep face images, so they must never reach a deployed build. Bun sets NODE_ENV=test,
+// which Vite reads as a development build, so this build sets it the way a deploy does.
+test("a production build leaves out the PoseGuard capture diagnostics", async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const { output } = await build({
+      configFile: resolve(webRoot, "vite.config.ts"), logLevel: "silent", build: { write: false },
+    }) as Rollup.RollupOutput;
+    const shipped = output.flatMap(file => file.type === "chunk"
+      ? Object.entries(file.modules).filter(([, module]) => module.renderedLength > 0).map(([id]) => relative(webRoot, id))
+      : []);
+    expect(shipped).toContain("lib/poseguard/enrollment.ts");
+    expect(shipped.filter(id => /poseguard\/diagnostics\.ts$|PoseGuardDiagnostics\.tsx$/.test(id))).toEqual([]);
+  } finally {
+    process.env.NODE_ENV = previous;
+  }
 }, 120_000);

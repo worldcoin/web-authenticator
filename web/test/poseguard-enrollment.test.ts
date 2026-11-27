@@ -33,7 +33,7 @@ function cameraFrames(pitch = -17) {
     const [timestamp, yaw, pitch] = candidate;
     return {
       timestamp,
-      pose: { yaw, pitch, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8 },
+      pose: { yaw, pitch, roll: 0, left: 0.2, right: 0.8, top: 0.2, bottom: 0.8 },
       dimensions: { png: [758, 1080] },
       async png() { encoded.push(marker); return Uint8Array.of(marker); },
       release() { released.push(marker); },

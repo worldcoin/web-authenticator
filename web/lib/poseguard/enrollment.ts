@@ -9,6 +9,7 @@ import { pollEnrollment, SignupServiceError, submitEnrollment, type EnrollmentRe
 import { WalletOpenError } from "../wallet-errors";
 import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
+import { recordCaptureAttempt } from "./diagnostics";
 import type { PoseGuardImages } from "./types";
 
 // A new account's leaf reaches the indexer's tree after its database row; about 47 s in total.
@@ -215,6 +216,7 @@ async function capturePoseGuard(
     throw error;
   });
   let images: PoseGuardImages | undefined;
+  const diagnostics = import.meta.env.DEV ? recordCaptureAttempt() : undefined;
   const enrollmentSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   try {
     update({ phase: "checking", title: "Getting ready", hint: "", progress: 0, cameraReady: true });
@@ -224,7 +226,7 @@ async function capturePoseGuard(
       sub, publicKey, async (prompt, callbackSignal) => {
         logPoseGuardEvent("poseguard_prompt", { durationMs: Math.round(performance.now() - requestedAt) });
         const captureSignal = AbortSignal.any([enrollmentSignal, camera.signal, callbackSignal]);
-        const captured = await collectPoseGuardImages(prompt, captureSignal, camera.readFrame, update);
+        const captured = await collectPoseGuardImages(prompt, captureSignal, camera.readFrame, update, diagnostics);
         if (captureSignal.aborted) {
           clearImages(captured);
           captureSignal.throwIfAborted();
@@ -241,7 +243,11 @@ async function capturePoseGuard(
     });
     const result = await abortable(operation, enrollmentSignal);
     enrollmentSignal.throwIfAborted();
-    if (result.status !== "success") throw teeRejection(result);
+    if (result.status !== "success") {
+      diagnostics?.rejected(result);
+      throw teeRejection(result);
+    }
+    diagnostics?.accepted();
     if (!images) throw new Error("WalletKit finished before collecting the PoseGuard captures.");
     const capture = EnrollmentCaptureSchema.parse({
       fields: result.enrollment.fields,
@@ -259,6 +265,10 @@ async function capturePoseGuard(
       });
     }
     return { capture, identity, blindingFactor };
+  } catch (error) {
+    // Keeps a TEE verdict already recorded; otherwise marks where the attempt ended.
+    diagnostics?.failed(error);
+    throw error;
   } finally {
     camera.close();
     if (images) clearImages(images);
