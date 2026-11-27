@@ -28,7 +28,9 @@ export type RunPoseGuard = (
 /** The environment's Selfie Check issuer, or undefined where none is configured. */
 export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolEnvironment()): SelfieIssuer | undefined {
   const { signupServiceOrigin, selfieEnrollment: policy } = ENVIRONMENTS[environment];
-  return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
+  // The dev server proxies this path to signup-service; see `server.proxy` in web/vite.config.ts.
+  const origin = import.meta.env.DEV ? window.location.origin : signupServiceOrigin;
+  return policy ? { policy, endpoint: new URL("/api/v2/identity", origin).href } : undefined;
 }
 
 /**

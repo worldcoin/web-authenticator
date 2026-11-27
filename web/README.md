@@ -69,7 +69,7 @@ Tapping **Continue** on the request screen unlocks an existing passkey wallet or
 | ---------------------- | ----------------- | ------------------------ |
 | Staging (`https://authenticator.toolsforhumanity.dev`) | Yes (`selfie-enrollment-stage.worldcoin.dev` / `app.stage.face.worldcoin.org`) | Both paths work: saved credentials prove, and wallets without one enroll a Selfie Check and prove. |
 | Production (`https://web.world.org`) | No (`selfieEnrollment: null`) | Saved credentials prove; without one, the request is declined with "This check can’t be completed here". |
-| Local development (`http://localhost` / loopback, staging build) | Yes (staging config) | Saved credentials prove; enrollment runs capture, then fails with an error because staging signup-service refuses the localhost origin (CORS). |
+| Local development (`http://localhost` / loopback, staging build) | Yes (staging config) | Both paths work under `bun run dev`: the dev server proxies `/api/v2/identity` to staging signup-service as `https://authenticator.toolsforhumanity.dev`, whose CORS and WAF admit only that origin. `bun run preview` calls signup-service directly, so enrollment fails CORS there. |
 
 ### End states and cancellation
 

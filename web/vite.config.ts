@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-import { parseAppEnvironment } from "../config/environment";
+import { ENVIRONMENTS, parseAppEnvironment } from "../config/environment";
 import { cloudflareStaticHosting, compressedWalletKitWasm } from "./build/static-hosting";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -39,6 +39,7 @@ function rejectNonProductModulesFromBrowser(): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, appRoot, "VITE_");
   const environment = parseAppEnvironment(env.VITE_APP_ENV ?? "staging");
+  const { appOrigin, signupServiceOrigin } = ENVIRONMENTS[environment];
   return {
     root: appRoot,
     plugins: [
@@ -55,6 +56,11 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       strictPort: true,
       fs: { allow: [repositoryRoot], deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**"] },
+      // signup-service and its WAF accept browser requests only from the deployed app origin.
+      // In dev, `selfieIssuer` targets this same-origin path, and the proxy presents that origin.
+      proxy: {
+        "/api/v2/identity": { target: signupServiceOrigin, changeOrigin: true, headers: { origin: appOrigin } },
+      },
     },
     preview: { host: "127.0.0.1", port: 4173, strictPort: true },
     build: {
