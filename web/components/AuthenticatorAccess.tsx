@@ -72,7 +72,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       setEnrollment({ enroll: holdingBusy(enroll, () => kit.holdBusy(), async signal => {
         // The credential is saved either way; leaving the camera loads the list again.
         await refreshCredentials(AbortSignal.any([signal, closed.signal])).catch(() => signal.throwIfAborted());
-      }) });
+      }, closed.signal) });
     }
     setEnrolling(true);
   };

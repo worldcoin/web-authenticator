@@ -1,6 +1,6 @@
 import type { SelfieCaptureFailure } from "@worldcoin/walletkit-web";
 import { ENVIRONMENTS, type ProtocolEnvironment, type SelfieEnrollmentPolicy } from "../../../config/environment";
-import { abortable, pause } from "../async";
+import { abortable, onAbort, pause } from "../async";
 import { currentProtocolEnvironment } from "../environment";
 import { EnrollmentCaptureSchema, validateEnrollmentCapture } from "../enrollment-contract";
 import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
@@ -52,11 +52,14 @@ export function holdingBusy(
   enroll: PoseGuardEnrollment,
   holdBusy: () => Promise<() => void>,
   finish: (signal: AbortSignal, update: (state: CaptureState) => void) => Promise<void>,
+  /** The wallet session; ending it ends the hold. */
+  walletSignal: AbortSignal,
   unresolvedHoldMs = UNRESOLVED_HOLD_MS,
 ): RunPoseGuard {
   let release: (() => void) | undefined;
   let expiry: ReturnType<typeof setTimeout> | undefined;
   const unhold = () => { clearTimeout(expiry); release?.(); release = undefined; };
+  onAbort(walletSignal, unhold);
   return async (video, signal, update) => {
     clearTimeout(expiry);
     release ??= await holdBusy();

@@ -139,7 +139,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         update({ phase: "checking", ...PROVING, progress: 1, cameraReady: false });
         // A replayed action replaces the capture screen, so its outcome is never shown.
         if (await answer(incoming, ready.wallet, AbortSignal.any([signal, controller.signal]))) { stop(); onDispose(); }
-      }) });
+      }, controller.signal) });
     } catch (cause) {
       if (controller.signal.aborted) return;
       if (cause instanceof RequestExpiredError) end("expired");
