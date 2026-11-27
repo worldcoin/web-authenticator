@@ -353,6 +353,37 @@ test("standalone creation opens a passkey wallet, enrolls a Selfie Check and sho
   } finally { enrollment.mockRestore(); localStorage.clear(); }
 });
 
+test.each([
+  { failures: 1, shown: "1 credential in your authenticator." },
+  { failures: 2, shown: "Your credentials could not be loaded. Lock the authenticator and sign in again." },
+])("a credential list that fails to load $failures time(s) after enrollment still ends all set", async ({ failures: failing, shown }) => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  visit("/");
+  const f = await fixture(11);
+  const list = f.wallet.listCredentials.bind(f.wallet);
+  let failures = 0;
+  f.wallet.listCredentials = async () => { if (failures-- > 0) throw new Error("private worker error"); return list(); };
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(async (_video, _signal, update) => {
+    update({ phase: "checking", title: "Processing liveness", hint: "This might take a few seconds", progress: 1, cameraReady: false });
+    return "completed";
+  });
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    await view.findByText("0 credentials in your authenticator.");
+    f.issue(); failures = failing;
+    fireEvent.click(view.getByRole("button", { name: "Set up Selfie Check" }));
+    await view.findByTestId("all-set", undefined, { timeout: 3_000 });
+    fireEvent.click(view.getByRole("button", { name: "Return to authenticator" }));
+    // Returning loads the list again; one that still cannot load says so.
+    expect(await view.findByText(shown)).toBeTruthy();
+    expect(view.queryByText("private worker error")).toBeNull();
+    // Locking, which the message asks for, clears it.
+    fireEvent.click(view.getByRole("button", { name: "Lock authenticator" }));
+    expect(view.queryByRole("alert")).toBeNull();
+  } finally { enrollment.mockRestore(); localStorage.clear(); }
+});
+
 test("an environment without a Selfie Check issuer does not offer setup", async () => {
   localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
   visit("/");

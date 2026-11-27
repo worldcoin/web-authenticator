@@ -7,6 +7,7 @@ import {
 	prepareRgbnet,
 	decodeRgbnet,
 	previewCrop,
+	isFaceTooSmall,
 	ANCHOR_COUNT,
 	type ModelOutput,
 } from '../lib/rgbnet'
@@ -72,4 +73,12 @@ test('preview crop is the centered object-cover region for landscape, portrait a
 	// A portrait phone camera is already narrower than the oval: full width, trimmed height.
 	assert.deepEqual(previewCrop(720, 1280, 260, 364), [0, 136, 720, 1008])
 	assert.deepEqual(previewCrop(640, 480), [80, 0, 480, 480])
+})
+
+test('a face is too small below the engine\'s relative size or pixel floor', () => {
+	assert.equal(isFaceTooSmall(0.6, 0.7, 514, 720), false)
+	// Smaller axis 0.52 does not exceed the minimum.
+	assert.equal(isFaceTooSmall(0.52, 0.7, 514, 720), true)
+	// Sizes pass, but 0.6 x 129 px is below the 112 px resolution floor.
+	assert.equal(isFaceTooSmall(0.6, 0.7, 129, 180), true)
 })

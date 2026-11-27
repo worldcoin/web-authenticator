@@ -27,7 +27,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
     window.addEventListener("pageshow", restore);
     return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
   }, []);
-  const lock = () => { closeWallet(wallet); setEnrollment(null); setRecords(null); setSaved(hasSavedWallet()); };
+  const lock = () => { closeWallet(wallet); setEnrollment(null); setRecords(null); setError(undefined); setSaved(hasSavedWallet()); };
   const startAccess = async (mode: "open" | "create") => {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
@@ -58,15 +58,26 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       const enroll = createPoseGuardEnrollment(kit, issuer, closed.signal);
       setEnrollment({ enroll: async (video, signal, update) => {
         const outcome = await enroll(video, signal, update);
-        if (outcome === "completed") {
-          setRecords(await abortable(kit.listCredentials(), AbortSignal.any([signal, closed.signal, AbortSignal.timeout(10_000)])));
-        }
+        // The credential is saved either way; leaving the camera loads the list again.
+        if (outcome === "completed") await refreshCredentials(AbortSignal.any([signal, closed.signal])).catch(() => signal.throwIfAborted());
         return outcome;
       } });
     }
     setEnrolling(true);
   };
-  const leaveSelfieCheck = () => setEnrolling(false);
+  const leaveSelfieCheck = () => {
+    setEnrolling(false);
+    const closed = wallet.current?.closed.signal;
+    if (!closed) return;
+    refreshCredentials(closed).catch(() => {
+      if (!closed.aborted) setError("Your credentials could not be loaded. Lock the authenticator and sign in again.");
+    });
+  };
+  const refreshCredentials = async (signal: AbortSignal) => {
+    if (!wallet.current) return;
+    setRecords(await abortable(wallet.current.kit.listCredentials(), AbortSignal.any([signal, AbortSignal.timeout(10_000)])));
+    setError(undefined);
+  };
 
   if (enrolling && enrollment) return <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
     <SelfieCheck onClose={leaveSelfieCheck} backLabel="Back to authenticator" enroll={enrollment.enroll} onReturn={leaveSelfieCheck} />

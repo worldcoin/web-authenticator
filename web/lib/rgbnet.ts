@@ -1,5 +1,5 @@
 // Port of biometric-engines RGBNet preprocessing/decoding and pixel-space NMS.
-// Local capture guidance only; framing mirrors the face engine's checks (ENGINE_FRAMING_V1). Not a verification.
+// Framing mirrors the face engine's checks (ENGINE_FRAMING_V1) to guide capture. Not a verification.
 export const INPUT_SIZE = 256
 export const ANCHOR_COUNT = 2688
 export type FaceDetection = { box: [number, number, number, number]; landmarks: number[]; score: number }
@@ -152,17 +152,14 @@ export function previewCrop(width: number, height: number, viewWidth = 1, viewHe
 /**
  * Geometry checks of the face engine's VanillaSelfie captured-image analyzer, which World App iOS uses too.
  * Source: worldcoin/biometric-engines biometric-engines-worker/config/vanilla_selfie.yaml and
- * face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution,bbox_location}.rs.
+ * face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution}.rs.
  * The engine stays authoritative; matching it here avoids capturing frames it will reject.
  */
 export const ENGINE_FRAMING_V1 = Object.freeze({
-	// FaceBboxSizeValidator: smaller normalized box axis must exceed min; larger must stay below max.
+	// FaceBboxSizeValidator: smaller normalized box axis must exceed min.
 	minRelativeSize: 0.52,
-	maxRelativeSize: 0.8,
 	// FaceBboxResolutionValidator: box size in pixels of the analyzed image.
 	minResolutionPx: 112,
-	// BoundingBoxAlignmentQa: box must stay this far inside every image edge.
-	edgeMargin: 0.015,
 })
 
 export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {

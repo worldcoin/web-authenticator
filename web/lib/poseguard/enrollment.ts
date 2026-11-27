@@ -34,7 +34,7 @@ export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolE
 /**
  * Enrolls a Selfie Check into `wallet`, whose account must already be registered. The returned run
  * can be called again: it resumes a submitted capture that has no result yet, and captures anew
- * once the issuer has rejected one. `walletSignal` ends the enrollment with the wallet's session.
+ * once the issuer has failed one. `walletSignal` ends the enrollment with the wallet's session.
  */
 export function createPoseGuardEnrollment(
   wallet: WalletKit,
@@ -54,7 +54,11 @@ export function createPoseGuardEnrollment(
     const signupOptions = { endpoint: issuer.endpoint, signal };
     try {
       signal.throwIfAborted();
-      if (saved) return "completed";
+      if (saved) {
+        // The end screen follows the processing screen, so a run that has nothing left to do still shows it.
+        update(checking());
+        return "completed";
+      }
       if (savePromise) {
         update(checking());
         return await waitForSave(savePromise, signal);
@@ -82,8 +86,8 @@ export function createPoseGuardEnrollment(
         const { receipt, factor } = submitted;
         const result = await pollEnrollment(receipt, signupOptions);
         if (result.state !== "completed") {
-          // A rejected enrollment is over: the next run captures again.
-          submitted = undefined;
+          // A failed capture can be retaken. A duplicate face stays one, so its result is kept.
+          if (result.state === "failed") submitted = undefined;
           return result.state;
         }
         const { credential } = result;

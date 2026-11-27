@@ -187,7 +187,10 @@ test("submits the attested capture once, resumes from the matching receipt and s
     expect([...checkingTitles]).toEqual(["Processing liveness"]);
     expect({ puts, polls, sdkCalls }).toEqual({ puts: 1, polls: 2, sdkCalls: 1 });
     expect(stored).toBe(1);
-    await expect(run(video, signal, () => {})).resolves.toBe("completed");
+    // A run after the save still reports processing, which the end screen replaces.
+    const afterSave: string[] = [];
+    await expect(run(video, signal, state => afterSave.push(state.phase))).resolves.toBe("completed");
+    expect(afterSave).toEqual(["checking"]);
     expect(puts).toBe(1);
     expect(polls).toBe(2);
     expect(stored).toBe(1);
@@ -203,7 +206,7 @@ test("submits the attested capture once, resumes from the matching receipt and s
   }
 });
 
-test("captures again after the issuer rejects an enrollment", async () => {
+test("captures again after the issuer fails an enrollment", async () => {
   const capture = enrollmentCapture();
   let puts = 0;
   let sdkCalls = 0;
