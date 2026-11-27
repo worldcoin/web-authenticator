@@ -123,7 +123,7 @@ export function PublicRequestFlow({ incoming, loading, failed, expired, onDispos
         void decline(incoming, "unavailable");
         return;
       }
-      const enroll = createPoseGuardEnrollment(current, issuer, controller.signal);
+      const enroll = createPoseGuardEnrollment(ready.wallet, issuer, controller.signal);
       setFlow({ stage: "capture", enroll: async (video, signal, update) => {
         const outcome = await enroll(video, signal, update);
         if (outcome !== "completed") return outcome;

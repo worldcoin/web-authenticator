@@ -6,7 +6,7 @@ if (!("bun" in process.versions)) {
   test("landing and saved access do not start the camera or load its runtime", async ({ page }) => {
     const modelRequests: string[] = [];
     page.on("request", request => {
-      if (/\/models\/|rgbnet\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
+      if (/\/models\/|pose\.worker-|ort-wasm-/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
     });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Your World ID, in this browser." })).toBeVisible();
