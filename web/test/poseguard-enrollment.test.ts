@@ -206,7 +206,10 @@ test("submits the attested capture once, resumes from the matching receipt and s
   }
 });
 
-test("captures again after the issuer fails an enrollment", async () => {
+test.each([
+  { status: "ENROLLMENT_FAILED", first: "failed", second: "completed", captures: 2, stored: 1 },
+  { status: "ENROLLMENT_NOT_UNIQUE", first: "duplicate", second: "duplicate", captures: 1, stored: 0 },
+] as const)("a $first enrollment run again ends $second after $captures capture(s)", async ({ status, first, second, captures, stored: expectedStored }) => {
   const capture = enrollmentCapture();
   let puts = 0;
   let sdkCalls = 0;
@@ -220,7 +223,7 @@ test("captures again after the issuer fails an enrollment", async () => {
         return Response.json({}, { status: 202 });
       }
       return Response.json(puts === 1
-        ? { status: "NEW", enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_FAILED" } }
+        ? { status: "NEW", enrollment_status: { capture_id: CAPTURE_ID, status } }
         : { status: "VERIFIED", enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_UNIQUE_SUCCESSFUL", credential: "AQI=" } });
     },
   });
@@ -245,10 +248,10 @@ test("captures again after the issuer fails an enrollment", async () => {
     }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: cameraFrames().readFrame }));
     const attempt = () => run({} as HTMLVideoElement, signal, () => {});
 
-    await expect(attempt()).resolves.toBe("failed");
+    await expect(attempt()).resolves.toBe(first);
     expect(stored).toBe(0);
-    await expect(attempt()).resolves.toBe("completed");
-    expect({ puts, sdkCalls, stored }).toEqual({ puts: 2, sdkCalls: 2, stored: 1 });
+    await expect(attempt()).resolves.toBe(second);
+    expect({ puts, sdkCalls, stored }).toEqual({ puts: captures, sdkCalls: captures, stored: expectedStored });
   } finally {
     await server.stop(true);
   }
