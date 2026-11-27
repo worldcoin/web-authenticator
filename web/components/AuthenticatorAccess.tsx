@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { abortable } from "../lib/async";
 import { hasSavedWallet, type WalletOpenMode } from "../lib/wallet-session";
-import { walletOpenErrorMessage } from "../lib/wallet-errors";
+import { WalletTakenOverError, walletOpenErrorMessage } from "../lib/wallet-errors";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
 
 const SelfieCheck = lazy(() => import("./SelfieCheck"));
@@ -15,6 +15,8 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   const [preview, setPreview] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string>();
+  // Another tab took the wallet, which stopped it here.
+  const [handedOff, setHandedOff] = useState(false);
   const wallet = useRef<WalletKit | null>(null);
   const operation = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -28,12 +30,17 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
   const startAccess = async (mode: "open" | "create") => {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
-    setError(undefined);
+    setError(undefined); setHandedOff(false);
     setProgress(mode === "create" ? "Create your passkey to continue." : "Use your passkey to sign in.");
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
       const current = await abortable(onOpen(deadline, () => { if (!deadline.aborted && operation.current === controller) setProgress("Opening your authenticator…"); }, mode).then(value => {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
+        value.takenOver?.addEventListener("abort", () => {
+          if (wallet.current !== value) return;
+          operation.current?.abort(); wallet.current = null;
+          setRecords(null); setHandedOff(true); setSaved(hasSavedWallet());
+        }, { once: true });
         wallet.current = value; return value;
       }), deadline);
       setProgress("Loading your credentials…");
@@ -41,7 +48,8 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       deadline.throwIfAborted(); setRecords(credentials); onSignedIn();
     } catch (cause) {
       wallet.current?.terminate(); wallet.current = null;
-      if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
+      if (cause instanceof WalletTakenOverError) setHandedOff(true);
+      else if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
     } finally {
       if (operation.current === controller) operation.current = null;
       if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
@@ -60,6 +68,7 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       {records
         ? <CredentialsPanel records={records} onPreview={() => setPreview(true)} onLock={lock} />
         : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
+      {handedOff && !records && <p className="mt-4 rounded-lg bg-[#f4f7fc] p-3 text-[14px] text-[#2c3a4f]" role="status"><strong className="font-medium">Continued in another tab.</strong> Your authenticator opened in another tab, so it was locked here. Sign in again to use it in this tab.</p>}
       {error && <p className="mt-4 rounded-lg bg-[#fff1f1] p-3 text-[14px] text-[#a32424]" role="alert">{error}</p>}
     </article>
   </div>;

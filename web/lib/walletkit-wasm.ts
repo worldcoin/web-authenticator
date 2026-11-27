@@ -1,6 +1,6 @@
 import { initializeWalletKit, type WalletKit } from "@worldcoin/walletkit-web";
 import { logFlowStep } from "./flow-logging";
-import { WalletOpenError } from "./wallet-errors";
+import { isWalletStorageBusy, WalletOpenError, WalletStorageBusyError } from "./wallet-errors";
 
 const LOAD_FAILED = "The authenticator could not load its wallet engine. Check your connection and try again.";
 
@@ -12,6 +12,9 @@ export async function initializeWalletKitFromCompressedWasm(signal: AbortSignal)
   const wasmUrl = await logFlowStep("walletkit.wasm_load", () => loadWalletKitWasm(signal));
   try {
     return await logFlowStep("walletkit.worker_initialize", () => initializeWalletKit({ signal, wasmUrl }));
+  } catch (cause) {
+    if (isWalletStorageBusy(cause)) throw new WalletStorageBusyError({ cause });
+    throw cause;
   } finally {
     URL.revokeObjectURL(wasmUrl);
   }

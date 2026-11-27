@@ -10,7 +10,8 @@ import { openOrRegisterAuthenticator } from "./wallet-registration";
 import { abortable } from "./async";
 import { prfBytes } from "./prf-result";
 import { isSharedRpId, rpIdForNewPasskey } from "./passkey-rp";
-import { WalletOpenError, WalletRegistrationError } from "./wallet-errors";
+import { WalletBusyElsewhereError, WalletOpenError, WalletRegistrationError } from "./wallet-errors";
+import { claimWallet, walletBusyElsewhere, type WalletTenure } from "./tab-handoff";
 
 const PROFILE_KEY = "world-id-wallet-v1";
 const LEGACY_PROFILE_KEY = "world-id-passkey-registration-v1";
@@ -33,10 +34,16 @@ export interface WalletProfile {
 export interface WalletSession {
   readonly client: WalletKit;
   readonly store: CredentialStore;
+  /** This tab's hold on the wallet; another tab taking it terminates `client`. */
+  readonly tenure: WalletTenure;
 }
 
 export interface RequestWalletSession {
   readonly ready: Promise<{ wallet: AccountWallet } | { error: unknown }>;
+  /** Aborts when another tab takes the wallet; the worker is already stopped by then. */
+  readonly takenOver: AbortSignal;
+  /** Makes other tabs refuse to take the wallet until the returned function is called or the session is disposed. */
+  holdBusy(): Promise<() => void>;
   dispose(): void;
 }
 
@@ -98,12 +105,14 @@ export async function openRequestWallet(signal: AbortSignal, progress: (message:
   // Keep the existing lock and seed ownership until activation settles, without
   // blocking camera startup or copying the seed into a second lifetime.
   const operation = openWithPasskey(AbortSignal.any([signal, controller.signal]), async (session, seed, credentialId, deadline, registerIfMissing) => {
-    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
+    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us", session.tenure);
     resolveOpened({
       ready,
+      takenOver: session.tenure.lost,
+      holdBusy: () => session.tenure.holdBusy(),
       dispose: () => {
         if (controller.signal.aborted) return;
-        controller.abort(); session.client.terminate();
+        controller.abort(); account.terminate();
       },
     });
     await openOrRegisterAuthenticator(account, seed, credentialId, deadline, () => progress("Getting your World ID ready…"), registerIfMissing);
@@ -124,7 +133,7 @@ export async function openRequestWallet(signal: AbortSignal, progress: (message:
 export async function openAuthenticator(signal: AbortSignal, progress: (message: string) => void, mode: WalletOpenMode = "either"): Promise<AccountWallet> {
   let account: AccountWallet | undefined;
   await openWithPasskey(signal, async (session, seed, credentialId, deadline, registerIfMissing) => {
-    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us");
+    account = new AccountWallet(session.client, session.store, currentProtocolEnvironment(), "us", session.tenure);
     await openOrRegisterAuthenticator(account, seed, credentialId, deadline, progress, registerIfMissing);
   }, mode);
   if (!account) throw new WalletOpenError("The authenticator could not be opened.");
@@ -147,6 +156,8 @@ async function openWithPasskey(signal: AbortSignal, activate?: Activate, mode: W
     if (lock === null) throw new WalletOpenError("Wallet setup is already running in another tab.");
     const saved = window.localStorage.getItem(PROFILE_KEY) !== null || window.localStorage.getItem(LEGACY_PROFILE_KEY) !== null;
     if (mode === "create" && saved) throw new WalletOpenError("An authenticator already exists in this browser. Sign in to continue.");
+    // Refuse before the passkey prompt; claimWallet checks again before taking the wallet.
+    if (await walletBusyElsewhere()) throw new WalletBusyElsewhereError();
     return openWalletUnderLock(signal, activate, mode);
   });
 }
@@ -238,6 +249,7 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
   const selectedProfile: WalletProfile = profile ?? (unlockRpId ? { version: 1, credentialId: selectedId, rpId: unlockRpId } : { version: 1, credentialId: selectedId });
   let keys: Awaited<ReturnType<typeof deriveWalletKeys>> | undefined;
   let client: WalletKit | undefined;
+  let tenure: WalletTenure | undefined;
   const opening = new AbortController();
   const abort = () => { opening.abort(); client?.terminate(); };
   const timeout = setTimeout(() => {
@@ -248,6 +260,9 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
   try {
     signal.throwIfAborted();
     keys = await logFlowStep("passkey.derive_secrets", () => useLegacy && second ? derivePasskeySecrets(prf.buffer, second.buffer) : deriveWalletKeys(prf));
+    // The tab that has the wallet open stops its worker, releasing the vault's storage handle.
+    const claimed = tenure = await logFlowStep("wallet.claim_tab", claimWallet);
+    claimed.lost.addEventListener("abort", () => { opening.abort(claimed.lost.reason); client?.terminate(); }, { once: true });
     client = await initializeWalletKitFromCompressedWasm(opening.signal);
     const storageKeys = await client.StorageKeys.fromBytes(keys.databaseKey);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", useLegacy && legacy ? new TextEncoder().encode(legacy.originalCredentialId) : actualId));
@@ -263,12 +278,13 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
     }
     signal.throwIfAborted();
     opening.signal.throwIfAborted();
-    if (activate) await abortable(activate({ client, store }, keys.seed, selectedProfile.credentialId, opening.signal, !discovering), opening.signal);
+    if (activate) await abortable(activate({ client, store, tenure: claimed }, keys.seed, selectedProfile.credentialId, opening.signal, !discovering), opening.signal);
     // Only retain a discovered profile after its account has actually opened.
     if (discovering) window.localStorage.setItem(PROFILE_KEY, JSON.stringify(selectedProfile));
-    return { client, store };
+    return { client, store, tenure: claimed };
   } catch (error) {
     client?.terminate();
+    tenure?.release();
     if (activate && opening.signal.reason instanceof Error && opening.signal.reason.name === "TimeoutError") {
       throw new WalletRegistrationError("Wallet setup timed out. Retry with your existing passkey. Any previously submitted registration will be checked before continuing.", true, { cause: error });
     }

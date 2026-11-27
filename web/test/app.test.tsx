@@ -7,7 +7,7 @@ import { ENVIRONMENTS } from "../../config/environment";
 import type { IncomingRequest } from "../lib/incoming-request";
 import type { WalletKit, CredentialMetadata } from "../lib/walletkit";
 import { RequestExpiredError } from "../lib/proof-request";
-import { WalletOpenError } from "../lib/wallet-errors";
+import { WalletBusyElsewhereError, WalletOpenError } from "../lib/wallet-errors";
 import type { ConsentClient } from "../lib/consent";
 import type { RequestWalletSession } from "../lib/wallet-session";
 import * as capture from "../lib/selfie-capture";
@@ -38,14 +38,20 @@ async function fixture(schema: number, available = false) {
     generateProof: async () => { calls.prove++; return JSON.stringify({ id: "test-request", responses: [{}] }); },
     terminate: () => { calls.terminated++; },
   } as unknown as WalletKit;
+  // Aborting it is another tab taking the wallet.
+  const takeover = new AbortController();
+  Object.defineProperty(wallet, "takenOver", { value: takeover.signal });
   const services = {
     load: async (): Promise<IncomingRequest | null> => incoming,
     open: async () => wallet,
-    unlock: async (): Promise<RequestWalletSession> => { calls.unlocked++; return { ready: Promise.resolve({ wallet }), dispose: () => wallet.terminate() }; },
+    unlock: async (): Promise<RequestWalletSession> => { calls.unlocked++; return session({ wallet }); },
   };
+  function session(ready: { wallet: WalletKit } | { error: unknown }): RequestWalletSession {
+    return { ready: Promise.resolve(ready), takenOver: takeover.signal, holdBusy: async () => () => {}, dispose: () => wallet.terminate() };
+  }
   /** What a completed enrollment leaves in the wallet. */
   const issue = () => { records = [credential]; };
-  return { services, calls, incoming, wallet, issue };
+  return { services, calls, incoming, wallet, issue, takeover, session };
 }
 test("unsupported presence requirements stop before passkey setup", async () => {
   const f = await fixture(11); f.incoming.unsupportedReason = "User presence is not implemented.";
@@ -254,7 +260,7 @@ test.each(["saved", "replayed", "undelivered", "no issuer", "ineligible", "walle
   // A Selfie credential outside the request's date bounds cannot be replaced by enrolling again.
   if (outcome === "ineligible") f.wallet.listCredentials = async () => [{ credentialId: 2n, issuerSchemaId: 11n, isExpired: false, expiresAt: 1n, genesisIssuedAt: 0n } as CredentialMetadata];
   if (outcome === "wallet failure") {
-    f.services.unlock = async () => ({ ready: Promise.resolve({ error: new WalletOpenError("Registration is unavailable.") }), dispose: () => f.wallet.terminate() });
+    f.services.unlock = async () => f.session({ error: new WalletOpenError("Registration is unavailable.") });
   }
   const issuer = spyOn(poseGuard, "selfieIssuer");
   if (outcome === "no issuer") issuer.mockReturnValue(undefined);
@@ -310,6 +316,62 @@ test("public cancellation closes the request even when the bridge is unavailable
   expect(await view.findByText(/requesting app could not be notified/)).toBeTruthy();
   expect(view.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(f.calls.prove).toBe(0);
+});
+
+test("a capture runs as busy, and another tab taking the wallet ends the request without answering the app", async () => {
+  const f = await fixture(11);
+  let cancelled = 0;
+  f.incoming.cancel = async () => { cancelled++; };
+  let busy = 0;
+  f.services.unlock = async () => ({ ...f.session({ wallet: f.wallet }), holdBusy: async () => { busy++; return () => {}; } });
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(() => new Promise(() => {}));
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+    expect(await view.findByRole("region", { name: "Selfie capture" })).toBeTruthy();
+    await waitFor(() => expect(busy).toBe(1));
+    act(() => f.takeover.abort());
+    expect(await view.findByRole("heading", { name: "Continued in another tab" })).toBeTruthy();
+    expect(view.queryByRole("link", { name: "Return to the app" })).toBeNull();
+    expect(view.queryByRole("region", { name: "Selfie capture" })).toBeNull();
+    expect(cancelled).toBe(0);
+    expect(f.calls.deliver).toEqual([]);
+    expect(f.calls.terminated).toBe(1);
+  } finally { enrollment.mockRestore(); }
+});
+
+test("a pending enrollment keeps other tabs out until it resolves", async () => {
+  const f = await fixture(11);
+  const holds = { taken: 0, released: 0 };
+  f.services.unlock = async () => ({ ...f.session({ wallet: f.wallet }), holdBusy: async () => { holds.taken++; return () => { holds.released++; }; } });
+  const outcomes: poseGuard.PoseGuardOutcome[] = ["pending", "failed"];
+  const enrollment = spyOn(poseGuard, "createPoseGuardEnrollment").mockReturnValue(async () => outcomes.shift()!);
+  try {
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Continue" }));
+    // Only this tab can store the credential of a submitted capture.
+    const checkStatus = await view.findByRole("button", { name: "Check status" });
+    expect(holds).toEqual({ taken: 1, released: 0 });
+    fireEvent.click(checkStatus);
+    await waitFor(() => expect(outcomes).toEqual([]));
+    await waitFor(() => expect(holds).toEqual({ taken: 1, released: 1 }));
+  } finally { enrollment.mockRestore(); }
+});
+
+test("a signed-in authenticator locks and says so when another tab takes the wallet", async () => {
+  localStorage.setItem("world-id-wallet-v1", JSON.stringify({ version: 1, credentialId: "ab" }));
+  try {
+    const f = await fixture(11);
+    visit("/authenticator");
+    const view = render(<AuthenticatorAppV1 services={f.services} consent={decidedConsent} />);
+    fireEvent.click(await view.findByRole("button", { name: "Sign in with passkey" }));
+    expect(await view.findByText("0 credentials in your authenticator.")).toBeTruthy();
+    act(() => f.takeover.abort());
+    expect(await view.findByText("Continued in another tab.")).toBeTruthy();
+    expect(view.queryByText("0 credentials in your authenticator.")).toBeNull();
+    expect(view.getByRole("button", { name: "Sign in with passkey" })).toBeTruthy();
+    expect(view.queryByRole("alert")).toBeNull();
+  } finally { localStorage.clear(); }
 });
 
 test("standalone creation opens a passkey wallet and offers the Selfie Check preview", async () => {
@@ -425,7 +487,11 @@ test("failed creation restores actions and offers sign-in when a passkey was sav
 for (const [cause, expected] of [
   [new WalletOpenError("Wallet setup is already running in another tab."), "Wallet setup is already running in another tab."],
   [new WalletOpenError("Saved wallet metadata is invalid. Do not clear site data if you need this wallet."), "Saved wallet metadata is invalid. Do not clear site data if you need this wallet."],
-  [new Error("private worker error"), "The encrypted wallet could not initialize. Close other authenticator tabs and retry."],
+  [new Error("private worker error"), "The encrypted wallet could not initialize. Try again."],
+  [new WalletBusyElsewhereError(), "Your authenticator is busy with a check in another tab. Finish or cancel it there, then try again."],
+  // WalletKit's worker gave up on the vault's file handle: a tab that did not hand the wallet over holds it.
+  [Object.assign(new Error("PersistentStorage error: creating sync access handle: NoModificationAllowedError"), { code: "PersistentStorage" }),
+    "Your authenticator is still open in another tab or window. Close it, then try again."],
 ] as const) {
   test(`wallet errors surface safe recovery guidance: ${expected}`, async () => {
     localStorage.clear(); visit("/");
