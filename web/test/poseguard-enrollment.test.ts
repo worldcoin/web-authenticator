@@ -250,6 +250,8 @@ test.each([
 
     await expect(attempt()).resolves.toBe(first);
     expect(stored).toBe(0);
+    // The issuer answered either way: nothing is left for this tab to recover.
+    expect(run.hasUnresolvedSubmission()).toBe(false);
     await expect(attempt()).resolves.toBe(second);
     expect({ puts, sdkCalls, stored }).toEqual({ puts: captures, sdkCalls: captures, stored: expectedStored });
   } finally {
@@ -401,4 +403,15 @@ test("the busy hold outlives a pending attempt, ends after its cap, and ends wit
   expect(await ended(video, signal, () => {})).toBe("pending");
   session.abort();
   expect(holds).toEqual({ taken: 2, released: 2 });
+
+  // A save that outlived the wait finishes later: the hold ends once nothing is unresolved.
+  let unresolved = true;
+  const settling = holdingBusy(Object.assign(async () => "pending" as const, { hasUnresolvedSubmission: () => unresolved }),
+    holdBusy, async () => {}, new AbortController().signal, 60_000, 5);
+  expect(await settling(video, signal, () => {})).toBe("pending");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(holds).toEqual({ taken: 3, released: 2 });
+  unresolved = false;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(holds).toEqual({ taken: 3, released: 3 });
 });

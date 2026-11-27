@@ -265,9 +265,9 @@ async function openWalletUnderLock(signal: AbortSignal, activate?: Activate, mod
     const claimed = tenure = await logFlowStep("wallet.claim_tab", claimWallet);
     claimed.lost.addEventListener("abort", () => { opening.abort(claimed.lost.reason); client?.terminate(); }, { once: true });
     client = await initializeWalletKitFromCompressedWasm(opening.signal).catch(async cause => {
-      // A displaced tab that is throttled may still be closing its worker after WalletKit's own
-      // retries; give it one more chance before reporting the storage as held.
-      if (!(cause instanceof WalletStorageBusyError) || !claimed.displaced) throw cause;
+      // A tab that just gave up the wallet, by takeover or by closing, may still be closing its
+      // worker after WalletKit's own retries; give it one more chance before reporting the storage as held.
+      if (!(cause instanceof WalletStorageBusyError)) throw cause;
       await pause(DISPLACED_RETRY_MS, opening.signal);
       return initializeWalletKitFromCompressedWasm(opening.signal);
     });

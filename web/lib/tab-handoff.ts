@@ -19,8 +19,6 @@ const BUSY_LOCK = "world-id-wallet-busy-v1";
 export interface WalletTenure {
   /** Aborts with a `WalletTakenOverError` when another tab takes the wallet. */
   readonly lost: AbortSignal;
-  /** Whether another tab had the wallet open, so its worker may still be closing. */
-  readonly displaced: boolean;
   /**
    * Makes other tabs refuse to take the wallet until the returned function is called, or the
    * tenure is released. Rejects with a `WalletTakenOverError` once a takeover has started or
@@ -48,8 +46,6 @@ export async function claimWallet(): Promise<WalletTenure> {
   return navigator.locks.request(BUSY_LOCK, { ifAvailable: true }, async gate => {
     if (gate === null) throw new WalletBusyElsewhereError();
     const lost = new AbortController();
-    const { held: locks = [] } = await navigator.locks.query();
-    const displaced = locks.some(lock => lock.name === OPEN_LOCK);
     let released = false;
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
@@ -64,7 +60,6 @@ export async function claimWallet(): Promise<WalletTenure> {
     const holds = new Set<() => void>();
     return {
       lost: lost.signal,
-      displaced,
       holdBusy: async () => {
         if (released) throw new WalletTakenOverError();
         if (holds.size > 0) throw new Error("This tab is already busy.");

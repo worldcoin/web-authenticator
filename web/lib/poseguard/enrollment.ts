@@ -42,6 +42,8 @@ export type PoseGuardEnrollment = RunPoseGuard & {
 
 /** How long an unattended, unresolved submission keeps other tabs out. */
 const UNRESOLVED_HOLD_MS = 10 * 60_000;
+/** How often a kept hold checks whether its submission resolved, e.g. a save that outlived the wait. */
+const UNRESOLVED_CHECK_MS = 5_000;
 
 /**
  * Runs each attempt of `enroll`, then `finish` after a completed one, under the tab's busy hold,
@@ -55,13 +57,16 @@ export function holdingBusy(
   /** The wallet session; ending it ends the hold. */
   walletSignal: AbortSignal,
   unresolvedHoldMs = UNRESOLVED_HOLD_MS,
+  checkMs = UNRESOLVED_CHECK_MS,
 ): RunPoseGuard {
   let release: (() => void) | undefined;
   let expiry: ReturnType<typeof setTimeout> | undefined;
-  const unhold = () => { clearTimeout(expiry); release?.(); release = undefined; };
+  let check: ReturnType<typeof setInterval> | undefined;
+  const settle = () => { clearTimeout(expiry); clearInterval(check); };
+  const unhold = () => { settle(); release?.(); release = undefined; };
   onAbort(walletSignal, unhold);
   return async (video, signal, update) => {
-    clearTimeout(expiry);
+    settle();
     release ??= await holdBusy();
     let keep = false;
     try {
@@ -73,8 +78,10 @@ export function holdingBusy(
       keep = enroll.hasUnresolvedSubmission();
       throw cause;
     } finally {
-      if (keep) expiry = setTimeout(unhold, unresolvedHoldMs);
-      else unhold();
+      if (keep) {
+        expiry = setTimeout(unhold, unresolvedHoldMs);
+        check = setInterval(() => { if (!enroll.hasUnresolvedSubmission()) unhold(); }, checkMs);
+      } else unhold();
     }
   };
 }
@@ -92,6 +99,8 @@ export function createPoseGuardEnrollment(
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
 ): PoseGuardEnrollment {
   let submitted: { receipt: EnrollmentReceipt; factor: string } | undefined;
+  // The issuer's final answer for `submitted`: it issues nothing for a duplicate face.
+  let duplicate = false;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
@@ -136,6 +145,7 @@ export function createPoseGuardEnrollment(
         if (result.state !== "completed") {
           // A failed capture can be retaken. A duplicate face stays one, so its result is kept.
           if (result.state === "failed") submitted = undefined;
+          else duplicate = true;
           return result.state;
         }
         const { credential } = result;
@@ -161,7 +171,7 @@ export function createPoseGuardEnrollment(
     }
   };
 
-  return Object.assign(run, { hasUnresolvedSubmission: () => submitted !== undefined && !saved });
+  return Object.assign(run, { hasUnresolvedSubmission: () => submitted !== undefined && !saved && !duplicate });
 
   async function waitForSave(operation: Promise<void>, signal: AbortSignal): Promise<"completed" | "pending"> {
     const timeout = AbortSignal.timeout(30_000);
