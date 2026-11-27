@@ -1,4 +1,4 @@
-// Port of biometric-engines RGBNet preprocessing/decoding and pixel-space NMS.
+// Port of FaceEngine's RGBNet preprocessing/decoding and pixel-space NMS.
 // Framing mirrors the face engine's checks (ENGINE_FRAMING_V1) to guide capture. Not a verification.
 export const INPUT_SIZE = 256
 export const ANCHOR_COUNT = 2688
@@ -150,9 +150,7 @@ export function previewCrop(width: number, height: number, viewWidth = 1, viewHe
 }
 
 /**
- * Geometry checks of the TEE worker's PoseGuard captured-image analyzer, run on all four frames.
- * Source: worldcoin/biometric-engines `biometric-engines-worker-v0.3.0`, biometric-engines-worker/config/pose_guard_selfie.yaml
- * and face_engine/src/nodes/qa/image_capture/{bbox_size,bbox_resolution,bbox_location}.rs.
+ * Geometry checks of the TEE worker's (v0.3.0) PoseGuard captured-image analyzer, run on all four frames.
  * The engine stays authoritative; matching it here avoids capturing frames it will reject.
  */
 export const ENGINE_FRAMING_V1 = Object.freeze({
@@ -161,8 +159,6 @@ export const ENGINE_FRAMING_V1 = Object.freeze({
 	maxRelativeSize: 0.8,
 	// FaceBboxResolutionValidator: box size in pixels of the analyzed image.
 	minResolutionPx: 112,
-	// BoundingBoxAlignmentQa: box must stay this far inside every image edge.
-	edgeMargin: 0.015,
 })
 
 export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {

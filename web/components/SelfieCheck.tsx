@@ -3,7 +3,6 @@ import type { RunPoseGuard } from "../lib/poseguard/enrollment";
 import { CaptureScreenContext } from "../AppShell";
 import { captureFailure, INITIAL_CAPTURE_STATE, type CaptureState } from "../lib/selfie-capture";
 import { CaptureProgressRing } from "./CaptureProgressRing";
-import PoseGuardDiagnostics from "./PoseGuardDiagnostics";
 import { ProcessingStatus, type EndAction } from "./ProcessingGlyph";
 import { bumperGap, PoseTargetIndicator, targetDegrees } from "./PoseTargetIndicator";
 import { logCaptureFailure } from "../lib/flow-logging";
@@ -123,7 +122,6 @@ export default function SelfieCheck({ onClose, backLabel, enroll, endAction, onR
           : <button className={RETRY} type="button" onClick={restart}>{state.phase === "pending" ? "Check status" : "Try again"}</button>}
       </div>}
     </div>
-    {import.meta.env.DEV && <PoseGuardDiagnostics />}
   </section>;
 }
 

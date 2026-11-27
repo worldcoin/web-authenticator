@@ -116,27 +116,29 @@ test.each([
 
 // Browser pitch points down: -8 is a chin raised 8°, which the TEE's central head-pose check rejects above 6°.
 test.each([
-  { label: "a chin raised past the TEE's central pitch", pose: { pitch: -8 }, gate: "pitch", title: "Look straight" },
-  { label: "a face larger than the TEE's maximum size", pose: { left: 0.05, right: 0.9 }, gate: "too_big", title: "Move back" },
-  { label: "a head tilted past the TEE's central roll", pose: { roll: 44 }, gate: "roll", title: "Keep your head level" },
-] as const)("holds back a central frame with $label", async ({ pose, gate, title }) => {
-  const { gates, titles, encoded } = await centralFrames(pose, 20);
+  { label: "a chin raised past the TEE's central pitch", pose: { pitch: -8 }, title: "Look straight" },
+  { label: "a face larger than the TEE's maximum size", pose: { left: 0.05, right: 0.9 }, title: "Move back" },
+  { label: "a head tilted past the TEE's central roll", pose: { roll: 44 }, title: "Keep your head level" },
+  // The TEE accepts these; the gate keeps 2° inside its bounds.
+  { label: "a yaw inside the TEE's bound but past the gate's margin", pose: { yaw: 17 }, title: "Look straight" },
+  { label: "a chin raised inside the TEE's bound but past the gate's margin", pose: { pitch: -5 }, title: "Look straight" },
+  { label: "a roll inside the TEE's bound but past the gate's margin", pose: { roll: 43.5 }, title: "Keep your head level" },
+] as const)("holds back a central frame with $label", async ({ pose, title }) => {
+  const { titles, encoded } = await centralFrames(pose, 20);
   expect(encoded).toBe(0);
-  expect(new Set(gates)).toEqual(new Set([gate]));
-  expect(titles.at(-1)).toBe(title);
+  expect(new Set(titles)).toEqual(new Set([title]));
 });
 
 test("captures a central frame the TEE accepts though it looks down 15°", async () => {
-  const { gates, encoded } = await centralFrames({ pitch: 15 }, 20);
+  const { titles, encoded } = await centralFrames({ pitch: 15 }, 20);
   expect(encoded).toBe(1);
-  expect(gates.every(value => value === "aligned")).toBe(true);
+  expect(titles).toEqual([]);
 });
 
 test("holds back a challenge frame tilted past the TEE's roll tolerance", async () => {
   const camera = cameraFrames();
   const controller = new AbortController();
-  const gates: string[] = [];
-  const captured: number[] = [];
+  const titles: string[] = [];
   let reads = 0;
   const stop = new Error("Read enough frames");
   await expect(collectPoseGuardImages(prompt, controller.signal, async () => {
@@ -144,19 +146,13 @@ test("holds back a challenge frame tilted past the TEE's roll tolerance", async 
     if (++reads === 6) controller.abort(stop);
     // The first challenge asks for a 30° turn; tilt every frame of it by 9°.
     return frame.timestamp >= 1300 && frame.pose ? { ...frame, pose: { ...frame.pose, roll: 9 } } : frame;
-  }, () => {}, {
-    started() {},
-    gated(step, value) { if (step === 2) gates.push(value); },
-    captured(frame) { captured.push(frame.step); },
-  })).rejects.toBe(stop);
-  expect(captured).toEqual([1]);
-  expect(gates).toContain("roll");
-  expect(gates).not.toContain("aligned");
+  }, state => { if (state.poseStep?.index === 2) titles.push(state.title); })).rejects.toBe(stop);
+  expect(camera.encoded).toEqual([2]);
+  expect(titles).toContain("Keep your head level");
 });
 
 async function centralFrames(change: Partial<PoseObservation>, count: number) {
   const controller = new AbortController();
-  const gates: string[] = [];
   const titles: string[] = [];
   let encoded = 0;
   let reads = 0;
@@ -170,12 +166,9 @@ async function centralFrames(change: Partial<PoseObservation>, count: number) {
       async png() { encoded++; return Uint8Array.of(0); },
       release() {},
     };
-  }, state => { if (state.poseStep?.index === 1) titles.push(state.title); }, {
-    started() {},
-    gated(step, gate) { if (step === 1) gates.push(gate); },
-    captured() {},
-  })).rejects.toBe(stop);
-  return { gates, titles, encoded };
+  }, state => { if (state.poseStep?.index === 1 && state.phase === "framing") titles.push(state.title); })).rejects.toBe(stop);
+  // The first title is the step's prompt, shown before any frame is read.
+  return { titles: titles.slice(1), encoded };
 }
 
 test("submits the attested capture once, resumes from the matching receipt and stores the credential", async () => {
