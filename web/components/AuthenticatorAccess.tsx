@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { abortable } from "../lib/async";
+import { createPoseGuardEnrollment, selfieIssuer, type RunPoseGuard } from "../lib/poseguard/enrollment";
 import { hasSavedWallet, type WalletOpenMode } from "../lib/wallet-session";
 import { walletOpenErrorMessage } from "../lib/wallet-errors";
 import type { CredentialMetadata, WalletKit } from "../lib/walletkit";
@@ -12,19 +13,21 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
 }) {
   const [saved, setSaved] = useState(hasSavedWallet);
   const [records, setRecords] = useState<CredentialMetadata[] | null>(null);
-  const [preview, setPreview] = useState(false);
+  // Kept while the wallet is open, so reopening the camera resumes a capture that was already submitted.
+  const [enrollment, setEnrollment] = useState<{ enroll: RunPoseGuard } | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string>();
-  const wallet = useRef<WalletKit | null>(null);
+  const wallet = useRef<{ kit: WalletKit; closed: AbortController } | null>(null);
   const operation = useRef<AbortController | null>(null);
   useEffect(() => {
-    const stop = () => { operation.current?.abort(); wallet.current?.terminate(); wallet.current = null; };
+    const stop = () => { operation.current?.abort(); closeWallet(wallet); };
     const restore = (event: PageTransitionEvent) => { if (event.persisted) window.location.reload(); };
     window.addEventListener("pagehide", stop);
     window.addEventListener("pageshow", restore);
     return () => { stop(); window.removeEventListener("pagehide", stop); window.removeEventListener("pageshow", restore); };
   }, []);
-  const lock = () => { wallet.current?.terminate(); wallet.current = null; setRecords(null); setSaved(hasSavedWallet()); };
+  const lock = () => { closeWallet(wallet); setEnrollment(null); setRecords(null); setSaved(hasSavedWallet()); };
   const startAccess = async (mode: "open" | "create") => {
     if (operation.current) return;
     const controller = new AbortController(); operation.current = controller;
@@ -34,21 +37,39 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(310_000)]);
       const current = await abortable(onOpen(deadline, () => { if (!deadline.aborted && operation.current === controller) setProgress("Opening your authenticator…"); }, mode).then(value => {
         if (deadline.aborted) { value.terminate(); deadline.throwIfAborted(); }
-        wallet.current = value; return value;
+        wallet.current = { kit: value, closed: new AbortController() }; return value;
       }), deadline);
       setProgress("Loading your credentials…");
       const credentials = await abortable(current.listCredentials(), AbortSignal.any([deadline, AbortSignal.timeout(10_000)]));
       deadline.throwIfAborted(); setRecords(credentials); onSignedIn();
     } catch (cause) {
-      wallet.current?.terminate(); wallet.current = null;
+      closeWallet(wallet);
       if (!controller.signal.aborted) setError(walletOpenErrorMessage(cause));
     } finally {
       if (operation.current === controller) operation.current = null;
       if (!controller.signal.aborted) { setProgress(null); setSaved(hasSavedWallet()); }
     }
   };
-  if (preview) return <Suspense fallback={<p role="status">Opening Selfie Check preview…</p>}>
-    <SelfieCheck onClose={() => setPreview(false)} backLabel="Back to authenticator" />
+  const setUpSelfieCheck = () => {
+    const issuer = selfieIssuer();
+    if (!wallet.current || !issuer) return;
+    if (!enrollment) {
+      const { kit, closed } = wallet.current;
+      const enroll = createPoseGuardEnrollment(kit, issuer, closed.signal);
+      setEnrollment({ enroll: async (video, signal, update) => {
+        const outcome = await enroll(video, signal, update);
+        if (outcome === "completed") {
+          setRecords(await abortable(kit.listCredentials(), AbortSignal.any([signal, closed.signal, AbortSignal.timeout(10_000)])));
+        }
+        return outcome;
+      } });
+    }
+    setEnrolling(true);
+  };
+  const leaveSelfieCheck = () => setEnrolling(false);
+
+  if (enrolling && enrollment) return <Suspense fallback={<p role="status">Opening Selfie Check…</p>}>
+    <SelfieCheck onClose={leaveSelfieCheck} backLabel="Back to authenticator" enroll={enrollment.enroll} onReturn={leaveSelfieCheck} />
   </Suspense>;
 
   return <div className="mx-auto my-6 w-[calc(100%-28px)] max-w-[470px] text-[#0d1421] sm:my-10">
@@ -58,16 +79,23 @@ export function AuthenticatorAccess({ onOpen, onSignedIn }: {
         <span className={records ? "rounded bg-[#e6f5ee] px-2 py-1 text-[#0a5c40]" : "text-[#657184]"}>{records ? "●  Signed in" : "Signed out"}</span>
       </div>
       {records
-        ? <CredentialsPanel records={records} onPreview={() => setPreview(true)} onLock={lock} />
+        ? <CredentialsPanel records={records} onSetUpSelfieCheck={selfieIssuer() ? setUpSelfieCheck : undefined} onLock={lock} />
         : <AccessOptions saved={saved} progress={progress} onOpen={startAccess} />}
       {error && <p className="mt-4 rounded-lg bg-[#fff1f1] p-3 text-[14px] text-[#a32424]" role="alert">{error}</p>}
     </article>
   </div>;
 }
 
-function CredentialsPanel({ records, onPreview, onLock }: {
+function closeWallet(wallet: { current: { kit: WalletKit; closed: AbortController } | null }) {
+  wallet.current?.closed.abort();
+  wallet.current?.kit.terminate();
+  wallet.current = null;
+}
+
+function CredentialsPanel({ records, onSetUpSelfieCheck, onLock }: {
   records: CredentialMetadata[];
-  onPreview: () => void;
+  /** Absent where the environment has no Selfie Check issuer. */
+  onSetUpSelfieCheck?: () => void;
   onLock: () => void;
 }) {
   const hasSelfie = records.some(record => record.issuerSchemaId === 11n && !record.isExpired);
@@ -86,8 +114,7 @@ function CredentialsPanel({ records, onPreview, onLock }: {
       <span className={record.isExpired ? "text-[12px] text-[#657184]" : "text-[12px] text-[#0d7a54]"}>{record.isExpired ? "Expired" : "Active"}</span>
     </li>)}</ul>
     {!hasSelfie && <><div className="flex justify-between border-b border-[#d6dde7] pt-6 pb-2 text-[13px]"><h2 className="font-medium">Add to this World ID</h2></div>
-      <div className="flex items-center gap-3 border-b border-[#d6dde7] py-4"><span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-[#b9c4d4] text-[22px] text-[#657184]">+</span><div className="flex-1"><p className="text-[16px]">Selfie Check</p><p className="text-[12px] text-[#5c6879]">Verify with a selfie</p></div><button className="min-h-11 rounded-lg border border-[#c9d2df] px-3 text-[14px]" onClick={onPreview}>Set up Selfie Check</button></div>
-      <p className="mt-3 rounded-lg bg-[#f4f7fc] p-3 text-[12px] leading-[1.45] text-[#5e6f88]">Selfie Check setup is not available yet. You can try the camera preview; it won’t issue a credential.</p></>}
+      <div className="flex items-center gap-3 border-b border-[#d6dde7] py-4"><span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-[#b9c4d4] text-[22px] text-[#657184]">+</span><div className="flex-1"><p className="text-[16px]">Selfie Check</p><p className="text-[12px] text-[#5c6879]">{onSetUpSelfieCheck ? "Verify with a selfie" : "Not available yet"}</p></div>{onSetUpSelfieCheck && <button className="min-h-11 rounded-lg border border-[#c9d2df] px-3 text-[14px]" onClick={onSetUpSelfieCheck}>Set up Selfie Check</button>}</div></>}
     <button className="mt-auto self-start pt-6 text-[14px] text-[#5c6879] underline-offset-4 hover:underline" onClick={onLock}>Lock authenticator</button>
   </div>;
 }

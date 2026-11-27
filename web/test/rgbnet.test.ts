@@ -7,7 +7,6 @@ import {
 	prepareRgbnet,
 	decodeRgbnet,
 	previewCrop,
-	faceGuidance,
 	ANCHOR_COUNT,
 	type ModelOutput,
 } from '../lib/rgbnet'
@@ -61,11 +60,10 @@ test('invalid frames and missing, malformed or non-finite output heads fail expl
 	assert.throws(() => decodeRgbnet(heads), /shape/)
 })
 
-test('empty detections and confidence boundary do not report a positioned face', () => {
+test('detections at the confidence boundary are dropped', () => {
 	const heads = outputs()
 	heads[1].data[1] = 0.8
 	assert.deepEqual(decodeRgbnet(heads), [])
-	assert.equal(faceGuidance([], 640, 480), 'No face detected')
 })
 
 test('preview crop is the centered object-cover region for landscape, portrait and square views', () => {
@@ -74,37 +72,4 @@ test('preview crop is the centered object-cover region for landscape, portrait a
 	// A portrait phone camera is already narrower than the oval: full width, trimmed height.
 	assert.deepEqual(previewCrop(720, 1280, 260, 364), [0, 136, 720, 1008])
 	assert.deepEqual(previewCrop(640, 480), [80, 0, 480, 480])
-})
-
-// Builds a camera-frame detection from a box expressed in the cropped (sent) image.
-function inCrop(box: [number, number, number, number], width: number, height: number, viewWidth: number, viewHeight: number) {
-	const [sx, sy, sw, sh] = previewCrop(width, height, viewWidth, viewHeight)
-	const frame = [(sx + box[0] * sw) / width, (sy + box[1] * sh) / height, (sx + box[2] * sw) / width, (sy + box[3] * sh) / height]
-	return { box: frame as [number, number, number, number], landmarks: [], score: 0.99 }
-}
-
-test('guidance applies the face engine framing thresholds to the cropped image', () => {
-	const at = (box: [number, number, number, number]) => faceGuidance([inCrop(box, 1280, 720, 260, 364)], 1280, 720, 260, 364)
-	assert.equal(at([0.2, 0.15, 0.8, 0.85]), 'Face positioned')
-	// Smaller axis 0.4 <= 0.52: FaceTooSmallError.
-	assert.equal(at([0.3, 0.2, 0.7, 0.8]), 'Move closer')
-	// Larger axis 0.9 >= 0.8: FaceTooBigError, reported before the edge it also crosses.
-	assert.equal(at([0.1, 0.05, 0.9, 0.95]), 'Move farther away')
-	// Size passes, but the box is inside the 0.015 edge margin.
-	assert.equal(at([0.005, 0.15, 0.6, 0.85]), 'Center your face')
-	// Sizes pass relative to a 129x180 crop, but 0.6 x 129 px is below the 112 px resolution floor.
-	assert.equal(faceGuidance([inCrop([0.2, 0.15, 0.8, 0.85], 320, 180, 260, 364)], 320, 180, 260, 364), 'Move closer')
-})
-
-test('a face filling the oval would be too small in the uncropped 16:9 frame', () => {
-	const face = inCrop([0.2, 0.15, 0.8, 0.85], 1280, 720, 260, 364)
-	assert.equal(faceGuidance([face], 1280, 720, 260, 364), 'Face positioned')
-	// Judged against the whole frame (a 16:9 view crops nothing), the same face spans 0.24 of the width.
-	assert.equal(faceGuidance([face], 1280, 720, 1280, 720), 'Move closer')
-})
-
-test('guidance reports missing, multiple and unmeasurable faces', () => {
-	const face = inCrop([0.2, 0.15, 0.8, 0.85], 1280, 720, 260, 364)
-	assert.equal(faceGuidance([face, face], 1280, 720, 260, 364), 'Keep only one face in view')
-	assert.equal(faceGuidance([face], 1280, 720, 0, 0), 'Waiting for camera preview')
 })

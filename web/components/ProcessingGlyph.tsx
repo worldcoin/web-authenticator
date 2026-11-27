@@ -23,7 +23,14 @@ export type EndAction = { label: string; href: string };
  * The processing screen after capture. When `done`, the arc closes and the ring floods the screen
  * blue (growing outward and filling inward at once) into the end screen, which says only "You're all set".
  */
-export function ProcessingStatus({ title, hint, done = false, endAction }: { title: string; hint?: string; done?: boolean; endAction?: EndAction }) {
+export function ProcessingStatus({ title, hint, done = false, endAction, onReturn }: {
+  title: string;
+  hint?: string;
+  done?: boolean;
+  endAction?: EndAction;
+  /** Returns to an authenticator that is already open; without it the end screen links to `/authenticator`. */
+  onReturn?: () => void;
+}) {
   const glyph = useRef<SVGSVGElement>(null);
   const [flood, setFlood] = useState<{ x: number; y: number; diameter: number }>();
   const [allSet, setAllSet] = useState(false);
@@ -42,7 +49,7 @@ export function ProcessingStatus({ title, hint, done = false, endAction }: { tit
     return () => clearTimeout(timer);
   }, [done]);
 
-  if (allSet) return <AllSet action={endAction} />;
+  if (allSet) return <AllSet action={endAction} onReturn={onReturn} />;
   return <>
     <ProcessingGlyph ref={glyph} done={done} />
     <div role="status" aria-live="polite" aria-atomic="true" className={`mt-4 w-full text-center transition-opacity duration-200 ${flood ? "opacity-0" : ""}`}>
@@ -96,14 +103,16 @@ function Flood({ x, y, diameter, onDone }: { x: number; y: number; diameter: num
  * The end screen: the whole screen blue, "You're all set" and "You can close this tab" together, and a black
  * button back to the authenticator at the bottom (with the RP's return link under it if it gave one).
  */
-function AllSet({ action }: { action?: EndAction }) {
+function AllSet({ action, onReturn }: { action?: EndAction; onReturn?: () => void }) {
   return <div className="fixed inset-0 z-50 flex flex-col items-center bg-accent px-6 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))] text-center text-white" data-testid="all-set">
     <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 motion-safe:animate-completion-in">
       <h2 className="text-[28px] leading-[1.2] tracking-[-0.4px]">You’re all set</h2>
       <p className="text-[15px] text-white/80">You can close this tab</p>
     </div>
     <div className={`${actions} motion-safe:animate-completion-in`}>
-      <a className={`${primaryAction} ${END_LINK}`} href="/authenticator">Return to authenticator</a>
+      {onReturn
+        ? <button className={`${primaryAction} ${END_LINK}`} type="button" onClick={onReturn}>Return to authenticator</button>
+        : <a className={`${primaryAction} ${END_LINK}`} href="/authenticator">Return to authenticator</a>}
       {action && <a className={`${END_LINK} min-h-11 content-center text-[15px] text-white underline underline-offset-3`} href={action.href}>{action.label}</a>}
     </div>
   </div>;

@@ -7,7 +7,6 @@ import { logPoseGuardEvent, logPoseGuardStep } from "../flow-logging";
 import { INITIAL_CAPTURE_STATE, type CaptureState } from "../selfie-capture";
 import { pollEnrollment, SignupServiceError, submitEnrollment, type EnrollmentReceipt, type EnrollmentResult } from "../signup-service";
 import { WalletOpenError } from "../wallet-errors";
-import type { RequestWalletSession } from "../wallet-session";
 import type { WalletKit } from "../walletkit";
 import { collectPoseGuardImages, preparePoseGuardCamera } from "./capture";
 import type { PoseGuardImages } from "./types";
@@ -32,22 +31,26 @@ export function selfieIssuer(environment: ProtocolEnvironment = currentProtocolE
   return policy ? { policy, endpoint: new URL("/api/v2/identity", signupServiceOrigin).href } : undefined;
 }
 
+/**
+ * Enrolls a Selfie Check into `wallet`, whose account must already be registered. The returned run
+ * can be called again: it resumes a submitted capture that has no result yet, and captures anew
+ * once the issuer has rejected one. `walletSignal` ends the enrollment with the wallet's session.
+ */
 export function createPoseGuardEnrollment(
-  session: RequestWalletSession,
+  wallet: WalletKit,
   issuer: SelfieIssuer,
-  requestSignal: AbortSignal,
+  walletSignal: AbortSignal,
   prepareCamera = preparePoseGuardCamera,
   indexerSyncDelays = INDEXER_SYNC_DELAYS_MS,
 ): RunPoseGuard {
-  // A submitted capture and the wallet that will hold its credential.
-  let enrollment: { receipt: EnrollmentReceipt; wallet: WalletKit; factor: string } | undefined;
+  let submitted: { receipt: EnrollmentReceipt; factor: string } | undefined;
   let saved = false;
   let savePromise: Promise<void> | undefined;
   let inFlight = false;
   return async (video, viewSignal, update) => {
     if (inFlight) throw new Error("A PoseGuard attempt is already running.");
     inFlight = true;
-    const signal = AbortSignal.any([viewSignal, requestSignal]);
+    const signal = AbortSignal.any([viewSignal, walletSignal]);
     const signupOptions = { endpoint: issuer.endpoint, signal };
     try {
       signal.throwIfAborted();
@@ -56,29 +59,33 @@ export function createPoseGuardEnrollment(
         update(checking());
         return await waitForSave(savePromise, signal);
       }
-      if (!enrollment) {
-        const { capture, identity, wallet, blindingFactor } =
-          await capturePoseGuard(session, issuer.policy, video, signal, update, prepareCamera, indexerSyncDelays);
+      if (!submitted) {
+        const { capture, identity, blindingFactor } =
+          await capturePoseGuard(wallet, issuer.policy, video, signal, update, prepareCamera, indexerSyncDelays);
         try {
           signal.throwIfAborted();
           update(checking());
           // Keep the capture ID even if the server accepted the PUT and the response was lost.
-          const submitted = enrollment = { receipt: identity, wallet, factor: blindingFactor };
+          const pending = submitted = { receipt: identity, factor: blindingFactor };
           // The issuer accepts the attested capture on its own; it asks for no ownership proof.
-          submitted.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(capture, "staging", signupOptions));
+          pending.receipt = await logPoseGuardStep("signup_submit", () => submitEnrollment(capture, "staging", signupOptions));
         } catch (error) {
           if (!signal.aborted && (error instanceof TypeError ||
             (error instanceof SignupServiceError && error.status !== undefined &&
-              error.status >= 400 && error.status < 500 && error.status !== 408))) enrollment = undefined;
+              error.status >= 400 && error.status < 500 && error.status !== 408))) submitted = undefined;
           throw error;
         }
       }
 
       update(checking());
       try {
-        const { receipt, wallet, factor } = enrollment;
+        const { receipt, factor } = submitted;
         const result = await pollEnrollment(receipt, signupOptions);
-        if (result.state !== "completed") return result.state;
+        if (result.state !== "completed") {
+          // A rejected enrollment is over: the next run captures again.
+          submitted = undefined;
+          return result.state;
+        }
         const { credential } = result;
         // The write can outlive the wait and owns the credential bytes until it settles.
         savePromise = (async () => {
@@ -117,7 +124,7 @@ export function createPoseGuardEnrollment(
 }
 
 async function capturePoseGuard(
-  session: RequestWalletSession,
+  wallet: WalletKit,
   policy: SelfieEnrollmentPolicy,
   video: HTMLVideoElement,
   signal: AbortSignal,
@@ -127,11 +134,6 @@ async function capturePoseGuard(
 ) {
   signal.throwIfAborted();
   update({ ...INITIAL_CAPTURE_STATE, title: "Getting ready", hint: "" });
-  const wallet = await logPoseGuardStep("wallet_ready", async () => {
-    const state = await abortable(session.ready, signal);
-    if ("error" in state) throw state.error;
-    return state.wallet;
-  });
   const { sub, blindingFactor } = await logPoseGuardStep("prepare_credential", () =>
     prepareEnrollmentCredential(wallet, signal, update, indexerSyncDelays));
   const custody = await abortable(crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), signal);
@@ -190,7 +192,7 @@ async function capturePoseGuard(
         walletSubjectMatches: true,
       });
     }
-    return { capture, identity, wallet, blindingFactor };
+    return { capture, identity, blindingFactor };
   } finally {
     camera.close();
     if (images) clearImages(images);

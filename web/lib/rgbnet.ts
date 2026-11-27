@@ -165,24 +165,6 @@ export const ENGINE_FRAMING_V1 = Object.freeze({
 	edgeMargin: 0.015,
 })
 
-/** Evaluates the box against the image that will be sent: the preview crop, not the full camera frame. */
-export function faceGuidance(faces: FaceDetection[], width: number, height: number, viewWidth = 1, viewHeight = 1): string {
-	if (![width, height, viewWidth, viewHeight].every(value => Number.isFinite(value) && value > 0)) return 'Waiting for camera preview'
-	if (!faces.length) return 'No face detected'
-	if (faces.length > 1) return 'Keep only one face in view'
-	const [sx, sy, sw, sh] = previewCrop(width, height, viewWidth, viewHeight)
-	const [x1, y1, x2, y2] = faces[0].box
-	const left = (x1 * width - sx) / sw, right = (x2 * width - sx) / sw
-	const top = (y1 * height - sy) / sh, bottom = (y2 * height - sy) / sh
-	const { maxRelativeSize, edgeMargin } = ENGINE_FRAMING_V1
-	const relativeWidth = right - left, relativeHeight = bottom - top
-	// Size before edges: an oversized face also crosses the margin, and "farther" is the actionable cue.
-	if (isFaceTooSmall(relativeWidth, relativeHeight, sw, sh)) return 'Move closer'
-	if (Math.max(relativeWidth, relativeHeight) >= maxRelativeSize) return 'Move farther away'
-	if (left < edgeMargin || top < edgeMargin || right > 1 - edgeMargin || bottom > 1 - edgeMargin) return 'Center your face'
-	return 'Face positioned'
-}
-
 export function isFaceTooSmall(relativeWidth: number, relativeHeight: number, imageWidth: number, imageHeight: number): boolean {
 	const { minRelativeSize, minResolutionPx } = ENGINE_FRAMING_V1
 	return Math.min(relativeWidth, relativeHeight) <= minRelativeSize ||

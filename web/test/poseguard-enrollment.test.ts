@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { collectPoseGuardImages, poseDirection, type PoseFrame } from "../lib/poseguard/capture";
 import { createPoseGuardEnrollment } from "../lib/poseguard/enrollment";
 import type { PoseGuardCapture, PoseGuardPrompt } from "../lib/poseguard/types";
-import type { RequestWalletSession } from "../lib/wallet-session";
+import type { WalletKit } from "../lib/walletkit";
 import { CAPTURE_ID, enrollmentCapture } from "./fixtures/enrollment";
 
 const prompt: PoseGuardPrompt = {
@@ -174,8 +174,7 @@ test("submits the attested capture once, resumes from the matching receipt and s
         return { status: "success", enrollment: bundle } as const;
       },
     };
-    const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
-    const run = createPoseGuardEnrollment(session, {
+    const run = createPoseGuardEnrollment(wallet as unknown as WalletKit, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
     }, request.signal, async (_video, signal) => ({ signal, close() { closes++; }, readFrame: camera.readFrame }));
@@ -199,6 +198,54 @@ test("submits the attested capture once, resumes from the matching receipt and s
     for (const { name, value } of capture.fields) expect(submitted.body?.get(name)).toBe(value);
     expect(submitted.body?.get("world_id_ownership_proof")).toBeNull();
     expect(bundle.encryptedCustody).toEqual(new Uint8Array(2));
+  } finally {
+    await server.stop(true);
+  }
+});
+
+test("captures again after the issuer rejects an enrollment", async () => {
+  const capture = enrollmentCapture();
+  let puts = 0;
+  let sdkCalls = 0;
+  let stored = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(incoming) {
+      if (incoming.method === "PUT") {
+        puts++;
+        return Response.json({}, { status: 202 });
+      }
+      return Response.json(puts === 1
+        ? { status: "NEW", enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_FAILED" } }
+        : { status: "VERIFIED", enrollment_status: { capture_id: CAPTURE_ID, status: "ENROLLMENT_UNIQUE_SUCCESSFUL", credential: "AQI=" } });
+    },
+  });
+  try {
+    const wallet = {
+      async prepareCredential() { return { sub: "0x1f", blindingFactor: "0x2f" }; },
+      async storeCredential() { stored++; },
+      async enrollSelfieWithPoseGuard(_config: string, _sub: string, _key: Uint8Array, collect: PoseGuardCapture, signal: AbortSignal) {
+        sdkCalls++;
+        await collect(prompt, signal);
+        return { status: "success", enrollment: {
+          fields: capture.fields.map(field => ({ ...field })),
+          attestationHeader: capture.attestation_header,
+          encryptedCustody: Uint8Array.of(10, 11),
+        } } as const;
+      },
+    };
+    const signal = new AbortController().signal;
+    const run = createPoseGuardEnrollment(wallet as unknown as WalletKit, {
+      policy: { endpoint: "wss://tee.test", releases: [] },
+      endpoint: new URL("/api/v2/identity", server.url).href,
+    }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: cameraFrames().readFrame }));
+    const attempt = () => run({} as HTMLVideoElement, signal, () => {});
+
+    await expect(attempt()).resolves.toBe("failed");
+    expect(stored).toBe(0);
+    await expect(attempt()).resolves.toBe("completed");
+    expect({ puts, sdkCalls, stored }).toEqual({ puts: 2, sdkCalls: 2, stored: 1 });
   } finally {
     await server.stop(true);
   }
@@ -250,9 +297,8 @@ test.each(["succeeds", "fails"] as const)("resumes a credential save that %s aft
         await write.promise;
       },
     };
-    const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
     const signal = new AbortController().signal;
-    const run = createPoseGuardEnrollment(session, {
+    const run = createPoseGuardEnrollment(wallet as unknown as WalletKit, {
       policy: { endpoint: "wss://tee.test", releases: [] },
       endpoint: new URL("/api/v2/identity", server.url).href,
     }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
@@ -292,16 +338,13 @@ test.each([
     name: "WalletKitError", code: "NetworkError",
   });
   let preparations = 0;
-  const session = {
-    ready: Promise.resolve({ wallet: { async prepareCredential() {
-      if (++preparations === syncsOn) return { sub: "0x1", blindingFactor: "0x2" };
-      throw error;
-    } } }),
-    dispose() {},
-  } as unknown as RequestWalletSession;
+  const wallet = { async prepareCredential() {
+    if (++preparations === syncsOn) return { sub: "0x1", blindingFactor: "0x2" };
+    throw error;
+  } };
   const signal = new AbortController().signal;
   const updates: string[] = [];
-  const run = createPoseGuardEnrollment(session, {
+  const run = createPoseGuardEnrollment(wallet as unknown as WalletKit, {
     policy: { endpoint: "wss://tee.test", releases: [] },
     endpoint: "https://signup.test/api/v2/identity",
   }, signal, async () => { throw new Error("Camera must wait for enrollment preparation."); }, [0, 0]);
@@ -325,8 +368,7 @@ test.each([
       return result;
     },
   };
-  const session = { ready: Promise.resolve({ wallet }), dispose() {} } as unknown as RequestWalletSession;
-  const run = createPoseGuardEnrollment(session, {
+  const run = createPoseGuardEnrollment(wallet as unknown as WalletKit, {
     policy: { endpoint: "wss://tee.test", releases: [] },
     endpoint: "https://signup.test/api/v2/identity",
   }, signal, async (_video, signal) => ({ signal, close() {}, readFrame: camera.readFrame }));
