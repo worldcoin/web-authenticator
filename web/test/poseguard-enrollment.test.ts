@@ -129,8 +129,11 @@ test.each([
   expect(new Set(titles)).toEqual(new Set([title]));
 });
 
-test("captures a central frame the TEE accepts though it looks down 15°", async () => {
-  const { titles, encoded } = await centralFrames({ pitch: 15 }, 20);
+test.each([
+  { label: "looks down 15°", pose: { pitch: 15 } },
+  { label: "is turned 12°", pose: { yaw: 12 } },
+])("captures a central frame the TEE accepts though it $label", async ({ pose }) => {
+  const { titles, encoded } = await centralFrames(pose, 20);
   expect(encoded).toBe(1);
   expect(titles).toEqual([]);
 });

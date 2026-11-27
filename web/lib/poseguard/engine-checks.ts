@@ -11,7 +11,7 @@ export const ENGINE_POSE_V1 = Object.freeze({
   challengeTolerance: 10,
 });
 
-/** Kept off every TEE bound so a frame the browser accepts is not rejected for a rounding difference. */
+/** Kept off every TEE angle bound so a frame the browser accepts is not rejected for a rounding difference. */
 export const POSE_GATE_MARGIN_DEGREES = 2;
 
 export type EnginePose = { pitch: number; yaw: number; roll: number };
