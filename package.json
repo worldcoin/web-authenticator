@@ -16,6 +16,7 @@
     "test": "bun test ./web/test ./packages ./tests",
     "test:web": "bun run --cwd web test",
     "test:browser": "bun run build && playwright test -c tests/e2e/playwright.config.ts",
+    "build:cf": "bun run build",
     "deploy:cf": "wrangler deploy",
     "cf:check": "wrangler deploy --dry-run"
   },
